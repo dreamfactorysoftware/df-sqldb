@@ -1,5 +1,5 @@
 <?php
-namespace DreamFactory\SqlDb\Database\Seeds;
+namespace DreamFactory\Rave\SqlDb\Database\Seeds;
 
 use Illuminate\Database\Seeder;
 use DreamFactory\Rave\Models\ServiceType;
@@ -19,8 +19,8 @@ class SqlDbSeeder extends Seeder
             ServiceType::create(
                 [
                     'name'           => 'sql_db',
-                    'class_name'     => 'DreamFactory\\SqlDb\\Services\\SqlDbService',
-                    'config_handler' => 'DreamFactory\\SqlDb\\Models\\SqlDbConfig',
+                    'class_name'     => 'DreamFactory\\Rave\\SqlDb\\Services\\SqlDbService',
+                    'config_handler' => 'DreamFactory\\Rave\\SqlDb\\Models\\SqlDbConfig',
                     'label'          => 'SQL DB',
                     'description'    => 'Database service supporting SQL connections.',
                     'group'          => 'Databases',

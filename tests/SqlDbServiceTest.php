@@ -36,8 +36,8 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         if ( !Service::whereName( static::SERVICE_NAME )->exists() )
         {
             // adds the migration and calls the seeder to add service type
-            Artisan::call( 'migrate', [ '--path' => 'workbench/DreamFactory/SqlDb/database/migrations' ] );
-            Artisan::call( 'db:seed', [ '--class' => 'DreamFactory\\SqlDb\\Database\\Seeds\\SqlDbSeeder' ] );
+            Artisan::call( 'migrate', [ '--path' => 'vendor/dreamfactory/rave-sqldb/database/migrations/']);
+            Artisan::call( 'db:seed', [ '--class' => 'DreamFactory\\Rave\\SqlDb\\Database\\Seeds\\SqlDbSeeder' ] );
 
             Service::create(
                 [

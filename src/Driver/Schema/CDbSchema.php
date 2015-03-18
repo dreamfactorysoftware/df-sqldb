@@ -7,9 +7,9 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
-namespace DreamFactory\SqlDb\Driver\Schema;
+namespace DreamFactory\Rave\SqlDb\Driver\Schema;
 
-use DreamFactory\SqlDb\Driver\CDbConnection;
+use DreamFactory\Rave\SqlDb\Driver\CDbConnection;
 
 /**
  * CDbSchema is the base class for retrieving metadata information.

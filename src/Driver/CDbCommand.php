@@ -7,9 +7,9 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
-namespace DreamFactory\SqlDb\Driver;
+namespace DreamFactory\Rave\SqlDb\Driver;
 
-use DreamFactory\SqlDb\Driver\Schema\CDbExpression;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
 
 /**
  * CDbCommand represents an SQL statement to execute against a database.

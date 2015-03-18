@@ -7,7 +7,7 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license http://www.yiiframework.com/license/
  */
-namespace DreamFactory\SqlDb\Driver\Schema;
+namespace DreamFactory\Rave\SqlDb\Driver\Schema;
 
 /**
  * CDbCriteria represents a query criteria, such as conditions, ordering by, limit/offset.

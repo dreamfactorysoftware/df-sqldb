@@ -7,9 +7,9 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
-namespace DreamFactory\SqlDb\Driver\Schema\MySql;
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\MySql;
 
-use DreamFactory\SqlDb\Driver\Schema\CDbCommandBuilder;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCommandBuilder;
 
 /**
  * CMysqlCommandBuilder provides basic methods to create query commands for tables.

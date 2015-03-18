@@ -18,7 +18,7 @@
  * limitations under the License.
  */
 
-namespace DreamFactory\SqlDb\Resources;
+namespace DreamFactory\Rave\SqlDb\Resources;
 
 use Config;
 use DreamFactory\Library\Utility\ArrayUtils;
@@ -30,10 +30,10 @@ use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\NotFoundException;
 use DreamFactory\Rave\Exceptions\NotImplementedException;
 use DreamFactory\Rave\Exceptions\RestException;
-use DreamFactory\SqlDb\Driver\Schema\CDbExpression;
-use DreamFactory\SqlDb\Driver\CDbCommand;
-use DreamFactory\SqlDb\Driver\CDbTransaction;
-use DreamFactory\SqlDb\Services\SqlDbService;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
+use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
+use DreamFactory\Rave\SqlDb\Driver\CDbTransaction;
+use DreamFactory\Rave\SqlDb\Services\SqlDbService;
 use DreamFactory\Rave\Enums\SqlDbDriverTypes;
 use DreamFactory\Rave\Resources\BaseDbTableResource;
 use DreamFactory\Rave\Utility\DbUtilities;

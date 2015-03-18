@@ -7,7 +7,7 @@
  * @copyright Copyright &copy; 2008-2011 Yii Software LLC
  * @license http://www.yiiframework.com/license/
  */
-namespace DreamFactory\SqlDb\Driver\Schema;
+namespace DreamFactory\Rave\SqlDb\Driver\Schema;
 
 /**
  * CDbTableSchema is the base class for representing the metadata of a database table.

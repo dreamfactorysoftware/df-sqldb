@@ -18,7 +18,7 @@
  * limitations under the License.
  */
 
-namespace DreamFactory\SqlDb\Models;
+namespace DreamFactory\Rave\SqlDb\Models;
 
 use DreamFactory\Rave\Models\BaseModel;
 

@@ -7,9 +7,9 @@
  * @copyright Copyright &copy; 2008-2011 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
-namespace DreamFactory\SqlDb\Driver\Schema\MySql;
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\MySql;
 
-use DreamFactory\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
 
 /**
  * CMysqlTableSchema represents the metadata for a MySQL table.

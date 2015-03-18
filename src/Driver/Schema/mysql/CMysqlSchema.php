@@ -7,11 +7,11 @@
  * @copyright Copyright &copy; 2008-2011 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
-namespace DreamFactory\SqlDb\Driver\Schema\Mysql;
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Mysql;
 
-use DreamFactory\SqlDb\Driver\Schema\CDbSchema;
-use DreamFactory\SqlDb\Driver\Schema\CDbTableSchema;
-use DreamFactory\SqlDb\Driver\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
 
 /**
  * CMysqlSchema is the class for retrieving metadata information from a MySQL database (version 4.1.x and 5.x).

@@ -18,14 +18,14 @@
  * limitations under the License.
  */
 
-namespace DreamFactory\SqlDb\Resources;
+namespace DreamFactory\Rave\SqlDb\Resources;
 
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Inflector;
 use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\RestException;
-use DreamFactory\SqlDb\Services\SqlDbService;
+use DreamFactory\Rave\SqlDb\Services\SqlDbService;
 use DreamFactory\Rave\Resources\BaseDbSchemaResource;
 use DreamFactory\Rave\Utility\SqlDbUtilities;
 

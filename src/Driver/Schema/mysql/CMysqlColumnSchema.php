@@ -7,9 +7,9 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
-namespace DreamFactory\SqlDb\Driver\Schema\MySql;
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\MySql;
 
-use DreamFactory\SqlDb\Driver\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
 
 /**
  * CMysqlColumnSchema class describes the column meta data of a MySQL table.

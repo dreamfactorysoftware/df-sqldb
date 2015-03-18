@@ -7,10 +7,10 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
-namespace DreamFactory\SqlDb\Driver;
+namespace DreamFactory\Rave\SqlDb\Driver;
 
-use DreamFactory\SqlDb\Driver\Schema\CDbSchema;
-use DreamFactory\SqlDb\Driver\Schema\CDbCommandBuilder;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCommandBuilder;
 
 /**
  * CDbConnection represents a connection to a database.
@@ -168,16 +168,16 @@ class CDbConnection
      * @since 1.1.6
      */
     public $driverMap = array(
-        'pgsql'   => 'DreamFactory\SqlDb\Driver\Schema\Pgsql\CPgsqlSchema',    // PostgreSQL
-        'mysqli'  => 'DreamFactory\SqlDb\Driver\Schema\Mysql\CMysqlSchema',   // MySQL
-        'mysql'   => 'DreamFactory\SqlDb\Driver\Schema\MySql\CMysqlSchema',    // MySQL
-        'sqlite'  => 'DreamFactory\SqlDb\Driver\Schema\Sqllite\CSqliteSchema',  // sqlite 3
-        'sqlite2' => 'DreamFactory\SqlDb\Driver\Schema\Sqllite\CSqliteSchema', // sqlite 2
-        'mssql'   => 'DreamFactory\SqlDb\Driver\Schema\Mssql\CMssqlSchema',    // Mssql driver on windows hosts
-        'dblib'   => 'DreamFactory\SqlDb\Driver\Schema\Mssql\CMssqlSchema',    // dblib drivers on linux (and maybe others os) hosts
-        'sqlsrv'  => 'DreamFactory\SqlDb\Driver\Schema\Mssql\CMssqlSchema',   // Mssql
-        'oci'     => 'DreamFactory\SqlDb\Driver\Schema\Oci\COciSchema',        // Oracle driver
-        'ibm'     => 'DreamFactory\SqlDb\Driver\Schema\Ibm\CIbmDB2Schema',     // IBM DB2 driver
+        'pgsql'   => 'DreamFactory\Rave\SqlDb\Driver\Schema\Pgsql\CPgsqlSchema',    // PostgreSQL
+        'mysqli'  => 'DreamFactory\Rave\SqlDb\Driver\Schema\Mysql\CMysqlSchema',   // MySQL
+        'mysql'   => 'DreamFactory\Rave\SqlDb\Driver\Schema\MySql\CMysqlSchema',    // MySQL
+        'sqlite'  => 'DreamFactory\Rave\SqlDb\Driver\Schema\Sqllite\CSqliteSchema',  // sqlite 3
+        'sqlite2' => 'DreamFactory\Rave\SqlDb\Driver\Schema\Sqllite\CSqliteSchema', // sqlite 2
+        'mssql'   => 'DreamFactory\Rave\SqlDb\Driver\Schema\Mssql\CMssqlSchema',    // Mssql driver on windows hosts
+        'dblib'   => 'DreamFactory\Rave\SqlDb\Driver\Schema\Mssql\CMssqlSchema',    // dblib drivers on linux (and maybe others os) hosts
+        'sqlsrv'  => 'DreamFactory\Rave\SqlDb\Driver\Schema\Mssql\CMssqlSchema',   // Mssql
+        'oci'     => 'DreamFactory\Rave\SqlDb\Driver\Schema\Oci\COciSchema',        // Oracle driver
+        'ibm'     => 'DreamFactory\Rave\SqlDb\Driver\Schema\Ibm\CIbmDB2Schema',     // IBM DB2 driver
     );
 
     /**
