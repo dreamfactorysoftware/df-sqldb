@@ -21,7 +21,7 @@
 use DreamFactory\Library\Utility\Enums\Verbs;
 use Rave\Models\Service;
 
-class SqlDbServiceTest extends TestCase
+class SqlDbServiceTest extends \Rave\Testing\DbServiceTestCase
 {
     const SERVICE_NAME = 'db';
 
