@@ -21,12 +21,12 @@
 namespace DreamFactory\SqlDb\Resources;
 
 use DreamFactory\Library\Utility\ArrayUtils;
-use Rave\Utility\SqlDbUtilities;
-use DreamFactory\Rave\Common\Exceptions\BadRequestException;
-use DreamFactory\Rave\Common\Exceptions\InternalServerErrorException;
-use DreamFactory\Rave\Common\Exceptions\RestException;
+use DreamFactory\Rave\Utility\SqlDbUtilities;
+use DreamFactory\Rave\Exceptions\BadRequestException;
+use DreamFactory\Rave\Exceptions\InternalServerErrorException;
+use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\SqlDb\Services\SqlDbService;
-use Rave\Resources\BaseRestResource;
+use DreamFactory\Rave\Resources\BaseRestResource;
 
 class StoredFunction extends BaseRestResource
 {

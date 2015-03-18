@@ -25,19 +25,19 @@ use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Inflector;
 use DreamFactory\Library\Utility\Scalar;
-use DreamFactory\Rave\Common\Exceptions\BadRequestException;
-use DreamFactory\Rave\Common\Exceptions\InternalServerErrorException;
-use DreamFactory\Rave\Common\Exceptions\NotFoundException;
-use DreamFactory\Rave\Common\Exceptions\NotImplementedException;
-use DreamFactory\Rave\Common\Exceptions\RestException;
+use DreamFactory\Rave\Exceptions\BadRequestException;
+use DreamFactory\Rave\Exceptions\InternalServerErrorException;
+use DreamFactory\Rave\Exceptions\NotFoundException;
+use DreamFactory\Rave\Exceptions\NotImplementedException;
+use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\SqlDb\Driver\Schema\CDbExpression;
 use DreamFactory\SqlDb\Driver\CDbCommand;
 use DreamFactory\SqlDb\Driver\CDbTransaction;
 use DreamFactory\SqlDb\Services\SqlDbService;
-use Rave\Enums\SqlDbDriverTypes;
-use Rave\Resources\BaseDbTableResource;
-use Rave\Utility\DbUtilities;
-use Rave\Utility\SqlDbUtilities;
+use DreamFactory\Rave\Enums\SqlDbDriverTypes;
+use DreamFactory\Rave\Resources\BaseDbTableResource;
+use DreamFactory\Rave\Utility\DbUtilities;
+use DreamFactory\Rave\Utility\SqlDbUtilities;
 
 class Table extends BaseDbTableResource
 {

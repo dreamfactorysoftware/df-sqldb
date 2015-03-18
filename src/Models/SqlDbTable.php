@@ -20,7 +20,7 @@
 
 namespace DreamFactory\SqlDb\Models;
 
-use Rave\Models\BaseModel;
+use DreamFactory\Rave\Models\BaseModel;
 
 /**
  * SqlDbTable

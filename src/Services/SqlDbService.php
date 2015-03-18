@@ -22,19 +22,19 @@ namespace DreamFactory\SqlDb\Services;
 
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Enums\Verbs;
-use DreamFactory\Rave\Common\Exceptions\InternalServerErrorException;
-use DreamFactory\Rave\Common\Exceptions\NotFoundException;
+use DreamFactory\Rave\Exceptions\InternalServerErrorException;
+use DreamFactory\Rave\Exceptions\NotFoundException;
 use DreamFactory\SqlDb\Resources\Schema;
 use DreamFactory\SqlDb\Resources\StoredFunction;
 use DreamFactory\SqlDb\Resources\StoredProcedure;
 use DreamFactory\SqlDb\Resources\Table;
 use DreamFactory\SqlDb\Driver\CDbConnection;
-use Rave\Contracts\ServiceResponseInterface;
-use Rave\Enums\SqlDbDriverTypes;
-use Rave\Services\BaseDbService;
-use Rave\Resources\BaseRestResource;
-use Rave\Utility\ResponseFactory;
-use Rave\Utility\SqlDbUtilities;
+use DreamFactory\Rave\Contracts\ServiceResponseInterface;
+use DreamFactory\Rave\Enums\SqlDbDriverTypes;
+use DreamFactory\Rave\Services\BaseDbService;
+use DreamFactory\Rave\Resources\BaseRestResource;
+use DreamFactory\Rave\Utility\ResponseFactory;
+use DreamFactory\Rave\Utility\SqlDbUtilities;
 
 /**
  * Class SqlDbService

@@ -21,9 +21,9 @@
 namespace DreamFactory\SqlDb\Models;
 
 use DreamFactory\Library\Utility\ArrayUtils;
-use DreamFactory\Rave\Common\Exceptions\BadRequestException;
-use Rave\Contracts\ServiceConfigHandlerInterface;
-use Rave\Models\BaseModel;
+use DreamFactory\Rave\Exceptions\BadRequestException;
+use DreamFactory\Rave\Contracts\ServiceConfigHandlerInterface;
+use DreamFactory\Rave\Models\BaseModel;
 
 /**
  * SqlDbConfig

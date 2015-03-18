@@ -22,12 +22,12 @@ namespace DreamFactory\SqlDb\Resources;
 
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Inflector;
-use DreamFactory\Rave\Common\Exceptions\BadRequestException;
-use DreamFactory\Rave\Common\Exceptions\InternalServerErrorException;
-use DreamFactory\Rave\Common\Exceptions\RestException;
+use DreamFactory\Rave\Exceptions\BadRequestException;
+use DreamFactory\Rave\Exceptions\InternalServerErrorException;
+use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\SqlDb\Services\SqlDbService;
-use Rave\Resources\BaseDbSchemaResource;
-use Rave\Utility\SqlDbUtilities;
+use DreamFactory\Rave\Resources\BaseDbSchemaResource;
+use DreamFactory\Rave\Utility\SqlDbUtilities;
 
 // Handle schema options, table add, delete, etc
 class Schema extends BaseDbSchemaResource
