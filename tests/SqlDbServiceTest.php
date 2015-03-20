@@ -19,46 +19,52 @@
  */
 
 use DreamFactory\Library\Utility\Enums\Verbs;
-use DreamFactory\Rave\Models\Service;
+use DreamFactory\Rave\Enums\ContentTypes;
+use DreamFactory\Rave\SqlDb\Services\SqlDbService;
+use DreamFactory\Rave\SqlDb\Resources\Schema;
+use DreamFactory\Rave\SqlDb\Resources\Table;
+use DreamFactory\Rave\SqlDb\Resources\StoredProcedure;
+use DreamFactory\Rave\SqlDb\Resources\StoredFunction;
+use DreamFactory\Rave\Testing\TestServiceRequest;
 
 class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 {
+    /**
+     * @const string
+     */
     const SERVICE_NAME = 'db';
+    /**
+     * @const string
+     */
+    const TABLE_NAME = 'todo';
+    /**
+     * @const string
+     */
+    const TABLE_ID = 'id';
 
-    protected static $do_teardown = false;
+    /**
+     * @var SqlDbService
+     */
+    protected $service = null;
 
-    protected static $staged = false;
-
-    public function stage()
+    public function setup()
     {
-        parent::stage();
+        parent::setup();
 
-        if ( !Service::whereName( static::SERVICE_NAME )->exists() )
-        {
-            // adds the migration and calls the seeder to add service type
-            Artisan::call( 'migrate', [ '--path' => 'vendor/dreamfactory/rave-sqldb/database/migrations/']);
-            Artisan::call( 'db:seed', [ '--class' => 'DreamFactory\\Rave\\SqlDb\\Database\\Seeds\\SqlDbSeeder' ] );
-
-            Service::create(
-                [
-                    'name'        => static::SERVICE_NAME,
-                    'label'       => 'SQL Database',
-                    'description' => 'SQL database for testing',
-                    'is_active'   => 1,
-                    'type'        => 'sql_db',
-                    'config'      => [ 'dsn' => env( 'SQLDB_DSN' ), 'username' => env( 'SQLDB_USER' ), 'password' => env( 'SQLDB_PASSWORD' ) ]
-                ]
-            );
-        }
+        $this->service = new SqlDbService(
+            [
+                'name'        => static::SERVICE_NAME,
+                'label'       => 'SQL Database',
+                'description' => 'SQL database for testing',
+                'is_active'   => 1,
+                'type'        => 'sql_db',
+                'config'      => [ 'dsn' => env( 'SQLDB_DSN' ), 'username' => env( 'SQLDB_USER' ), 'password' => env( 'SQLDB_PASSWORD' ) ]
+            ]
+        );
     }
 
     public function tearDown()
     {
-        if ( static::$do_teardown )
-        {
-            Service::whereType( 'sql_db' )->delete();
-        }
-
         parent::tearDown();
     }
 
@@ -73,8 +79,9 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 
     public function testDefaultResources()
     {
-        $rs = $this->call( Verbs::GET, $this->buildPath() );
-        $data = json_decode( $rs->getContent(), true );
+        $request = new TestServiceRequest();
+        $rs = $this->service->handleRequest( $request );
+        $data = $rs->getContent();
         $this->assertArrayHasKey( 'resource', $data );
         $this->assertCount( 4, $data['resource'] );
 //        $this->assert( '_schema', $data['resource'] );
@@ -87,24 +94,27 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 
     public function testSchemaEmpty()
     {
-        $rs = $this->call( Verbs::GET, $this->buildPath( '_schema' ) );
-        $data = json_decode( $rs->getContent(), true );
+        $request = new TestServiceRequest();
+        $rs = $this->service->handleRequest( $request, Schema::RESOURCE_NAME );
+        $data = $rs->getContent();
         $this->assertArrayHasKey( 'resource', $data );
         $this->assertEmpty( $data['resource'] );
     }
 
     public function testProceduresEmpty()
     {
-        $rs = $this->call( Verbs::GET, $this->buildPath( '_proc' ) );
-        $data = json_decode( $rs->getContent(), true );
+        $request = new TestServiceRequest();
+        $rs = $this->service->handleRequest( $request, StoredProcedure::RESOURCE_NAME );
+        $data = $rs->getContent();
         $this->assertArrayHasKey( 'resource', $data );
         $this->assertEmpty( $data['resource'] );
     }
 
     public function testFunctionsEmpty()
     {
-        $rs = $this->call( Verbs::GET, $this->buildPath( '_func' ) );
-        $data = json_decode( $rs->getContent(), true );
+        $request = new TestServiceRequest();
+        $rs = $this->service->handleRequest( $request, StoredFunction::RESOURCE_NAME );
+        $data = $rs->getContent();
         $this->assertArrayHasKey( 'resource', $data );
         $this->assertEmpty( $data['resource'] );
     }
@@ -131,18 +141,19 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 	]
 }';
 
-        Schema::dropIfExists( 'todo' );
-
-        $rs = $this->callWithPayload( Verbs::POST, $this->buildPath( '_schema/todo' ), $payload );
-        $data = json_decode( $rs->getContent(), true );
+        $request = new TestServiceRequest( Verbs::POST );
+        $request->setContent( $payload, ContentTypes::JSON );
+        $rs = $this->service->handleRequest( $request, Schema::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        $data = $rs->getContent();
         $this->assertArrayHasKey( 'name', $data );
-        $this->assertSame( 'todo', $data['name'] );
+        $this->assertSame( static::TABLE_NAME, $data['name'] );
     }
 
     public function testGetRecordsEmpty()
     {
-        $rs = $this->call( Verbs::GET, $this->buildPath( '_table/todo' ) );
-        $data = json_decode( $rs->getContent(), true );
+        $request = new TestServiceRequest();
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
         $this->assertEmpty( $data['record'] );
     }
@@ -164,44 +175,44 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 		}
 	]
 }';
-        $rs = $this->callWithPayload( Verbs::POST, $this->buildPath( '_table/todo' ), $payload );
-        $data = json_decode( $rs->getContent(), true );
+        $request = new TestServiceRequest( Verbs::POST );
+        $request->setContent( $payload, ContentTypes::JSON );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
         $this->assertCount( 3, $data['record'] );
-//        $this->assertResponseStatus( 201 );
     }
 
     public function testGetRecordById()
     {
-        $rs = $this->call( Verbs::GET, $this->buildPath( '_table/todo/1' ) );
-        $data = json_decode( $rs->getContent(), true );
-        $this->assertTrue( $data['id'] == 1 );
+        $request = new TestServiceRequest();
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/1' );
+        $data = $rs->getContent();
+        $this->assertTrue( $data[static::TABLE_ID] == 1 );
     }
 
     public function testGetRecordsByIds()
     {
-        $rs = $this->call( Verbs::GET, $this->buildPath( '_table/todo?ids=1,2,3' ) );
-        $data = json_decode( $rs->getContent(), true );
-        $ids = implode( ",", array_column( $data['record'], 'id' ) );
-        $this->assertTrue( $ids == "1,2,3" );
-    }
-
-    public function testGetRecordsOverTunnel()
-    {
-        $payload = '{"ids":[1,2]}';
-
-        $rs = $this->call( Verbs::POST, $this->buildPath( '_table/todo' ), [ ], [ ], [ ], [ "HTTP_X_HTTP_METHOD" => Verbs::GET ], $payload );
-
-        $data = json_decode( $rs->getContent(), true );
-        $ids = implode( ",", array_column( $data['record'], 'id' ) );
-        print_r( $ids );
-        $this->assertTrue( $ids == "1,2" );
+        $request = new TestServiceRequest( Verbs::GET, [ 'ids' => '2,3' ] );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        $data = $rs->getContent();
+        $ids = implode( ",", array_column( $data['record'], static::TABLE_ID ) );
+        $this->assertTrue($ids == "2,3");
     }
 
     public function testResourceNotFound()
     {
-        $this->call( Verbs::GET, $this->buildPath( '_table/todo/5' ) );
-        $this->assertResponseStatus( 404 );
+        $request = new TestServiceRequest( Verbs::GET );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/5' );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertEquals( 404, $ex->getCode() );
+        }
     }
 
     /************************************************
@@ -211,10 +222,10 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
     public function testCreateRecord()
     {
         $payload = '{"record":[{"name":"test4","complete":false}]}';
-
-        $rs = $this->callWithPayload( Verbs::POST, $this->buildPath( '_table/todo' ), $payload );
-//        $this->assertResponseStatus( 201 );
-        $data = json_decode( $rs->getContent(), true );
+        $request = new TestServiceRequest( Verbs::POST );
+        $request->setContent( $payload, ContentTypes::JSON );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
         $this->assertCount( 1, $data['record'] );
     }
@@ -232,17 +243,22 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 		}
 	]';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->buildPath( '_table/todo' ), $payload );
-        $this->assertTrue( $rs->getContent() == '{"record":[{"id":5},{"id":6}]}' );
+        $request = new TestServiceRequest( Verbs::POST );
+        $request->setContent( $payload, ContentTypes::JSON );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        $data = $rs->getContent();
+        $this->assertArrayHasKey( 'record', $data );
+        $this->assertCount( 2, $data['record'] );
     }
 
     public function testCreateRecordReturnFields()
     {
         $payload = '{"record":[{"name":"test7","complete":true}]}';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->buildPath( '_table/todo?fields=name,complete' ), $payload );
-//        $this->assertResponseStatus( 201 );
-        $data = json_decode( $rs->getContent(), true );
+        $request = new TestServiceRequest( Verbs::POST, [ 'fields' => 'name,complete' ] );
+        $request->setContent( $payload, ContentTypes::JSON );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
         $this->assertCount( 1, $data['record'] );
         $this->assertArrayHasKey( 'name', $data['record'][0] );
@@ -268,11 +284,20 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 	]
 }';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->buildPath( '_table/todo?continue=true' ), $payload );
-        print_r( $rs );
-        $this->assertContains( '{"error":{"context":{"error":[1],"record":[{"id":8},"SQLSTATE[23000]: ', $rs->getContent() );
-        $this->assertContains( "Duplicate entry 'test5'", $rs->getContent() );
-        $this->assertResponseStatus( 400 );
+        $request = new TestServiceRequest( Verbs::POST, [ 'continue' => true ] );
+        $request->setContent( $payload, ContentTypes::JSON );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\BadRequestException', $ex );
+            $this->assertEquals( 400, $ex->getCode() );
+            $this->assertContains( 'Batch Error: Not all records could be created.', $ex->getMessage() );
+//            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
+        }
     }
 
     public function testCreateRecordsWithRollback()
@@ -293,13 +318,20 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 	]
 }';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->buildPath( '_table/todo?rollback=true' ), $payload );
-
-        $this->assertContains(
-            '{"error":{"context":{"error":[1],"record":[{"id":11},"SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry \'test5\'',
-            $rs->getContent()
-        );
-        $this->assertResponseStatus( 500 );
+        $request = new TestServiceRequest( Verbs::POST, [ 'rollback' => true ] );
+        $request->setContent( $payload, ContentTypes::JSON );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\InternalServerErrorException', $ex );
+            $this->assertEquals( 500, $ex->getCode() );
+            $this->assertContains( 'All changes rolled back.', $ex->getMessage() );
+//            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
+        }
     }
 
     public function testCreateRecordBadRequest()
@@ -309,8 +341,19 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
                         "complete":true
                     }]}';
 
-        $this->callWithPayload( Verbs::POST, $this->buildPath( '_table/todo' ), $payload );
-        $this->assertResponseStatus( 500 );
+        $request = new TestServiceRequest( Verbs::POST );
+        $request->setContent( $payload, ContentTypes::JSON );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\InternalServerErrorException', $ex );
+            $this->assertEquals( 500, $ex->getCode() );
+            $this->assertContains( "Duplicate entry 'test1'", $ex->getMessage() );
+        }
     }
 
     public function testCreateRecordFailNotNullField()
@@ -320,10 +363,19 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
                         "complete":true
                     }]}';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->buildPath( '_table/todo' ), $payload );
-
-        $this->assertResponseStatus( 400 );
-        $this->assertContains( '{"error":{"context":null,"message":"Field \'name\' can not be NULL.","code":400}}', $rs->getContent() );
+        $request = new TestServiceRequest( Verbs::POST );
+        $request->setContent( $payload, ContentTypes::JSON );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\BadRequestException', $ex );
+            $this->assertEquals( 400, $ex->getCode() );
+            $this->assertContains( "Field 'name' can not be NULL.", $ex->getMessage() );
+        }
     }
 
     public function testCreateRecordFailMissingRequiredField()
@@ -332,62 +384,218 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
                         "complete":true
                     }]}';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->buildPath( '_table/todo' ), $payload );
-
-        $this->assertResponseStatus( 400 );
-        $this->assertContains( '{"error":{"context":null,"message":"Required field \'name\' can not be NULL.","code":400}}', $rs->getContent() );
+        $request = new TestServiceRequest( Verbs::POST );
+        $request->setContent( $payload, ContentTypes::JSON );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\BadRequestException', $ex );
+            $this->assertEquals( 400, $ex->getCode() );
+            $this->assertContains( "Required field 'name' can not be NULL.", $ex->getMessage() );
+        }
     }
 
-//    /************************************************
-//     * Testing PUT
-//     ************************************************/
+    /************************************************
+     * Testing PUT
+     ************************************************/
+
+    public function testPUTRecordById()
+    {
+        $this->testUpdateRecordById( Verbs::PUT );
+    }
+
+    public function testPUTRecordByIds()
+    {
+        $this->testUpdateRecordByIds( Verbs::PUT );
+    }
+
+    public function testPUTRecords()
+    {
+        $this->testUpdateRecords( Verbs::PUT );
+    }
+
+    /************************************************
+     * Testing PATCH
+     ************************************************/
+
+    public function testUpdateRecordById( $verb = Verbs::PATCH )
+    {
+        $payload = '{"name":"test1Update"}';
+        $request = new TestServiceRequest( $verb );
+        $request->setContent($payload, ContentTypes::JSON);
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/1' );
+//        $this->assertEquals( '{"id":1}', $rs->getContent() );
+
+        $request->setMethod( Verbs::GET );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/1' );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertTrue( false, $ex->getMessage() );
+        }
+    }
+
+    public function testUpdateRecordByIds( $verb = Verbs::PATCH )
+    {
+//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
+//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+//        $this->assertEquals( "unit-test-description,unit-test-description,unit-test-description", $dColumn );
+//        $this->assertEquals( "unit-test-label,unit-test-label,unit-test-label", $lColumn );
+        $payload = '{"complete":true}';
+        $request = new TestServiceRequest( $verb, [ 'ids' => '2,3' ] );
+        $request->setContent($payload, ContentTypes::JSON);
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+//        $this->assertEquals( '{"record":[{"id":2},{"id":3}]}', $rs->getContent() );
+
+        $request->setMethod( Verbs::GET );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertTrue( false, $ex->getMessage() );
+        }
+    }
+
+    public function testUpdateRecords( $verb = Verbs::PATCH )
+    {
+//        $this->assertContains( '{"record":[{"id":1},{"id":2},{"id":3}]}', $rs->getContent() );
+//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
+//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+//        $this->assertEquals( "unit-test-d1,unit-test-d2,unit-test-d3", $dColumn );
+//        $this->assertEquals( "unit-test-l1,unit-test-l2,unit-test-l3", $lColumn );
+        $payload = '{
+	"record": [
+		{
+		    "id": 1,
+			"name": "test1Update",
+			"complete": false
+		},
+		{
+		    "id": 2,
+			"name": "test2Update",
+			"complete": true
+		},
+		{
+		    "id": 3,
+			"name": "test3Update"
+		}
+	]
+}';
+        $request = new TestServiceRequest( $verb );
+        $request->setContent( $payload, ContentTypes::JSON );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        $data = $rs->getContent();
+        $this->assertArrayHasKey( 'record', $data );
+        $this->assertCount( 3, $data['record'] );
+    }
+
+    public function testUpdateRecordsWithFields( $verb = Verbs::PATCH )
+    {
+        $payload = '{"record":[{"id": 4, "name":"test4Update","complete":true}]}';
+
+        $request = new TestServiceRequest( $verb, [ 'fields' => 'name,complete' ] );
+        $request->setContent( $payload, ContentTypes::JSON );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+        $data = $rs->getContent();
+        $this->assertArrayHasKey( 'record', $data );
+        $this->assertCount( 1, $data['record'] );
+        $this->assertArrayHasKey( 'name', $data['record'][0] );
+        $this->assertArrayHasKey( 'complete', $data['record'][0] );
+//        $this->assertContains( '{"record":[{"label":"unit-test-l1"},{"label":"unit-test-l2"},{"label":"unit-test-l3"}]}', $rs->getContent() );
+    }
+
+    public function testUpdateRecordsWithContinue( $verb = Verbs::PATCH )
+    {
+        $payload = '{
+	"record": [
+		{
+		    "id": 8,
+			"name": "test8",
+			"complete": false
+		},
+		{
+		    "id": 5,
+			"name": "test5",
+			"complete": true
+		},
+		{
+		    "id": 9,
+			"name": "test9",
+			"complete": null
+		}
+	]
+}';
+
+        $request = new TestServiceRequest( $verb, [ 'continue' => true ] );
+        $request->setContent( $payload, ContentTypes::JSON );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\BadRequestException', $ex );
+            $this->assertEquals( 400, $ex->getCode() );
+            $this->assertContains( 'Batch Error: Not all records could be patched.', $ex->getMessage() );
+//            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
+        }
+//        $this->assertContains( '{"error":{"context":{"errors":[1],"record":[{"id":1},', $rs->getContent() );
+//        $this->assertContains( ',{"id":3}]}', $rs->getContent() );
+//        $this->assertResponseStatus( 400 );
 //
-//    public function testPUTRecordById()
-//    {
-//        $this->testPATCHRecordById( Verbs::PUT );
-//    }
+//        $result = $this->call( Verbs::GET, $this->buildPath( '_table/todo?ids=1,2,3') );
+//        $ra = json_decode( $result->getContent(), true );
+//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
+//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
 //
-//    public function testPUTRecordByIds()
-//    {
-//        $this->testPATCHRecordByIds( Verbs::PUT );
-//    }
-//
-//    public function testPUTRecordBulk()
-//    {
-//        $this->testPATCHRecordBulk( Verbs::PUT );
-//    }
-//
-//    /************************************************
-//     * Testing PATCH
-//     ************************************************/
-//
-//    public function testPATCHRecordBulkWithRollback( $verb = Verbs::PATCH )
-//    {
-//        DB::table( "services" )->insert(
-//            array(
-//                [ "name" => "db2", "label" => "Database 2", "description" => "Local Database 2", "is_active" => 1, "type" => "sql_db" ],
-//                [ "name" => "db3", "label" => "Database 3", "description" => "Local Database 3", "is_active" => 1, "type" => "sql_db" ]
-//            )
-//        );
-//
-//        $payload = '[{
-//                        "id":1,
-//                        "description":"unit-test-d1",
-//                        "label":"unit-test-l1"
-//                    },
-//                    {
-//                        "id":2,
-//                        "name":"db",
-//                        "description":"unit-test-d2",
-//                        "label":"unit-test-l2"
-//                    },
-//                    {
-//                        "id":3,
-//                        "description":"unit-test-d3",
-//                        "label":"unit-test-l3"
-//                    }]';
-//
-//        $rs = $this->callWithPayload( $verb, $this->buildPath( '_table/todo?rollback=true'), $payload );
+//        $this->assertEquals( "unit-test-d1,Local Database 2,unit-test-d3", $dColumn );
+//        $this->assertEquals( "unit-test-l1,Database 2,unit-test-l3", $lColumn );
+    }
+
+    public function testUpdateRecordsWithRollback( $verb = Verbs::PATCH )
+    {
+        $payload = '{
+	"record": [
+		{
+		    "id": 4,
+			"name": "testRollback",
+			"complete": false
+		},
+		{
+		    "id": 19,
+			"name": "test5",
+			"complete": true
+		},
+		{
+		    "id": 6,
+			"name": "testAfter"
+		}
+	]
+}';
+
+        $request = new TestServiceRequest( $verb, [ 'rollback' => true ] );
+        $request->setContent( $payload, ContentTypes::JSON );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertEquals( 404, $ex->getCode() );
+            $this->assertContains( 'All changes rolled back.', $ex->getMessage() );
+//            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
+        }
 //        $this->assertContains(
 //            '{"error":{"context":null,"message":"Failed to update resource: SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry \'db\' ',
 //            $rs->getContent()
@@ -401,154 +609,7 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 //
 //        $this->assertEquals( "Local Database,Local Database 2,Local Database 3", $dColumn );
 //        $this->assertEquals( "Database,Database 2,Database 3", $lColumn );
-//    }
-//
-//    public function testPATCHRecordById( $verb = Verbs::PATCH )
-//    {
-//        $payload = '{
-//                        "description":"unit-test-string"
-//                    }';
-//
-//        $rs = $this->callWithPayload( $verb, $this->buildPath( '_table/todo/1'), $payload );
-//        $this->assertContains( '{"id":1}', $rs->getContent() );
-//
-//        $result = $this->call( Verbs::GET, $this->buildPath( '_table/todo/1') );
-//        $resultArray = json_decode( $result->getContent(), true );
-//
-//        $this->assertEquals( "unit-test-string", $resultArray['description'] );
-//    }
-//
-//    public function testPATCHRecordByIds( $verb = Verbs::PATCH )
-//    {
-//        DB::table( "services" )->insert(
-//            array(
-//                [ "name" => "db2", "label" => "Database 2", "description" => "Local Database 2", "is_active" => 1, "type" => "sql_db" ],
-//                [ "name" => "db3", "label" => "Database 3", "description" => "Local Database 3", "is_active" => 1, "type" => "sql_db" ]
-//            )
-//        );
-//
-//        $payload = '[{
-//                        "description":"unit-test-description",
-//                        "label":"unit-test-label"
-//                    }]';
-//
-//        $rs = $this->callWithPayload( $verb, $this->buildPath( '_table/todo?ids=1,2,3'), $payload );
-//        $this->assertContains( '{"record":[{"id":1},{"id":2},{"id":3}]}', $rs->getContent() );
-//
-//        $result = $this->call( Verbs::GET, $this->buildPath( '_table/todo?ids=1,2,3') );
-//        $ra = json_decode( $result->getContent(), true );
-//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
-//
-//        $this->assertEquals( "unit-test-description,unit-test-description,unit-test-description", $dColumn );
-//        $this->assertEquals( "unit-test-label,unit-test-label,unit-test-label", $lColumn );
-//    }
-//
-//    public function testPATCHRecordBulk( $verb = Verbs::PATCH )
-//    {
-//        DB::table( "services" )->insert(
-//            array(
-//                [ "name" => "db2", "label" => "Database 2", "description" => "Local Database 2", "is_active" => 1, "type" => "sql_db" ],
-//                [ "name" => "db3", "label" => "Database 3", "description" => "Local Database 3", "is_active" => 1, "type" => "sql_db" ]
-//            )
-//        );
-//
-//        $payload = '[{
-//                        "id":1,
-//                        "description":"unit-test-d1",
-//                        "label":"unit-test-l1"
-//                    },
-//                    {
-//                        "id":2,
-//                        "description":"unit-test-d2",
-//                        "label":"unit-test-l2"
-//                    },
-//                    {
-//                        "id":3,
-//                        "description":"unit-test-d3",
-//                        "label":"unit-test-l3"
-//                    }]';
-//
-//        $rs = $this->callWithPayload( $verb, $this->buildPath( '_table/todo'), $payload );
-//        $this->assertContains( '{"record":[{"id":1},{"id":2},{"id":3}]}', $rs->getContent() );
-//
-//        $result = $this->call( Verbs::GET, $this->buildPath( '_table/todo?ids=1,2,3') );
-//        $ra = json_decode( $result->getContent(), true );
-//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
-//
-//        $this->assertEquals( "unit-test-d1,unit-test-d2,unit-test-d3", $dColumn );
-//        $this->assertEquals( "unit-test-l1,unit-test-l2,unit-test-l3", $lColumn );
-//    }
-//
-//    public function testPATCHRecordBulkWithFields( $verb = Verbs::PATCH )
-//    {
-//        DB::table( "services" )->insert(
-//            array(
-//                [ "name" => "db2", "label" => "Database 2", "description" => "Local Database 2", "is_active" => 1, "type" => "sql_db" ],
-//                [ "name" => "db3", "label" => "Database 3", "description" => "Local Database 3", "is_active" => 1, "type" => "sql_db" ]
-//            )
-//        );
-//
-//        $payload = '[{
-//                        "id":1,
-//                        "description":"unit-test-d1",
-//                        "label":"unit-test-l1"
-//                    },
-//                    {
-//                        "id":2,
-//                        "description":"unit-test-d2",
-//                        "label":"unit-test-l2"
-//                    },
-//                    {
-//                        "id":3,
-//                        "description":"unit-test-d3",
-//                        "label":"unit-test-l3"
-//                    }]';
-//
-//        $rs = $this->callWithPayload( $verb, $this->buildPath( '_table/todo?fields=label'), $payload );
-//        $this->assertContains( '{"record":[{"label":"unit-test-l1"},{"label":"unit-test-l2"},{"label":"unit-test-l3"}]}', $rs->getContent() );
-//    }
-//
-//    public function testPATCHRecordBulkWithContinue( $verb = Verbs::PATCH )
-//    {
-//        DB::table( "services" )->insert(
-//            array(
-//                [ "name" => "db2", "label" => "Database 2", "description" => "Local Database 2", "is_active" => 1, "type" => "sql_db" ],
-//                [ "name" => "db3", "label" => "Database 3", "description" => "Local Database 3", "is_active" => 1, "type" => "sql_db" ]
-//            )
-//        );
-//
-//        $payload = '[{
-//                        "id":1,
-//                        "description":"unit-test-d1",
-//                        "label":"unit-test-l1"
-//                    },
-//                    {
-//                        "id":2,
-//                        "name":"db",
-//                        "description":"unit-test-d2",
-//                        "label":"unit-test-l2"
-//                    },
-//                    {
-//                        "id":3,
-//                        "description":"unit-test-d3",
-//                        "label":"unit-test-l3"
-//                    }]';
-//
-//        $rs = $this->callWithPayload( $verb, $this->buildPath( '_table/todo?continue=1'), $payload );
-//        $this->assertContains( '{"error":{"context":{"errors":[1],"record":[{"id":1},', $rs->getContent() );
-//        $this->assertContains( ',{"id":3}]}', $rs->getContent() );
-//        $this->assertResponseStatus( 400 );
-//
-//        $result = $this->call( Verbs::GET, $this->buildPath( '_table/todo?ids=1,2,3') );
-//        $ra = json_decode( $result->getContent(), true );
-//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
-//
-//        $this->assertEquals( "unit-test-d1,Local Database 2,unit-test-d3", $dColumn );
-//        $this->assertEquals( "unit-test-l1,Database 2,unit-test-l3", $lColumn );
-//    }
+    }
 
     /************************************************
      * Testing DELETE
@@ -556,65 +617,124 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 
     public function testDeleteRecordById()
     {
-        $rs = $this->call( Verbs::DELETE, $this->buildPath( '_table/todo/1' ) );
-        $this->assertResponseOk();
+        $request = new TestServiceRequest( Verbs::DELETE );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/1' );
 //        $this->assertEquals( '{"id":1}', $rs->getContent() );
 
-        $this->call( Verbs::GET, $this->buildPath( '_table/todo/1' ) );
-        $this->assertResponseStatus( 404 );
+        $request->setMethod( Verbs::GET );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/1' );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+        }
     }
 
     public function testDeleteRecordByIds()
     {
-        $rs = $this->call( Verbs::DELETE, $this->buildPath( '_table/todo?ids=2,3' ) );
-        $this->assertResponseOk();
+        $request = new TestServiceRequest( Verbs::DELETE, [ 'ids' => '2,3' ] );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
 //        $this->assertEquals( '{"record":[{"id":2},{"id":3}]}', $rs->getContent() );
 
-        $this->call( Verbs::GET, $this->buildPath( '_table/todo/2' ) );
-        $this->assertResponseStatus( 404 );
+        $request->setMethod( Verbs::GET );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/2' );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+        }
 
-        $rs = $this->call( Verbs::GET, $this->buildPath( '_table/todo/3' ) );
-        $this->assertResponseStatus( 404 );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/3' );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+        }
     }
 
-//    public function testDELETERecordBulk()
-//    {
-//        $this->testCreateRecords();
-//
-//        $payload = '[{"id":2},{"id":3}]';
-//
-//        $rs = $this->callWithPayload( Verbs::DELETE, $this->buildPath( '_table/todo'), $payload );
+    public function testDeleteRecords()
+    {
+        $payload = '[{"id":4},{"id":5}]';
+        $request = new TestServiceRequest( Verbs::DELETE );
+        $request->setContent( $payload, ContentTypes::JSON );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
 //        $this->assertEquals( '{"record":[{"id":2},{"id":3}]}', $rs->getContent() );
-//
-//        $rs = $this->call( Verbs::GET, $this->buildPath( '_table/todo/1') );
-//        $data = json_decode( $rs->getContent(), true );
-//        $this->assertEquals( "Database", $data['label'] );
-//
-//        $this->call( Verbs::GET, $this->buildPath( '_table/todo/3') );
-//        $this->assertResponseStatus( 404 );
-//    }
-//
-//    public function testDELETERecordBulkWithFields()
-//    {
-//        DB::table( "services" )->insert(
-//            array(
-//                [ "name" => "db2", "label" => "Database 2", "description" => "Local Database 2", "is_active" => 1, "type" => "sql_db" ],
-//                [ "name" => "db3", "label" => "Database 3", "description" => "Local Database 3", "is_active" => 1, "type" => "sql_db" ]
-//            )
-//        );
-//
-//        $payload = '[{"id":2},{"id":3}]';
-//
-//        $rs = $this->callWithPayload( Verbs::DELETE, $this->buildPath( '_table/todo?fields=name,type'), $payload );
-//        $this->assertEquals( '{"record":[{"name":"db2","type":"sql_db"},{"name":"db3","type":"sql_db"}]}', $rs->getContent() );
-//    }
-//
+
+        $request->setMethod( Verbs::GET );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/4' );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+        }
+
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/5' );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+        }
+    }
+
+    public function testDeleteRecordsWithFields()
+    {
+        $payload = '[{"id":6},{"id":7}]';
+        $request = new TestServiceRequest( Verbs::DELETE, [ 'fields' => 'name' ] );
+        $request->setContent( $payload, ContentTypes::JSON );
+        $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
+//        $this->assertEquals( '{"record":[{"id":2},{"id":3}]}', $rs->getContent() );
+
+        $request->setMethod( Verbs::GET );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/6' );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+        }
+
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/7' );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+        }
+    }
+
     public function testDropTable()
     {
-        $rs = $this->call( Verbs::DELETE, $this->buildPath( '_schema/todo' ) );
-        $this->assertResponseOk();
+        $request = new TestServiceRequest( Verbs::DELETE );
+        $rs = $this->service->handleRequest( $request, Schema::RESOURCE_NAME . '/' . static::TABLE_NAME );
 
-        $this->call( Verbs::GET, $this->buildPath( '_schema/todo' ) );
-        $this->assertResponseStatus( 404 );
+        $request->setMethod( Verbs::GET );
+        try
+        {
+            $rs = $this->service->handleRequest( $request, Schema::RESOURCE_NAME . '/' . static::TABLE_NAME );
+            $this->assertTrue( false );
+        }
+        catch ( \Exception $ex )
+        {
+            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+        }
     }
 }
