@@ -20,7 +20,7 @@
 
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Rave\Enums\ContentTypes;
-use DreamFactory\Rave\SqlDb\Services\SqlDbService;
+use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\SqlDb\Resources\Schema;
 use DreamFactory\Rave\SqlDb\Resources\Table;
 use DreamFactory\Rave\SqlDb\Resources\StoredProcedure;
@@ -51,7 +51,7 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
     {
         parent::setup();
 
-        $this->service = new SqlDbService(
+        $this->service = new SqlDb(
             [
                 'name'        => static::SERVICE_NAME,
                 'label'       => 'SQL Database',

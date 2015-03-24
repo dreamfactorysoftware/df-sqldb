@@ -33,7 +33,7 @@ use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
 use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
 use DreamFactory\Rave\SqlDb\Driver\CDbTransaction;
-use DreamFactory\Rave\SqlDb\Services\SqlDbService;
+use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Enums\SqlDbDriverTypes;
 use DreamFactory\Rave\Resources\BaseDbTableResource;
 use DreamFactory\Rave\Utility\DbUtilities;

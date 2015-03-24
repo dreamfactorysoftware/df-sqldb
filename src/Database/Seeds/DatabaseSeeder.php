@@ -19,7 +19,7 @@ class DatabaseSeeder extends Seeder
             ServiceType::create(
                 [
                     'name'           => 'sql_db',
-                    'class_name'     => 'DreamFactory\\Rave\\SqlDb\\Services\\SqlDbService',
+                    'class_name'     => 'DreamFactory\\Rave\\SqlDb\\Services\\SqlDb',
                     'config_handler' => 'DreamFactory\\Rave\\SqlDb\\Models\\SqlDbConfig',
                     'label'          => 'SQL DB',
                     'description'    => 'Database service supporting SQL connections.',

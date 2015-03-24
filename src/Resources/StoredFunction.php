@@ -25,7 +25,7 @@ use DreamFactory\Rave\Utility\SqlDbUtilities;
 use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\RestException;
-use DreamFactory\Rave\SqlDb\Services\SqlDbService;
+use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Resources\BaseRestResource;
 
 class StoredFunction extends BaseRestResource

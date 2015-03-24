@@ -37,11 +37,11 @@ use DreamFactory\Rave\Utility\ResponseFactory;
 use DreamFactory\Rave\Utility\SqlDbUtilities;
 
 /**
- * Class SqlDbService
+ * Class SqlDb
  *
  * @package DreamFactory\Rave\SqlDb\Services
  */
-class SqlDbService extends BaseDbService
+class SqlDb extends BaseDbService
 {
     //*************************************************************************
     //	Constants
