@@ -29,7 +29,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
         parent::stage();
 
         Artisan::call( 'migrate', [ '--path' => 'vendor/dreamfactory/rave-sqldb/database/migrations/']);
-        Artisan::call( 'db:seed', [ '--class' => 'DreamFactory\\Rave\\SqlDb\\Database\\Seeds\\SqlDbSeeder' ] );
+        Artisan::call( 'db:seed', [ '--class' => 'DreamFactory\\Rave\\SqlDb\\Database\\Seeds\\DatabaseSeeder' ] );
     }
 
     public function tearDown()

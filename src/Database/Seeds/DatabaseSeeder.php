@@ -4,7 +4,7 @@ namespace DreamFactory\Rave\SqlDb\Database\Seeds;
 use Illuminate\Database\Seeder;
 use DreamFactory\Rave\Models\ServiceType;
 
-class SqlDbSeeder extends Seeder
+class DatabaseSeeder extends Seeder
 {
     /**
      * Run the database seeds.
