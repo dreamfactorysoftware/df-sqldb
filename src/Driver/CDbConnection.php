@@ -336,15 +336,15 @@ class CDbConnection
             $driver = strtolower( substr( $this->connectionString, 0, $pos ) );
             if ( $driver === 'mssql' || $driver === 'dblib' )
             {
-                $pdoClass = 'CMssqlPdoAdapter';
+                $pdoClass = '\\DreamFactory\\Rave\\SqlDb\\Driver\\Schema\\Mssql\\CMssqlPdoAdapter';
             }
             elseif ( $driver === 'sqlsrv' )
             {
-                $pdoClass = 'CMssqlSqlsrvPdoAdapter';
+                $pdoClass = '\\DreamFactory\\Rave\\SqlDb\\Driver\\Schema\\Mssql\\CMssqlSqlsrvPdoAdapter';
             }
             elseif ( $driver === 'oci' )
             {
-                $pdoClass = 'COciPdoAdapter';
+                $pdoClass = '\\DreamFactory\\Rave\\SqlDb\\Driver\\Schema\\Oci\\COciPdoAdapter';
             }
         }
 

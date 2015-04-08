@@ -18,6 +18,16 @@
  * @author  Wei Zhuo <weizhuo[at]gmail[dot]com>
  * @package system.db.schema.mssql
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Mssql;
+
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCommandBuilder;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCriteria;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
+use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
+
 class CMssqlCommandBuilder extends CDbCommandBuilder
 {
     /**

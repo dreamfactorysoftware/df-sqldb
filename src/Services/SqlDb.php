@@ -21,7 +21,6 @@
 namespace DreamFactory\Rave\SqlDb\Services;
 
 use DreamFactory\Library\Utility\ArrayUtils;
-use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\NotFoundException;
 use DreamFactory\Rave\SqlDb\Resources\Schema;
@@ -34,7 +33,6 @@ use DreamFactory\Rave\Enums\SqlDbDriverTypes;
 use DreamFactory\Rave\Services\BaseDbService;
 use DreamFactory\Rave\Resources\BaseRestResource;
 use DreamFactory\Rave\Utility\ResponseFactory;
-use DreamFactory\Rave\Utility\SqlDbUtilities;
 
 /**
  * Class SqlDb
@@ -115,22 +113,14 @@ class SqlDb extends BaseDbService
 
         $this->dbConn = new CDbConnection( $dsn, $user, $password );
 
-        switch ( $this->driverType = SqlDbUtilities::getDbDriverType( $this->dbConn ) )
+        switch ( $this->dbConn->getDriverName())
         {
-            case SqlDbDriverTypes::DRV_MYSQL:
+            case SqlDbDriverTypes::MYSQL:
+            case SqlDbDriverTypes::MYSQLI:
                 $this->dbConn->setAttribute( \PDO::ATTR_EMULATE_PREPARES, true );
-//				$this->_dbConn->setAttribute( 'charset', 'utf8' );
                 break;
 
-            case SqlDbDriverTypes::DRV_SQLSRV:
-//				$this->_dbConn->setAttribute( constant( '\\PDO::SQLSRV_ATTR_DIRECT_QUERY' ), true );
-                //	These need to be on the dsn
-//				$this->_dbConn->setAttribute( 'MultipleActiveResultSets', false );
-//				$this->_dbConn->setAttribute( 'ReturnDatesAsStrings', true );
-//				$this->_dbConn->setAttribute( 'CharacterSet', 'UTF-8' );
-                break;
-
-            case SqlDbDriverTypes::DRV_DBLIB:
+            case SqlDbDriverTypes::DBLIB:
                 $this->dbConn->setAttribute( \PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION );
                 break;
         }
@@ -164,14 +154,6 @@ class SqlDb extends BaseDbService
                 error_log( "Failed to disconnect from database.\n{$_ex->getMessage()}" );
             }
         }
-    }
-
-    /**
-     * @return int
-     */
-    public function getDriverType()
-    {
-        return $this->driverType;
     }
 
     /**
@@ -313,7 +295,7 @@ class SqlDb extends BaseDbService
             $_resources[] = $_name . '*';
         }
 
-        $_result = SqlDbUtilities::describeDatabase( $this->dbConn, true, $refresh );
+        $_result = $this->dbConn->getSchema()->getTableNames( null, true, $refresh );
         foreach ( $_result as $_name )
         {
             $_name = Schema::RESOURCE_NAME . '/' . $_name;
@@ -350,7 +332,7 @@ class SqlDb extends BaseDbService
             $_resources[] = $_name . '*';
         }
 
-        $_result = SqlDbUtilities::listStoredProcedures( $this->dbConn );
+        $_result = $this->dbConn->getSchema()->getProcedureNames('', $refresh );
         if ( !empty( $_result ) )
         {
             foreach ( $_result as $_name )
@@ -372,7 +354,7 @@ class SqlDb extends BaseDbService
             $_resources[] = $_name . '*';
         }
 
-        $_result = SqlDbUtilities::listStoredFunctions( $this->dbConn );
+        $_result = $this->dbConn->getSchema()->getFunctionNames('', $refresh );
         if ( !empty( $_result ) )
         {
             foreach ( $_result as $_name )

@@ -7,6 +7,9 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Pgsql;
+
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
 
 /**
  * CPgsqlColumnSchema class describes the column meta data of a PostgreSQL table.
@@ -22,15 +25,12 @@ class CPgsqlColumnSchema extends CDbColumnSchema
      *
      * @param string $dbType DB type
      */
-    protected function extractType( $dbType )
+    public function extractType( $dbType )
     {
+        parent::extractType($dbType);
         if ( strpos( $dbType, '[' ) !== false || strpos( $dbType, 'char' ) !== false || strpos( $dbType, 'text' ) !== false )
         {
             $this->type = 'string';
-        }
-        elseif ( strpos( $dbType, 'bool' ) !== false )
-        {
-            $this->type = 'boolean';
         }
         elseif ( preg_match( '/(real|float|double)/', $dbType ) )
         {
@@ -40,10 +40,6 @@ class CPgsqlColumnSchema extends CDbColumnSchema
         {
             $this->type = 'integer';
         }
-        else
-        {
-            $this->type = 'string';
-        }
     }
 
     /**
@@ -51,7 +47,7 @@ class CPgsqlColumnSchema extends CDbColumnSchema
      *
      * @param string $dbType the column's DB type
      */
-    protected function extractLimit( $dbType )
+    public function extractLimit( $dbType )
     {
         if ( strpos( $dbType, '(' ) )
         {
@@ -77,7 +73,7 @@ class CPgsqlColumnSchema extends CDbColumnSchema
      *
      * @param mixed $defaultValue the default value obtained from metadata
      */
-    protected function extractDefault( $defaultValue )
+    public function extractDefault( $defaultValue )
     {
         if ( $defaultValue === 'true' )
         {

@@ -24,23 +24,29 @@ use Config;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Inflector;
-use DreamFactory\Library\Utility\Scalar;
 use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\NotFoundException;
 use DreamFactory\Rave\Exceptions\NotImplementedException;
 use DreamFactory\Rave\Exceptions\RestException;
-use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
-use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
-use DreamFactory\Rave\SqlDb\Driver\CDbTransaction;
-use DreamFactory\Rave\SqlDb\Services\SqlDb;
-use DreamFactory\Rave\Enums\SqlDbDriverTypes;
 use DreamFactory\Rave\Resources\BaseDbTableResource;
+use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
+use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
+use DreamFactory\Rave\SqlDb\Driver\CDbConnection;
+use DreamFactory\Rave\SqlDb\Driver\CDbTransaction;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\DbUtilities;
-use DreamFactory\Rave\Utility\SqlDbUtilities;
 
 class Table extends BaseDbTableResource
 {
+    //*************************************************************************
+    //	Traits
+    //*************************************************************************
+
+    use SqlDbResource;
+
     //*************************************************************************
     //	Members
     //*************************************************************************
@@ -49,22 +55,10 @@ class Table extends BaseDbTableResource
      * @var null | CDbTransaction
      */
     protected $_transaction = null;
-    /**
-     * @var null|SqlDbService
-     */
-    protected $service = null;
 
     //*************************************************************************
     //	Methods
     //*************************************************************************
-
-    /**
-     * @return null|SqlDbService
-     */
-    public function getService()
-    {
-        return $this->service;
-    }
 
     /**
      * {@InheritDoc}
@@ -110,10 +104,15 @@ class Table extends BaseDbTableResource
      */
     public function correctTableName( &$name )
     {
-        return $name = SqlDbUtilities::correctTableName( $this->service->getConnection(), $name );
+        if ( false !== ( $_table = $this->doesTableExist( $name, true ) ) )
+        {
+            $name = $_table;
+        }
+        else
+        {
+            throw new NotFoundException( 'Table "' . $name . '" does not exist in the database.' );
+        }
     }
-
-    // REST service implementation
 
     /**
      * {@inheritdoc}
@@ -121,14 +120,14 @@ class Table extends BaseDbTableResource
     public function listResources( $include_properties = null )
     {
         $refresh = $this->request->queryBool( 'refresh' );
-        $_names = SqlDbUtilities::describeDatabase( $this->service->getConnection(), true, $refresh );
+        $_names = $this->dbConn->getSchema()->getTableNames( null, true, $refresh );
 
-        if (empty($include_properties))
+        if ( empty( $include_properties ) )
         {
-            return array('resource' => $_names);
+            return array( 'resource' => $_names );
         }
 
-        $_extras = SqlDbUtilities::getSchemaExtrasForTables( $this->service->getServiceId(), $_names, false, 'table,label,plural' );
+        $_extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $_names, false, 'table,label,plural' );
 
         $_tables = array();
         foreach ( $_names as $name )
@@ -147,8 +146,7 @@ class Table extends BaseDbTableResource
 
             if ( empty( $label ) )
             {
-
-                $label = Inflector::camelize( $name, ['_','.'], true );
+                $label = Inflector::camelize( $name, [ '_', '.' ], true );
             }
 
             if ( empty( $plural ) )
@@ -159,18 +157,15 @@ class Table extends BaseDbTableResource
             $_tables[] = array( 'name' => $name, 'label' => $label, 'plural' => $plural );
         }
 
-        return $this->makeResourceList($_tables, $include_properties, true);
+        return $this->makeResourceList( $_tables, $include_properties, true );
     }
-
-    //-------- Table Records Operations ---------------------
-    // records is an array of field arrays
 
     /**
      * {@inheritdoc}
      */
     public function updateRecordsByFilter( $table, $record, $filter = null, $params = array(), $extras = array() )
     {
-        $record = SqlDbUtilities::validateAsArray( $record, null, false, 'There are no fields in the record.' );
+        $record = DbUtilities::validateAsArray( $record, null, false, 'There are no fields in the record.' );
 
         $_idFields = ArrayUtils::get( $extras, 'id_field' );
         $_idTypes = ArrayUtils::get( $extras, 'id_type' );
@@ -200,7 +195,7 @@ class Table extends BaseDbTableResource
             if ( !empty( $_parsed ) )
             {
                 /** @var CDbCommand $_command */
-                $_command = $this->service->getConnection()->createCommand();
+                $_command = $this->dbConn->createCommand();
                 $_command->update( $table, $_parsed, $_where, $_params );
             }
 
@@ -251,7 +246,7 @@ class Table extends BaseDbTableResource
         try
         {
             /** @var CDbCommand $_command */
-            $_command = $this->service->getConnection()->createCommand();
+            $_command = $this->dbConn->createCommand();
 
             // build filter string if necessary, add server-side filters if necessary
             $_ssFilters = ArrayUtils::get( $extras, 'ss_filters' );
@@ -311,7 +306,7 @@ class Table extends BaseDbTableResource
             $_results = $this->_recordQuery( $table, $_fields, $_where, $_params, $_bindings, $extras );
 
             /** @var CDbCommand $_command */
-            $_command = $this->service->getConnection()->createCommand();
+            $_command = $this->dbConn->createCommand();
             $_command->delete( $table, $_where, $_params );
 
             return $_results;
@@ -371,7 +366,7 @@ class Table extends BaseDbTableResource
 
         // use query builder
         /** @var CDbCommand $_command */
-        $_command = $this->service->getConnection()->createCommand();
+        $_command = $this->dbConn->createCommand();
         $_command->select( $select );
 
         $_from = $table;
@@ -432,7 +427,7 @@ class Table extends BaseDbTableResource
                     }
                     else
                     {
-                        $_value = SqlDbUtilities::formatValue( $_value, $_type );
+                        $_value = DbUtilities::formatValue( $_value, $_type );
                     }
                 }
                 $_temp[$_name] = $_value;
@@ -447,7 +442,7 @@ class Table extends BaseDbTableResource
         if ( $_includeCount || $_needLimit )
         {
             $_command->reset();
-            $_command->select( '(COUNT(*)) as ' . $this->service->getConnection()->quoteColumnName( 'count' ) );
+            $_command->select( '(COUNT(*)) as ' . $this->dbConn->quoteColumnName( 'count' ) );
             $_command->from( $_from );
             if ( !empty( $where ) )
             {
@@ -474,7 +469,7 @@ class Table extends BaseDbTableResource
         {
             try
             {
-                $_meta['schema'] = SqlDbUtilities::describeTable( $this->service->getServiceId(), $this->service->getConnection(), $table );
+                $_meta['schema'] = $this->describeTable( $table );
             }
             catch ( RestException $ex )
             {
@@ -512,7 +507,7 @@ class Table extends BaseDbTableResource
      */
     protected function getFieldsInfo( $name )
     {
-        $_fields = SqlDbUtilities::describeTableFields( $this->service->getServiceId(), $this->service->getConnection(), $name );
+        $_fields = $this->describeTableFields( $name );
 
         return $_fields;
     }
@@ -525,7 +520,7 @@ class Table extends BaseDbTableResource
      */
     protected function describeTableRelated( $name )
     {
-        $relations = SqlDbUtilities::describeTableRelated( $this->service->getConnection(), $name );
+        $relations = $this->describeTableRelatedInternal( $name );
         $relatives = array();
         foreach ( $relations as $relation )
         {
@@ -556,7 +551,7 @@ class Table extends BaseDbTableResource
     {
         // interpret any parameter values as lookups
         $params = static::interpretRecordValues( $params );
-        $_fields = SqlDbUtilities::listAllFieldsFromDescribe( $avail_fields );
+        $_fields = DbUtilities::listAllFieldsFromDescribe( $avail_fields );
 
         if ( !is_array( $filter ) )
         {
@@ -669,7 +664,7 @@ class Table extends BaseDbTableResource
                 $_field = trim( $_ops[0] );
                 if ( false !== array_search( $_field, $field_list ) )
                 {
-                    $_ops[0] = $this->service->getConnection()->quoteColumnName( $_field ) . ' ';
+                    $_ops[0] = $this->dbConn->quoteColumnName( $_field ) . ' ';
                 }
 
                 $filter = implode( $_sqlOp, $_ops );
@@ -702,7 +697,6 @@ class Table extends BaseDbTableResource
 //            $name = strtolower( ArrayUtils::get( $field_info, 'name', '' ) );
             $_name = ArrayUtils::get( $_fieldInfo, 'name', '' );
             $_type = ArrayUtils::get( $_fieldInfo, 'type' );
-            $_dbType = ArrayUtils::get( $_fieldInfo, 'db_type' );
 
             // add or override for specific fields
             switch ( $_type )
@@ -710,39 +704,11 @@ class Table extends BaseDbTableResource
                 case 'timestamp_on_create':
                     if ( !$for_update )
                     {
-                        switch ( $this->service->getDriverType() )
-                        {
-                            case SqlDbDriverTypes::DRV_DBLIB:
-                            case SqlDbDriverTypes::DRV_SQLSRV:
-                                $_parsed[$_name] = new CDbExpression( '(SYSDATETIMEOFFSET())' );
-                                break;
-                            case SqlDbDriverTypes::DRV_OCSQL:
-                            case SqlDbDriverTypes::DRV_IBMDB2:
-                                $_parsed[$_name] = new CDbExpression( '(CURRENT_TIMESTAMP)' );
-                                break;
-                            default:
-                                $_parsed[$_name] = new CDbExpression( '(NOW())' );
-                                break;
-                        }
+                        $_parse[$_name] = $this->dbConn->getSchema()->getTimestampForSet();
                     }
                     break;
                 case 'timestamp_on_update':
-                    switch ( $this->service->getDriverType() )
-                    {
-                        case SqlDbDriverTypes::DRV_DBLIB:
-                        case SqlDbDriverTypes::DRV_SQLSRV:
-                            $_parsed[$_name] = new CDbExpression( '(SYSDATETIMEOFFSET())' );
-                            break;
-                        case SqlDbDriverTypes::DRV_OCSQL:
-                            $_parsed[$_name] = new CDbExpression( '(CURRENT_TIMESTAMP)' );
-                            break;
-                        case SqlDbDriverTypes::DRV_IBMDB2:
-                            $_parsed[$_name] = new CDbExpression( '(GENERATED ALWAYS FOR EACH ROW ON UPDATE AS ROW CHANGE TIMESTAMP)' );
-                            break;
-                        default:
-                            $_parsed[$_name] = new CDbExpression( '(NOW())' );
-                            break;
-                    }
+                    $_parse[$_name] = $this->dbConn->getSchema()->getTimestampForSet();
                     break;
                 case 'user_id_on_create':
                     if ( !$for_update )
@@ -813,40 +779,9 @@ class Table extends BaseDbTableResource
 
                         if ( !is_null( $_fieldVal ) && !( $_fieldVal instanceof CDbExpression ) )
                         {
-                            // handle special cases
-                            switch ( $this->service->getDriverType() )
-                            {
-                                case SqlDbDriverTypes::DRV_DBLIB:
-                                case SqlDbDriverTypes::DRV_SQLSRV:
-                                    switch ( $_dbType )
-                                    {
-                                        case 'bit':
-                                            $_fieldVal = ( Scalar::boolval( $_fieldVal ) ? 1 : 0 );
-                                            break;
-                                    }
-                                    break;
-                                case SqlDbDriverTypes::DRV_MYSQL:
-                                    switch ( $_dbType )
-                                    {
-                                        case 'tinyint(1)':
-                                            $_fieldVal = ( Scalar::boolval( $_fieldVal ) ? 1 : 0 );
-                                            break;
-                                    }
-                                    break;
-                                case SqlDbDriverTypes::DRV_IBMDB2:
-                                    switch ( $_dbType )
-                                    {
-                                        case 'SMALLINT':
-                                            if ( is_bool( $_fieldVal ) )
-                                            {
-                                                $_fieldVal = ( Scalar::boolval( $_fieldVal ) ? 1 : 0 );
-                                            }
-                                            break;
-                                    }
-                                    break;
-                            }
+                            $_fieldVal = $this->dbConn->getSchema()->parseValueForSet($_fieldVal, $_fieldInfo);
 
-                            switch ( $_cnvType = SqlDbUtilities::determinePhpConversionType( $_type ) )
+                            switch ( $_cnvType = DbUtilities::determinePhpConversionType( $_type ) )
                             {
                                 case 'int':
                                     if ( !is_int( $_fieldVal ) )
@@ -869,36 +804,22 @@ class Table extends BaseDbTableResource
                                 case 'time':
                                     $_cfgFormat = Config::get( 'dsp.db_time_format' );
                                     $_outFormat = 'H:i:s.u';
-//                                    switch ( $this->service->getDriverType() )
-//                                    {
-//                                        case SqlDbDriverTypes::DRV_MYSQL:
-//                                            break;
-//                                        case SqlDbDriverTypes::DRV_PGSQL:
-//                                            break;
-//                                        case SqlDbDriverTypes::DRV_DBLIB:
-//                                        case SqlDbDriverTypes::DRV_SQLSRV:
-//                                            break;
-//                                        case SqlDbDriverTypes::DRV_OCSQL:
-//                                            break;
-//                                        case SqlDbDriverTypes::DRV_IBMDB2:
-//                                            break;
-//                                    }
-                                    $_fieldVal = SqlDbUtilities::formatDateTime( $_outFormat, $_fieldVal, $_cfgFormat );
+                                    $_fieldVal = DbUtilities::formatDateTime( $_outFormat, $_fieldVal, $_cfgFormat );
                                     break;
                                 case 'date':
                                     $_cfgFormat = Config::get( 'dsp.db_date_format' );
                                     $_outFormat = 'Y-m-d';
-                                    $_fieldVal = SqlDbUtilities::formatDateTime( $_outFormat, $_fieldVal, $_cfgFormat );
+                                    $_fieldVal = DbUtilities::formatDateTime( $_outFormat, $_fieldVal, $_cfgFormat );
                                     break;
                                 case 'datetime':
                                     $_cfgFormat = Config::get( 'dsp.db_datetime_format' );
                                     $_outFormat = 'Y-m-d H:i:s';
-                                    $_fieldVal = SqlDbUtilities::formatDateTime( $_outFormat, $_fieldVal, $_cfgFormat );
+                                    $_fieldVal = DbUtilities::formatDateTime( $_outFormat, $_fieldVal, $_cfgFormat );
                                     break;
                                 case 'timestamp':
                                     $_cfgFormat = Config::get( 'dsp.db_timestamp_format' );
                                     $_outFormat = 'Y-m-d H:i:s';
-                                    $_fieldVal = SqlDbUtilities::formatDateTime( $_outFormat, $_fieldVal, $_cfgFormat );
+                                    $_fieldVal = DbUtilities::formatDateTime( $_outFormat, $_fieldVal, $_cfgFormat );
                                     break;
 
                                 default:
@@ -1072,7 +993,7 @@ class Table extends BaseDbTableResource
         $values = '';
         foreach ( $record as $value )
         {
-            $fieldVal = ( is_null( $value ) ) ? "NULL" : $this->service->getConnection()->quoteValue( $value );
+            $fieldVal = ( is_null( $value ) ) ? "NULL" : $this->dbConn->quoteValue( $value );
             $values .= ( !empty( $values ) ) ? ',' : '';
             $values .= $fieldVal;
         }
@@ -1090,7 +1011,7 @@ class Table extends BaseDbTableResource
         $out = '';
         foreach ( $record as $key => $value )
         {
-            $fieldVal = ( is_null( $value ) ) ? "NULL" : $this->service->getConnection()->quoteValue( $value );
+            $fieldVal = ( is_null( $value ) ) ? "NULL" : $this->dbConn->quoteValue( $value );
             $out .= ( !empty( $out ) ) ? ',' : '';
             $out .= "$key = $fieldVal";
         }
@@ -1111,15 +1032,11 @@ class Table extends BaseDbTableResource
     {
         if ( empty( $fields ) || ( '*' === $fields ) )
         {
-            $fields = SqlDbUtilities::listAllFieldsFromDescribe( $avail_fields );
+            $fields = DbUtilities::listAllFieldsFromDescribe( $avail_fields );
         }
 
         $field_arr = ( !is_array( $fields ) ) ? array_map( 'trim', explode( ',', $fields ) ) : $fields;
         $as_arr = ( !is_array( $fields_as ) ) ? array_map( 'trim', explode( ',', $fields_as ) ) : $fields_as;
-        if ( !$as_quoted_string )
-        {
-            // yii will not quote anything if any of the fields are expressions
-        }
         $outArray = array();
         $bindArray = array();
         for ( $i = 0, $size = sizeof( $field_arr ); $i < $size; $i++ )
@@ -1128,72 +1045,14 @@ class Table extends BaseDbTableResource
             $as = ( isset( $as_arr[$i] ) ? $as_arr[$i] : '' );
             $context = ( empty( $prefix ) ? $field : $prefix . '.' . $field );
             $out_as = ( empty( $as ) ? $field : $as );
-            if ( $as_quoted_string )
-            {
-                $context = $this->service->getConnection()->quoteColumnName( $context );
-                $out_as = $this->service->getConnection()->quoteColumnName( $out_as );
-            }
             // find the type
-            $field_info = SqlDbUtilities::getFieldFromDescribe( $field, $avail_fields );
-            $dbType = ArrayUtils::get( $field_info, 'db_type' );
-            $type = ArrayUtils::get( $field_info, 'type' );
+            $field_info = DbUtilities::getFieldFromDescribe( $field, $avail_fields );
             $allowsNull = ArrayUtils::getBool( $field_info, 'allow_null' );
-            $pdoType = ( $allowsNull ) ? null : SqlDbUtilities::determinePdoBindingType( $type );
-            $phpType = ( is_null( $pdoType ) ) ? SqlDbUtilities::determinePhpConversionType( $type ) : null;
+            $pdoType = ( $allowsNull ) ? null : ArrayUtils::get( $field_info, 'pdo_type' );
+            $phpType = ( is_null( $pdoType ) ) ? ArrayUtils::get( $field_info, 'php_type' ) : null;
 
             $bindArray[] = array( 'name' => $field, 'pdo_type' => $pdoType, 'php_type' => $phpType );
-
-            // todo fix special cases - maybe after retrieve
-            switch ( $this->service->getDriverType() )
-            {
-                case SqlDbDriverTypes::DRV_DBLIB:
-                case SqlDbDriverTypes::DRV_SQLSRV:
-                    switch ( $dbType )
-                    {
-                        case 'datetime':
-                        case 'datetimeoffset':
-                            if ( !$as_quoted_string )
-                            {
-                                $context = $this->service->getConnection()->quoteColumnName( $context );
-                                $out_as = $this->service->getConnection()->quoteColumnName( $out_as );
-                            }
-                            $out = "(CONVERT(nvarchar(30), $context, 127)) AS $out_as";
-                            break;
-                        case 'geometry':
-                        case 'geography':
-                        case 'hierarchyid':
-                            if ( !$as_quoted_string )
-                            {
-                                $context = $this->service->getConnection()->quoteColumnName( $context );
-                                $out_as = $this->service->getConnection()->quoteColumnName( $out_as );
-                            }
-                            $out = "($context.ToString()) AS $out_as";
-                            break;
-                        default :
-                            $out = $context;
-                            if ( !empty( $as ) )
-                            {
-                                $out .= ' AS ' . $out_as;
-                            }
-                            break;
-                    }
-                    break;
-                case SqlDbDriverTypes::DRV_OCSQL:
-                default:
-                    switch ( $dbType )
-                    {
-                        default :
-                            $out = $context;
-                            if ( !empty( $as ) )
-                            {
-                                $out .= ' AS ' . $out_as;
-                            }
-                            break;
-                    }
-                    break;
-            }
-
-            $outArray[] = $out;
+            $outArray[] = $this->dbConn->getSchema()->parseFieldsForSelect($context, $field_info, $as_quoted_string, $out_as);
         }
 
         return array( 'fields' => $outArray, 'bindings' => $bindArray );
@@ -1219,7 +1078,7 @@ class Table extends BaseDbTableResource
         foreach ( $field_arr as $field )
         {
             // find the type
-            if ( false === SqlDbUtilities::findFieldFromDescribe( $field, $avail_fields ) )
+            if ( false === DbUtilities::findFieldFromDescribe( $field, $avail_fields ) )
             {
                 throw new BadRequestException( "Invalid field '$field' selected for output." );
             }
@@ -1227,7 +1086,7 @@ class Table extends BaseDbTableResource
             {
                 $out_str .= ', ';
             }
-            $out_str .= $prefix . '.' . $this->service->getConnection()->quoteColumnName( $field );
+            $out_str .= $prefix . '.' . $this->dbConn->quoteColumnName( $field );
         }
 
         return $out_str;
@@ -1437,8 +1296,8 @@ class Table extends BaseDbTableResource
         try
         {
             $_manyFields = $this->getFieldsInfo( $many_table );
-            $_pksInfo = SqlDbUtilities::getPrimaryKeys( $_manyFields );
-            $_fieldInfo = SqlDbUtilities::getFieldFromDescribe( $many_field, $_manyFields );
+            $_pksInfo = DbUtilities::getPrimaryKeys( $_manyFields );
+            $_fieldInfo = DbUtilities::getFieldFromDescribe( $many_field, $_manyFields );
             $_deleteRelated = ( !ArrayUtils::getBool( $_fieldInfo, 'allow_null' ) && $allow_delete );
             $_relateMany = array();
             $_disownMany = array();
@@ -1517,7 +1376,7 @@ class Table extends BaseDbTableResource
             }
 
             /** @var CDbCommand $_command */
-            $_command = $this->service->getConnection()->createCommand();
+            $_command = $this->dbConn->createCommand();
 
             // resolve any upsert situations
             if ( !empty( $_upsertMany ) )
@@ -1643,7 +1502,7 @@ class Table extends BaseDbTableResource
                     if ( 1 === count( $_pksInfo ) )
                     {
                         $_pkField = ArrayUtils::get( $_pksInfo[0], 'name' );
-                        $_where[] = $this->service->getConnection()->quoteColumnName( $_pkField ) . " = :f_$_pkField";
+                        $_where[] = $this->dbConn->quoteColumnName( $_pkField ) . " = :f_$_pkField";
                     }
                     else
                     {
@@ -1808,18 +1667,18 @@ class Table extends BaseDbTableResource
         try
         {
             $_oneFields = $this->getFieldsInfo( $one_table );
-            $_pkOneField = SqlDbUtilities::getPrimaryKeyFieldFromDescribe( $_oneFields );
+            $_pkOneField = DbUtilities::getPrimaryKeyFieldFromDescribe( $_oneFields );
             $_manyFields = $this->getFieldsInfo( $many_table );
-            $_pksManyInfo = SqlDbUtilities::getPrimaryKeys( $_manyFields );
+            $_pksManyInfo = DbUtilities::getPrimaryKeys( $_manyFields );
             $_mapFields = $this->getFieldsInfo( $map_table );
-//			$pkMapField = SqlDbUtilities::getPrimaryKeyFieldFromDescribe( $mapFields );
+//			$pkMapField = static::getPrimaryKeyFieldFromDescribe( $mapFields );
 
             $_result = $this->parseFieldsForSqlSelect( $many_field, $_mapFields );
             $_bindings = ArrayUtils::get( $_result, 'bindings' );
             $_fields = ArrayUtils::get( $_result, 'fields' );
             $_fields = ( empty( $_fields ) ) ? '*' : $_fields;
             $_params[":f_$one_field"] = $one_id;
-            $_where = $this->service->getConnection()->quoteColumnName( $one_field ) . " = :f_$one_field";
+            $_where = $this->dbConn->quoteColumnName( $one_field ) . " = :f_$one_field";
             $maps = $this->_recordQuery( $map_table, $_fields, $_where, $_params, $_bindings, null );
             unset( $maps['meta'] );
 
@@ -1892,7 +1751,7 @@ class Table extends BaseDbTableResource
             }
 
             /** @var CDbCommand $_command */
-            $_command = $this->service->getConnection()->createCommand();
+            $_command = $this->dbConn->createCommand();
 
             // resolve any upsert situations
             if ( !empty( $_upsertMany ) )
@@ -1961,7 +1820,7 @@ class Table extends BaseDbTableResource
                         throw new InternalServerErrorException( "Creating related $many_table records failed." );
                     }
 
-                    $_manyId = (int)$this->service->getConnection()->lastInsertID;
+                    $_manyId = (int)$this->dbConn->lastInsertID;
                     if ( !empty( $_manyId ) )
                     {
                         $_createMap[] = array( $many_field => $_manyId, $one_field => $one_id );
@@ -1982,7 +1841,7 @@ class Table extends BaseDbTableResource
                 if ( 1 === count( $_pksManyInfo ) )
                 {
                     $_pkField = ArrayUtils::get( $_pksManyInfo[0], 'name' );
-                    $_where[] = $this->service->getConnection()->quoteColumnName( $_pkField ) . " = :f_$_pkField";
+                    $_where[] = $this->dbConn->quoteColumnName( $_pkField ) . " = :f_$_pkField";
                 }
                 else
                 {
@@ -2051,7 +1910,7 @@ class Table extends BaseDbTableResource
                 $_ssMapFilters = [ ]; // TODO Session::getServiceFilters( Verbs::DELETE, $this->_apiName, $map_table );
                 $_where = array();
                 $_params = array();
-                $_where[] = $this->service->getConnection()->quoteColumnName( $one_field ) . " = '$one_id'";
+                $_where[] = $this->dbConn->quoteColumnName( $one_field ) . " = '$one_id'";
                 $_where[] = array( 'in', $many_field, $_deleteMap );
                 $_serverFilter = $this->buildQueryStringFromData( $_ssMapFilters, true );
                 if ( !empty( $_serverFilter ) )
@@ -2116,7 +1975,7 @@ class Table extends BaseDbTableResource
             {
                 case 'is null':
                 case 'is not null':
-                    $_sql .= $this->service->getConnection()->quoteColumnName( $_name ) . " $_op";
+                    $_sql .= $this->dbConn->quoteColumnName( $_name ) . " $_op";
                     break;
                 default:
                     if ( $use_params )
@@ -2132,10 +1991,10 @@ class Table extends BaseDbTableResource
                             $_value = $_value ? 'true' : 'false';
                         }
 
-                        $_value = ( is_null( $_value ) ) ? 'NULL' : $this->service->getConnection()->quoteValue( $_value );
+                        $_value = ( is_null( $_value ) ) ? 'NULL' : $this->dbConn->quoteValue( $_value );
                     }
 
-                    $_sql .= $this->service->getConnection()->quoteColumnName( $_name ) . " $_op $_value";
+                    $_sql .= $this->dbConn->quoteColumnName( $_name ) . " $_op $_value";
                     break;
             }
         }
@@ -2155,7 +2014,7 @@ class Table extends BaseDbTableResource
         try
         {
             /** @var CDbCommand $command */
-            $command = $this->service->getConnection()->createCommand( $query );
+            $command = $this->dbConn->createCommand( $query );
             $reader = $command->query();
             $dummy = array();
             foreach ( $bindings as $binding )
@@ -2214,7 +2073,7 @@ class Table extends BaseDbTableResource
         try
         {
             /** @var CDbCommand $command */
-            $command = $this->service->getConnection()->createCommand( $query );
+            $command = $this->dbConn->createCommand( $query );
             if ( isset( $params ) && !empty( $params ) )
             {
                 $data = $command->queryAll( true, $params );
@@ -2246,7 +2105,7 @@ class Table extends BaseDbTableResource
         try
         {
             /** @var CDbCommand $command */
-            $command = $this->service->getConnection()->createCommand( $query );
+            $command = $this->dbConn->createCommand( $query );
             if ( isset( $params ) && !empty( $params ) )
             {
                 $data = $command->execute( $params );
@@ -2272,7 +2131,7 @@ class Table extends BaseDbTableResource
         if ( empty( $requested_fields ) )
         {
             $requested_fields = array();
-            $_idsInfo = SqlDbUtilities::getPrimaryKeys( $fields_info );
+            $_idsInfo = DbUtilities::getPrimaryKeys( $fields_info );
             foreach ( $_idsInfo as $_info )
             {
                 $requested_fields[] = ArrayUtils::get( $_info, 'name' );
@@ -2280,11 +2139,11 @@ class Table extends BaseDbTableResource
         }
         else
         {
-            if ( false !== $requested_fields = SqlDbUtilities::validateAsArray( $requested_fields, ',' ) )
+            if ( false !== $requested_fields = DbUtilities::validateAsArray( $requested_fields, ',' ) )
             {
                 foreach ( $requested_fields as $_field )
                 {
-                    $_idsInfo[] = SqlDbUtilities::getFieldFromDescribe( $_field, $fields_info );
+                    $_idsInfo[] = DbUtilities::getFieldFromDescribe( $_field, $fields_info );
                 }
             }
         }
@@ -2312,7 +2171,7 @@ class Table extends BaseDbTableResource
             // sql transaction really only for rollback scenario, not batching
             if ( !isset( $this->_transaction ) )
             {
-                $this->_transaction = $this->service->getConnection()->beginTransaction();
+                $this->_transaction = $this->dbConn->beginTransaction();
             }
         }
 
@@ -2335,14 +2194,14 @@ class Table extends BaseDbTableResource
         {
             foreach ( $_idFields as $_name )
             {
-                $_where[] = $this->service->getConnection()->quoteColumnName( $_name ) . " = :f_$_name";
+                $_where[] = $this->dbConn->quoteColumnName( $_name ) . " = :f_$_name";
                 $_params[":f_$_name"] = ArrayUtils::get( $id, $_name );
             }
         }
         else
         {
             $_name = ArrayUtils::get( $_idFields, 0 );
-            $_where[] = $this->service->getConnection()->quoteColumnName( $_name ) . " = :f_$_name";
+            $_where[] = $this->dbConn->quoteColumnName( $_name ) . " = :f_$_name";
             $_params[":f_$_name"] = $id;
         }
 
@@ -2363,7 +2222,7 @@ class Table extends BaseDbTableResource
         }
 
         /** @var CDbCommand $_command */
-        $_command = $this->service->getConnection()->createCommand();
+        $_command = $this->dbConn->createCommand();
 
         $_out = array();
         switch ( $this->getAction() )
@@ -2389,9 +2248,9 @@ class Table extends BaseDbTableResource
                         $_idName = ArrayUtils::get( $_info, 'name' );
                         if ( ArrayUtils::getBool( $_info, 'auto_increment' ) )
                         {
-                            $_schema = $this->service->getConnection()->getSchema()->getTable( $this->_transactionTable );
+                            $_schema = $this->dbConn->getSchema()->getTable( $this->_transactionTable );
                             $_sequenceName = $_schema->sequenceName;
-                            $id[$_idName] = (int)$this->service->getConnection()->getLastInsertID( $_sequenceName );
+                            $id[$_idName] = (int)$this->dbConn->getLastInsertID( $_sequenceName );
                         }
                         else
                         {
@@ -2680,7 +2539,7 @@ class Table extends BaseDbTableResource
         elseif ( !empty( $this->_batchIds ) )
         {
             /** @var CDbCommand $_command */
-            $_command = $this->service->getConnection()->createCommand();
+            $_command = $this->dbConn->createCommand();
 
             switch ( $_action )
             {
@@ -2888,4 +2747,364 @@ class Table extends BaseDbTableResource
         return true;
     }
 
+    /**
+     * @param string        $name       The name of the table to check
+     * @param bool          $returnName If true, the table name is returned instead of TRUE
+     *
+     * @throws \InvalidArgumentException
+     * @return bool
+     */
+    public function doesTableExist( $name, $returnName = false )
+    {
+        if ( empty( $name ) )
+        {
+            throw new \InvalidArgumentException( 'Table name cannot be empty.' );
+        }
+
+        //  Build the lower-cased table array
+        $_tables = $this->dbConn->getSchema()->getTableNames();
+
+        //	Search normal, return real name
+        if ( false !== array_search( $name, $_tables ) )
+        {
+            return $returnName ? $name : true;
+        }
+
+        if ( false !== $_key = array_search( strtolower( $name ), array_map( 'strtolower', $_tables ) ) )
+        {
+            return $returnName ? $_tables[$_key] : true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param string        $name
+     * @param string        $remove_prefix
+     * @param bool          $refresh
+     *
+     * @throws InternalServerErrorException
+     * @throws RestException
+     * @throws \Exception
+     * @return array
+     */
+    public function describeTable( $name, $remove_prefix = '', $refresh = false )
+    {
+        $this->correctTableName( $name );
+        try
+        {
+            $table = $this->dbConn->getSchema()->getTable( $name, $refresh );
+            if ( !$table )
+            {
+                throw new NotFoundException( "Table '$name' does not exist in the database." );
+            }
+
+            $defaultSchema = $this->dbConn->getSchema()->getDefaultSchema();
+            $extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $name );
+            $extras = DbUtilities::reformatFieldLabelArray( $extras );
+            $labelInfo = ArrayUtils::get( $extras, '', array() );
+
+            $publicName = $table->name;
+            $schemaName = $table->schemaName;
+            if ( !empty( $schemaName ) )
+            {
+                if ( $defaultSchema !== $schemaName )
+                {
+                    $publicName = $schemaName . '.' . $publicName;
+                }
+            }
+
+            if ( !empty( $remove_prefix ) )
+            {
+                if ( substr( $publicName, 0, strlen( $remove_prefix ) ) == $remove_prefix )
+                {
+                    $publicName = substr( $publicName, strlen( $remove_prefix ), strlen( $publicName ) );
+                }
+            }
+
+            $label = ArrayUtils::get( $labelInfo, 'label', Inflector::camelize( $publicName, '_', true ) );
+            $plural = ArrayUtils::get( $labelInfo, 'plural', Inflector::pluralize( $label ) );
+            $name_field = ArrayUtils::get( $labelInfo, 'name_field' );
+
+            $fields = array();
+            foreach ( $table->columns as $column )
+            {
+                $_info = ArrayUtils::get( $extras, $column->name, array() );
+                $fields[] = static::describeFieldInternal( $column, $table->foreignKeys, $_info );
+            }
+
+            return array(
+                'name'        => $publicName,
+                'label'       => $label,
+                'plural'      => $plural,
+                'primary_key' => $table->primaryKey,
+                'name_field'  => $name_field,
+                'field'       => $fields,
+                'related'     => $this->describeTableRelatedInternal( $name )
+            );
+        }
+        catch ( RestException $ex )
+        {
+            throw $ex;
+        }
+        catch ( \Exception $ex )
+        {
+            throw new InternalServerErrorException( "Failed to query database schema.\n{$ex->getMessage()}" );
+        }
+    }
+
+    /**
+     * @param string                $table_name
+     * @param null | string | array $field_names
+     * @param bool                  $refresh
+     *
+     * @throws NotFoundException
+     * @throws InternalServerErrorException
+     * @return array
+     */
+    public function describeTableFields( $table_name, $field_names = null, $refresh = false )
+    {
+        $this->correctTableName( $table_name );
+        $_table = $this->dbConn->getSchema()->getTable( $table_name, $refresh );
+        if ( !$_table )
+        {
+            throw new NotFoundException( "Table '$table_name' does not exist in the database." );
+        }
+
+        if ( !empty( $field_names ) )
+        {
+            $field_names = DbUtilities::validateAsArray( $field_names, ',', true, 'No valid field names given.' );
+            $extras = DbUtilities::getSchemaExtrasForFields( $this->serviceId, $table_name, $field_names );
+        }
+        else
+        {
+            $extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $table_name );
+        }
+
+        $extras = DbUtilities::reformatFieldLabelArray( $extras );
+
+        $_out = array();
+        try
+        {
+            foreach ( $_table->columns as $column )
+            {
+
+                if ( empty( $field_names ) || ( false !== array_search( $column->name, $field_names ) ) )
+                {
+                    $_info = ArrayUtils::get( $extras, $column->name, array() );
+                    $_out[] = static::describeFieldInternal( $column, $_table->foreignKeys, $_info );
+                }
+            }
+        }
+        catch ( \Exception $ex )
+        {
+            throw new InternalServerErrorException( "Failed to query table field schema.\n{$ex->getMessage()}" );
+        }
+
+        if ( empty( $_out ) )
+        {
+            throw new NotFoundException( "No requested fields found in table '$table_name'." );
+        }
+
+        return $_out;
+    }
+
+    /**
+     * @param                $parent_table
+     *
+     * @return array
+     * @throws \Exception
+     */
+    public function describeTableRelatedInternal( $parent_table )
+    {
+        $_schema = $this->dbConn->getSchema()->getTable( $parent_table );
+        $_related = array();
+
+        // foreign keys point to relationships that this table "belongs to"
+        // currently handled by schema handler, see below
+//        foreach ( $_schema->foreignKeys as $_key => $_value )
+//        {
+//            $_refTable = ArrayUtils::get( $_value, 0 );
+//            $_refField = ArrayUtils::get( $_value, 1 );
+//            $_name = $_refTable . '_by_' . $_key;
+//            $_related[] = array(
+//                'name'      => $_name,
+//                'type'      => 'belongs_to',
+//                'ref_table' => $_refTable,
+//                'ref_field' => $_refField,
+//                'field'     => $_key
+//            );
+//        }
+
+        // foreign refs point to relationships other tables have with this table
+        foreach ( $_schema->foreignRefs as $_refs )
+        {
+            $_name = array();
+            switch ( ArrayUtils::get( $_refs, 'type' ) )
+            {
+                case 'belongs_to':
+                    $_name['name'] = ArrayUtils::get( $_refs, 'ref_table', '' ) . '_by_' . ArrayUtils::get( $_refs, 'field', '' );
+                    break;
+                case 'has_many':
+                    $_name['name'] = Inflector::pluralize( ArrayUtils::get( $_refs, 'ref_table', '' ) ) . '_by_' . ArrayUtils::get( $_refs, 'ref_field', '' );
+                    break;
+                case 'many_many':
+                    $_join = ArrayUtils::get( $_refs, 'join', '' );
+                    $_join = substr( $_join, 0, strpos( $_join, '(' ) );
+                    $_name['name'] = Inflector::pluralize( ArrayUtils::get( $_refs, 'ref_table', '' ) ) . '_by_' . $_join;
+                    break;
+            }
+            $_related[] = $_name + $_refs;
+        }
+
+        return $_related;
+    }
+
+    /**
+     * @param $type
+     *
+     * @return int | null
+     */
+    public static function determinePdoBindingType( $type )
+    {
+        switch ( $type )
+        {
+            case 'boolean':
+                return \PDO::PARAM_BOOL;
+
+            case 'integer':
+            case 'id':
+            case 'reference':
+            case 'user_id':
+            case 'user_id_on_create':
+            case 'user_id_on_update':
+                return \PDO::PARAM_INT;
+
+            case 'string':
+                return \PDO::PARAM_STR;
+                break;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param CDbColumnSchema $column
+     * @param array           $foreign_keys
+     * @param array           $label_info
+     *
+     * @throws \Exception
+     * @return array
+     */
+    protected static function describeFieldInternal( $column, $foreign_keys, $label_info )
+    {
+        $label = ArrayUtils::get( $label_info, 'label', Inflector::camelize( $column->name, '_', true ) );
+        $validation = json_decode( ArrayUtils::get( $label_info, 'validation' ), true );
+        if ( !empty( $validation ) && is_string( $validation ) )
+        {
+            // backwards compatible with old strings
+            $validation = array_map( 'trim', explode( ',', $validation ) );
+            $validation = array_flip( $validation );
+        }
+        $picklist = ArrayUtils::get( $label_info, 'picklist' );
+        $picklist = ( !empty( $picklist ) ) ? explode( "\r", $picklist ) : array();
+        $refTable = '';
+        $refFields = '';
+        if ( 1 == $column->isForeignKey )
+        {
+            $referenceTo = ArrayUtils::get( $foreign_keys, $column->name );
+            $refTable = ArrayUtils::get( $referenceTo, 0 );
+            $refFields = ArrayUtils::get( $referenceTo, 1 );
+        }
+
+        return array(
+            'name'               => $column->name,
+            'label'              => $label,
+            'type'               => static::determineDfType( $column, $label_info ),
+            'db_type'            => $column->dbType,
+            'php_type'           => $column->phpType,
+            'pdo_type'           => $column->pdoType,
+            'length'             => $column->size,
+            'precision'          => $column->precision,
+            'scale'              => $column->scale,
+            'default'            => $column->defaultValue,
+            'required'           => static::determineRequired( $column, $validation ),
+            'allow_null'         => $column->allowNull,
+            'fixed_length'       => $column->fixedLength,
+            'supports_multibyte' => $column->supportsMultibyte,
+            'auto_increment'     => $column->autoIncrement,
+            'is_primary_key'     => $column->isPrimaryKey,
+            'is_foreign_key'     => $column->isForeignKey,
+            'is_unique'          => $column->isUnique,
+            'is_index'           => $column->isIndex,
+            'ref_table'          => $refTable,
+            'ref_fields'         => $refFields,
+            'validation'         => $validation,
+            'value'              => $picklist
+        );
+    }
+
+    /**
+     * @param            $column
+     * @param null|array $label_info
+     *
+     * @return string
+     */
+    protected static function determineDfType( $column, $label_info = null )
+    {
+        switch ( $column->type )
+        {
+            case 'integer':
+                if ( $column->isPrimaryKey && $column->autoIncrement )
+                {
+                    return 'id';
+                }
+
+                if ( isset( $label_info['user_id_on_update'] ) )
+                {
+                    return 'user_id_on_' . ( ArrayUtils::getBool( $label_info, 'user_id_on_update' ) ? 'update' : 'create' );
+                }
+
+                if ( null !== ArrayUtils::get( $label_info, 'user_id' ) )
+                {
+                    return 'user_id';
+                }
+
+                if ( $column->isForeignKey )
+                {
+                    return 'reference';
+                }
+                break;
+
+            case 'timestamp':
+                if ( isset( $label_info['timestamp_on_update'] ) )
+                {
+                    return 'timestamp_on_' . ( ArrayUtils::getBool( $label_info, 'timestamp_on_update' ) ? 'update' : 'create' );
+                }
+                break;
+        }
+
+        return $column->type;
+    }
+
+    /**
+     * @param            $column
+     * @param array|null $validations
+     *
+     * @return bool
+     */
+    protected static function determineRequired( $column, $validations = null )
+    {
+        if ( ( 1 == $column->allowNull ) || ( isset( $column->defaultValue ) ) || ( 1 == $column->autoIncrement ) )
+        {
+            return false;
+        }
+
+        if ( is_array( $validations ) && isset( $validations['api_read_only'] ) )
+        {
+            return false;
+        }
+
+        return true;
+    }
 }

@@ -7,6 +7,9 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Sqlite;
+
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
 
 /**
  * CSqliteColumnSchema class describes the column meta data of a SQLite table.
@@ -23,7 +26,7 @@ class CSqliteColumnSchema extends CDbColumnSchema
      *
      * @param mixed $defaultValue the default value obtained from metadata
      */
-    protected function extractDefault( $defaultValue )
+    public function extractDefault( $defaultValue )
     {
         if ( $this->dbType === 'timestamp' && $defaultValue === 'CURRENT_TIMESTAMP' )
         {
@@ -34,7 +37,7 @@ class CSqliteColumnSchema extends CDbColumnSchema
             $this->defaultValue = $this->typecast( strcasecmp( $defaultValue, 'null' ) ? $defaultValue : null );
         }
 
-        if ( $this->type === 'string' && $this->defaultValue !== null ) // PHP 5.2.6 adds single quotes while 5.2.0 doesn't
+        if ( $this->phpType === 'string' && $this->defaultValue !== null ) // PHP 5.2.6 adds single quotes while 5.2.0 doesn't
         {
             $this->defaultValue = trim( $this->defaultValue, "'\"" );
         }

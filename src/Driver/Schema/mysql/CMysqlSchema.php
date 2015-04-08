@@ -9,9 +9,12 @@
  */
 namespace DreamFactory\Rave\SqlDb\Driver\Schema\Mysql;
 
+use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Library\Utility\Scalar;
 use DreamFactory\Rave\SqlDb\Driver\Schema\CDbSchema;
 use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
 use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCommandBuilder;
 
 /**
  * CMysqlSchema is the class for retrieving metadata information from a MySQL database (version 4.1.x and 5.x).
@@ -30,30 +33,239 @@ class CMysqlSchema extends CDbSchema
      * @type string
      */
     private $_defaultSchema;
-    /**
-     * @var array the abstract column types mapped to physical column types.
-     * @since 1.1.6
-     */
-    public $columnTypes = array(
-        'pk'        => 'int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY',
-        'string'    => 'varchar(255)',
-        'text'      => 'text',
-        'integer'   => 'int(11)',
-        'float'     => 'float',
-        'double'    => 'double',
-        'decimal'   => 'decimal',
-        'datetime'  => 'datetime',
-        'timestamp' => 'timestamp',
-        'time'      => 'time',
-        'date'      => 'date',
-        'binary'    => 'blob',
-        'boolean'   => 'tinyint(1)',
-        'money'     => 'decimal(19,4)',
-    );
 
     //******************************************************************************
     //* Methods
     //******************************************************************************
+
+    protected function translateSimpleColumnTypes( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( $type )
+        {
+            // some types need massaging, some need other required properties
+            case 'pk':
+            case 'id':
+                $info['type'] = 'int';
+                $info['type_extras'] = '(11)';
+                $info['allow_null'] = false;
+                $info['auto_increment'] = true;
+                $info['is_primary_key'] = true;
+                break;
+
+            case 'fk':
+            case 'reference':
+                $info['type'] = 'int';
+                $info['type_extras'] = '(11)';
+                $info['is_foreign_key'] = true;
+                // check foreign tables
+                break;
+
+            case 'timestamp_on_create':
+            case 'timestamp_on_update':
+                $info['type'] = 'timestamp';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( !isset( $default ) )
+                {
+                    $default = 'CURRENT_TIMESTAMP';
+                    if ( 'timestamp_on_update' === $type )
+                    {
+                        $default .= ' ON UPDATE CURRENT_TIMESTAMP';
+                    }
+                    $info['default'] = array( 'expression' => $default );
+                }
+                break;
+
+            case 'boolean':
+                $info['type'] = 'tinyint';
+                $info['type_extras'] = '(1)';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) )
+                {
+                    // convert to bit 0 or 1, where necessary
+                    $info['default'] = ( Scalar::boolval( $default ) ) ? 1 : 0;
+                }
+                break;
+
+            case 'money':
+                $info['type'] = 'decimal';
+                $info['type_extras'] = '(19,4)';
+                break;
+
+            case 'string':
+                $fixed = ArrayUtils::getBool( $info, 'fixed_length' );
+                $national = ArrayUtils::getBool( $info, 'supports_multibyte' );
+                if ( $fixed )
+                {
+                    $info['type'] = ( $national ) ? 'nchar' : 'char';
+                }
+                elseif ( $national )
+                {
+                    $info['type'] = 'nvarchar';
+                }
+                else
+                {
+                    $info['type'] = 'varchar';
+                }
+                break;
+
+            case 'binary':
+                $fixed = ArrayUtils::getBool( $info, 'fixed_length' );
+                $info['type'] = ( $fixed ) ? 'binary' : 'varbinary';
+                break;
+        }
+    }
+
+    protected function validateColumnSettings( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( $type )
+        {
+            // some types need massaging, some need other required properties
+            case 'bit':
+            case 'tinyint':
+            case 'smallint':
+            case 'mediumint':
+            case 'int':
+            case 'bigint':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $info['type_extras'] = "($length)"; // sets the viewable length
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = intval( $default );
+                }
+                break;
+
+            case 'decimal':
+            case 'numeric':
+            case 'real':
+            case 'float':
+            case 'double':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $scale = ArrayUtils::get( $info, 'scale', ArrayUtils::get( $info, 'decimals' ) );
+                        $info['type_extras'] = ( !empty( $scale ) ) ? "($length,$scale)" : "($length)";
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = floatval( $default );
+                }
+                break;
+
+            case 'char':
+            case 'nchar':
+            case 'binary':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+
+            case 'varchar':
+            case 'nvarchar':
+            case 'varbinary':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                else // requires a max length
+                {
+                    $info['type_extras'] = '(' . static::DEFAULT_STRING_MAX_SIZE . ')';
+                }
+                break;
+
+            case 'time':
+            case 'timestamp':
+            case 'datetime':
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( '0000-00-00 00:00:00' == $default )
+                {
+                    // read back from MySQL has formatted zeros, can't send that back
+                    $info['default'] = 0;
+                }
+
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+        }
+    }
+
+    /**
+     * @param array $info
+     *
+     * @return string
+     * @throws \Exception
+     */
+    protected function buildColumnDefinition( array $info )
+    {
+        $type = ArrayUtils::get( $info, 'type' );
+        $typeExtras = ArrayUtils::get( $info, 'type_extras' );
+
+        $definition = $type . $typeExtras;
+
+        $allowNull = ArrayUtils::getBool( $info, 'allow_null', true );
+        $definition .= ( $allowNull ) ? ' NULL' : ' NOT NULL';
+
+        $default = ArrayUtils::get( $info, 'default' );
+        if ( isset( $default ) )
+        {
+            if ( is_array( $default ) )
+            {
+                if ( null !== $expression = ArrayUtils::get( $default, 'expression' ) )
+                {
+                    $definition .= ' DEFAULT ' . $expression;
+                }
+            }
+            else
+            {
+                $default = $this->getDbConnection()->quoteValue( $default );
+                $definition .= ' DEFAULT ' . $default;
+            }
+        }
+
+        if ( ArrayUtils::getBool( $info, 'auto_increment', false ) )
+        {
+            $definition .= ' AUTO_INCREMENT';
+        }
+
+        $isUniqueKey = ArrayUtils::getBool( $info, 'is_unique', false );
+        $isPrimaryKey = ArrayUtils::getBool( $info, 'is_primary_key', false );
+        if ( $isPrimaryKey && $isUniqueKey )
+        {
+            throw new \Exception( 'Unique and Primary designations not allowed simultaneously.' );
+        }
+        if ( $isUniqueKey )
+        {
+            $definition .= ' UNIQUE KEY';
+        }
+        elseif ( $isPrimaryKey )
+        {
+            $definition .= ' PRIMARY KEY';
+        }
+
+        return $definition;
+    }
 
     /**
      * Quotes a table name for use in a query.
@@ -131,7 +343,7 @@ class CMysqlSchema extends CDbSchema
             <<<MYSQL
 ALTER TABLE {$table->rawName} AUTO_INCREMENT = :value
 MYSQL
-        )->execute( array(':value' => $value) );
+        )->execute( array( ':value' => $value ) );
     }
 
     /**
@@ -177,7 +389,7 @@ MYSQL
      */
     protected function resolveTableNames( $table, $name )
     {
-        $parts = explode( '.', str_replace( array('`', '"'), '', $name ) );
+        $parts = explode( '.', str_replace( array( '`', '"' ), '', $name ) );
         if ( isset( $parts[1] ) )
         {
             $table->schemaName = $parts[0];
@@ -205,7 +417,7 @@ MYSQL
         {
             $columns = $this->getDbConnection()->createCommand( $sql )->queryAll();
         }
-        catch ( Exception $e )
+        catch ( \Exception $e )
         {
             return false;
         }
@@ -221,7 +433,7 @@ MYSQL
                 }
                 elseif ( is_string( $table->primaryKey ) )
                 {
-                    $table->primaryKey = array($table->primaryKey, $c->name);
+                    $table->primaryKey = array( $table->primaryKey, $c->name );
                 }
                 else
                 {
@@ -251,18 +463,43 @@ MYSQL
         $c->rawName = $this->quoteColumnName( $c->name );
         $c->allowNull = $column['Null'] === 'YES';
         $c->isPrimaryKey = strpos( $column['Key'], 'PRI' ) !== false;
-        $c->isForeignKey = false;
-        $c->init( $column['Type'], $column['Default'] );
+        $c->isUnique = strpos( $column['Key'], 'UNI' ) !== false;
+        $c->isIndex = strpos( $column['Key'], 'MUL' ) !== false;
         $c->autoIncrement = strpos( strtolower( $column['Extra'] ), 'auto_increment' ) !== false;
-        if (isset($column['Collation']) && !empty($column['Collation']))
+        $c->dbType = $column['Type'];
+        if ( isset( $column['Collation'] ) && !empty( $column['Collation'] ) )
         {
             $collation = $column['Collation'];
-            if (0===stripos($collation, 'utf') || 0===stripos($collation, 'ucs'))
+            if ( 0 === stripos( $collation, 'utf' ) || 0 === stripos( $collation, 'ucs' ) )
+            {
                 $c->supportsMultibyte = true;
+            }
         }
         if ( isset( $column['Comment'] ) )
         {
             $c->comment = $column['Comment'];
+        }
+        $c->extractLimit( $column['Type'] );
+        $c->extractFixedLength( $column['Type'] );
+//        $c->extractMultiByteSupport( $column['Type'] );
+        $c->extractType( $column['Type'] );
+
+        if ( $c->dbType === 'timestamp' && ( 0 === strcasecmp( strval($column['Default']), 'CURRENT_TIMESTAMP' ) ) )
+        {
+            if ( 0 === strcasecmp( strval($column['Extra']), 'on update CURRENT_TIMESTAMP' ) )
+            {
+                $c->defaultValue = array( 'expression' => 'CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP' );
+                $c->type = 'timestamp_on_update';
+            }
+            else
+            {
+                $c->defaultValue = array( 'expression' => 'CURRENT_TIMESTAMP' );
+                $c->type = 'timestamp_on_create';
+            }
+        }
+        else
+        {
+            $c->extractDefault( $column['Default'] );
         }
 
         return $c;
@@ -273,7 +510,7 @@ MYSQL
      */
     protected function getServerVersion()
     {
-        $version = $this->getDbConnection()->getAttribute( PDO::ATTR_SERVER_VERSION );
+        $version = $this->getDbConnection()->getAttribute( \PDO::ATTR_SERVER_VERSION );
         $digits = array();
         preg_match( '/(\d+)\.(\d+)\.(\d+)/', $version, $digits );
 
@@ -314,10 +551,16 @@ MYSQL;
             {
                 $name = ( $rts == $defaultSchema ) ? $rtn : $rts . '.' . $rtn;
 
-                $table->foreignKeys[$cn] = array($name, $rcn);
+                $table->foreignKeys[$cn] = array( $name, $rcn );
                 if ( isset( $table->columns[$cn] ) )
                 {
                     $table->columns[$cn]->isForeignKey = true;
+                    $table->columns[$cn]->refTable = $name;
+                    $table->columns[$cn]->refFields = $rcn;
+                    if ('integer' === $table->columns[$cn]->type)
+                    {
+                        $table->columns[$cn]->type = 'reference';
+                    }
                 }
 
                 // Add it to our foreign references as well
@@ -442,7 +685,7 @@ MYSQL;
      * @param string $name
      * @param array  $params
      *
-     * @throws Exception
+     * @throws \Exception
      * @return mixed
      */
     public function callProcedure( $name, &$params )
@@ -500,7 +743,7 @@ MYSQL;
         if ( $_reader->nextResult() )
         {
             // more data coming, make room
-            $_result = array($_result);
+            $_result = array( $_result );
             try
             {
                 do
@@ -565,7 +808,7 @@ MYSQL;
      * @param string $name
      * @param array  $params
      *
-     * @throws Exception
+     * @throws \Exception
      * @return mixed
      */
     public function callFunction( $name, &$params )
@@ -593,7 +836,7 @@ MYSQL;
         if ( $_reader->nextResult() )
         {
             // more data coming, make room
-            $_result = array($_result);
+            $_result = array( $_result );
             try
             {
                 do
@@ -747,7 +990,7 @@ MYSQL;
      *                       default schema. If not empty, the returned stored function names will be prefixed with the
      *                       schema name.
      *
-     * @throws InvalidArgumentException
+     * @throws \InvalidArgumentException
      * @return array all stored function names in the database.
      */
     protected function _findRoutines( $type, $schema = '' )
@@ -757,7 +1000,7 @@ MYSQL;
 
         if ( $type != 'PROCEDURE' && $type != 'FUNCTION' )
         {
-            throw new InvalidArgumentException( 'The type "' . $type . '" is invalid.' );
+            throw new \InvalidArgumentException( 'The type "' . $type . '" is invalid.' );
         }
 
         $_select = ( empty( $schema ) || ( $defaultSchema == $schema ) ) ? 'ROUTINE_NAME' : "CONCAT('" . $schema . "','.',ROUTINE_NAME) as ROUTINE_NAME";
@@ -773,7 +1016,7 @@ WHERE
     {$_schema}
 MYSQL;
 
-        return $this->getDbConnection()->createCommand( $_sql )->queryColumn( array(':routine_type' => $type) );
+        return $this->getDbConnection()->createCommand( $_sql )->queryColumn( array( ':routine_type' => $type ) );
     }
 
     /**
@@ -802,4 +1045,17 @@ MYSQL;
         return $this->_defaultSchema;
     }
 
+    public function parseValueForSet( $value, $field_info )
+    {
+        $_type = ArrayUtils::get( $field_info, 'type' );
+
+        switch ( $_type )
+        {
+            case 'boolean':
+                $value = ( Scalar::boolval( $value ) ? 1 : 0 );
+                break;
+        }
+
+        return $value;
+    }
 }

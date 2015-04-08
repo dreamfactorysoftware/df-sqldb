@@ -7,6 +7,11 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Pgsql;
+
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCommandBuilder;
+use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
 
 /**
  * CPgsqlCommandBuilder provides basic methods to create query commands for tables.
@@ -77,7 +82,7 @@ class CPgsqlCommandBuilder extends CDbCommandBuilder
         {
             $sql .= ' RETURNING ' . $column->rawName . ' INTO :RETURN_ID';
             $command = $this->getDbConnection()->createCommand( $sql );
-            $command->bindParam( ':RETURN_ID', $this->returnID, PDO::PARAM_INT, 12 );
+            $command->bindParam( ':RETURN_ID', $this->returnID, \PDO::PARAM_INT, 12 );
             $table->sequenceName = 'RETURN_ID';
         }
         else

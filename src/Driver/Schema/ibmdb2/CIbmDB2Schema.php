@@ -13,6 +13,16 @@
  * @author  Lee Hicks <leehicks@dreamfactory.com>
  * @package system.db.schema.ibmdb2
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Ibmdb2;
+
+use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Library\Utility\Scalar;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCommandBuilder;
+
 class CIbmDB2Schema extends CDbSchema
 {
     //******************************************************************************
@@ -23,25 +33,6 @@ class CIbmDB2Schema extends CDbSchema
      * @type string
      */
     private $_defaultSchema;
-    /**
-     * @var array the abstract column types mapped to physical column types.
-     */
-    public $columnTypes = array(
-        'pk'        => 'INTEGER not null PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1)',
-        'string'    => 'VARCHAR(255)',
-        'text'      => 'CLOB',
-        'integer'   => 'INTEGER',
-        'float'     => 'REAL',
-        'double'    => 'FLOAT',
-        'decimal'   => 'DECIMAL',
-        'datetime'  => 'TIMESTAMP',
-        'timestamp' => 'TIMESTAMP',
-        'time'      => 'TIME',
-        'date'      => 'DATE',
-        'binary'    => 'BINARY',
-        'boolean'   => 'SMALLINT',
-        'money'     => 'DECIMAL(19,4)',
-    );
 
     private $_isIseries = null;
 
@@ -63,7 +54,7 @@ class CIbmDB2Schema extends CDbSchema
 
             return $this->_isIseries;
         }
-        catch ( Exception $ex )
+        catch ( \Exception $ex )
         {
             $this->_isIseries = false;
 
@@ -80,7 +71,7 @@ class CIbmDB2Schema extends CDbSchema
      */
     protected function loadTable( $name )
     {
-        $table = new CIbmDB2TableSchema;
+        $table = new CDbTableSchema;
         $this->resolveTableNames( $table, $name );
         if ( !$this->findColumns( $table ) )
         {
@@ -89,6 +80,235 @@ class CIbmDB2Schema extends CDbSchema
         $this->findConstraints( $table );
 
         return $table;
+    }
+
+    protected function translateSimpleColumnTypes( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( strtolower( $type ) )
+        {
+            // some types need massaging, some need other required properties
+            case 'pk':
+            case 'id':
+                $info['type'] = 'integer';
+                $info['type_extras'] = 'not null PRIMARY KEY GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1)';
+                $info['allow_null'] = false;
+                $info['auto_increment'] = true;
+                $info['is_primary_key'] = true;
+                break;
+
+            case 'fk':
+            case 'reference':
+                $info['type'] = 'integer';
+                $info['is_foreign_key'] = true;
+                // check foreign tables
+                break;
+
+            case 'timestamp_on_create':
+            case 'timestamp_on_update':
+                $info['type'] = 'timestamp';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( !isset( $default ) )
+                {
+                    $default = 'CURRENT_TIMESTAMP';
+                    if ( 'timestamp_on_update' === $type )
+                    {
+                        $default .= ' ON UPDATE CURRENT_TIMESTAMP';
+                    }
+                    $info['default'] = $default;
+                }
+                break;
+
+            case 'datetime':
+                $info['type'] = 'TIMESTAMP';
+                break;
+
+            case 'float':
+                $info['type'] = 'REAL';
+                break;
+
+            case 'double':
+                $info['type'] = 'DOUBLE';
+                break;
+
+            case 'money':
+                $info['type'] = 'decimal';
+                $info['type_extras'] = '(19,4)';
+                break;
+
+            case 'boolean':
+                $info['type'] = 'smallint';
+                $info['type_extras'] = '(1)';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) )
+                {
+                    // convert to bit 0 or 1, where necessary
+                    $info['default'] = ( Scalar::boolval( $default ) ) ? 1 : 0;
+                }
+                break;
+
+            case 'string':
+                $fixed = ArrayUtils::getBool( $info, 'fixed_length' );
+                $national = ArrayUtils::getBool( $info, 'supports_multibyte' );
+                if ( $fixed )
+                {
+                    $info['type'] = ( $national ) ? 'graphic' : 'character';
+                }
+                elseif ( $national )
+                {
+                    $info['type'] = 'vargraphic';
+                }
+                else
+                {
+                    $info['type'] = 'varchar';
+                }
+                break;
+
+            case 'text':
+                $info['type'] = 'CLOB';
+                break;
+
+            case 'binary':
+                $fixed = ArrayUtils::getBool( $info, 'fixed_length' );
+                $info['type'] = ( $fixed ) ? 'binary' : 'varbinary';
+                break;
+
+        }
+    }
+
+    protected function validateColumnSettings( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( strtolower( $type ) )
+        {
+            // some types need massaging, some need other required properties
+            case 'smallint':
+            case 'int':
+            case 'bigint':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $info['type_extras'] = "($length)"; // sets the viewable length
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = intval( $default );
+                }
+                break;
+
+            case 'decimal':
+            case 'numeric':
+            case 'real':
+            case 'double':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $scale = ArrayUtils::get( $info, 'scale', ArrayUtils::get( $info, 'decimals' ) );
+                        $info['type_extras'] = ( !empty( $scale ) ) ? "($length,$scale)" : "($length)";
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = floatval( $default );
+                }
+                break;
+
+            case 'character':
+            case 'graphic':
+            case 'binary':
+            case 'varchar':
+            case 'vargraphic':
+            case 'varbinary':
+            case 'clob':
+            case 'dbclob':
+            case 'blob':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+
+            case 'time':
+            case 'timestamp':
+            case 'datetime':
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( '0000-00-00 00:00:00' == $default )
+                {
+                    // read back from MySQL has formatted zeros, can't send that back
+                    $info['default'] = 0;
+                }
+
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+        }
+    }
+
+    /**
+     * @param array $info
+     *
+     * @return string
+     * @throws \Exception
+     */
+    protected function buildColumnDefinition( array $info )
+    {
+        // This works for most except Oracle
+        $type = ArrayUtils::get( $info, 'type' );
+        $typeExtras = ArrayUtils::get( $info, 'type_extras' );
+
+        $definition = $type . $typeExtras;
+
+        $allowNull = ArrayUtils::getBool( $info, 'allow_null', true );
+        $definition .= ( $allowNull ) ? ' NULL' : ' NOT NULL';
+
+        $default = ArrayUtils::get( $info, 'default' );
+        if ( isset( $default ) )
+        {
+            $quoteDefault = ArrayUtils::getBool( $info, 'quote_default', false );
+            if ( $quoteDefault )
+            {
+                $default = "'" . $default . "'";
+            }
+
+            $definition .= ' DEFAULT ' . $default;
+        }
+
+        if ( ArrayUtils::getBool( $info, 'auto_increment', false ) )
+        {
+            $definition .= ' AUTO_INCREMENT';
+        }
+
+        $isUniqueKey = ArrayUtils::getBool( $info, 'is_unique', false );
+        $isPrimaryKey = ArrayUtils::getBool( $info, 'is_primary_key', false );
+        if ( $isPrimaryKey && $isUniqueKey )
+        {
+            throw new \Exception( 'Unique and Primary designations not allowed simultaneously.' );
+        }
+        if ( $isUniqueKey )
+        {
+            $definition .= ' UNIQUE KEY';
+        }
+        elseif ( $isPrimaryKey )
+        {
+            $definition .= ' PRIMARY KEY';
+        }
+
+        return $definition;
     }
 
     /**
@@ -120,7 +340,7 @@ class CIbmDB2Schema extends CDbSchema
     /**
      * Generates various kinds of table names.
      *
-     * @param CIbmDB2TableSchema $table the table instance
+     * @param CDbTableSchema $table the table instance
      * @param string             $name  the unquoted table name
      */
     protected function resolveTableNames( $table, $name )
@@ -142,7 +362,7 @@ class CIbmDB2Schema extends CDbSchema
     /**
      * Collects the table column metadata.
      *
-     * @param CIbmDB2TableSchema $table the table metadata
+     * @param CDbTableSchema $table the table metadata
      *
      * @return boolean whether the table exists in the database
      */
@@ -214,26 +434,29 @@ SQL;
         $c->name = $column['COLNAME'];
         $c->rawName = $this->quoteColumnName( $c->name );
         $c->allowNull = ( $column['NULLS'] == 'Y' );
-        $c->isPrimaryKey = false;
-        $c->isForeignKey = false;
         $c->autoIncrement = ( $column['IDENTITY'] == 'Y' );
+        $c->dbType = $column['TYPENAME'];
 
         if ( preg_match( '/(varchar|character|clob|graphic|binary|blob)/i', $column['TYPENAME'] ) )
         {
-            $column['TYPENAME'] .= '(' . $column['LENGTH'] . ')';
+            $c->size = $c->precision = $column['LENGTH'];
         }
         elseif ( preg_match( '/(decimal|double|real)/i', $column['TYPENAME'] ) )
         {
-            $column['TYPENAME'] .= '(' . $column['LENGTH'] . ',' . $column['SCALE'] . ')';
+            $c->size = $c->precision = $column['LENGTH'];
+            $c->scale = $column['SCALE'];
         }
 
+        $c->extractFixedLength( $column['TYPENAME'] );
+        $c->extractMultiByteSupport( $column['TYPENAME'] );
+        $c->extractType( $column['TYPENAME'] );
         if ( is_string( $column['DEFAULT'] ) )
         {
             $column['DEFAULT'] = trim( $column['DEFAULT'], '\'' );
         }
         $default = ( $column['DEFAULT'] == "NULL" ) ? null : $column['DEFAULT'];
 
-        $c->init( $column['TYPENAME'], $default );
+        $c->extractDefault( $default );
 
         return $c;
     }
@@ -241,7 +464,7 @@ SQL;
     /**
      * Collects the primary and foreign key column details for the given table.
      *
-     * @param CIbmDb2TableSchema $table the table metadata
+     * @param CDbTableSchema $table the table metadata
      */
     protected function findConstraints( $table )
     {
@@ -295,10 +518,16 @@ SQL;
             {
                 $name = ( $rts == $defaultSchema ) ? $rtn : $rts . '.' . $rtn;
 
-                $table->foreignKeys[$cn] = array($name, $rcn);
+                $table->foreignKeys[$cn] = array( $name, $rcn );
                 if ( isset( $table->columns[$cn] ) )
                 {
                     $table->columns[$cn]->isForeignKey = true;
+                    $table->columns[$cn]->refTable = $name;
+                    $table->columns[$cn]->refFields = $rcn;
+                    if ('integer' === $table->columns[$cn]->type)
+                    {
+                        $table->columns[$cn]->type = 'reference';
+                    }
                 }
 
                 // Add it to our foreign references as well
@@ -357,7 +586,7 @@ SQL;
     /**
      * Gets the primary key column(s) details for the given table.
      *
-     * @param CIbmDb2TableSchema $table table
+     * @param CDbTableSchema $table table
      *
      * @return mixed primary keys (null if no pk, string if only 1 column pk, or array if composite pk)
      */
@@ -401,13 +630,18 @@ SQL;
                 if ( isset( $table->columns[$colname] ) )
                 {
                     $table->columns[$colname]->isPrimaryKey = true;
+                    if (('integer' === $table->columns[$colname]->type) && $table->columns[$colname]->autoIncrement)
+                    {
+                        $table->columns[$colname]->type = 'id';
+                    }
+
                     if ( $table->primaryKey === null )
                     {
                         $table->primaryKey = $colname;
                     }
                     elseif ( is_string( $table->primaryKey ) )
                     {
-                        $table->primaryKey = array($table->primaryKey, $colname);
+                        $table->primaryKey = array( $table->primaryKey, $colname );
                     }
                     else
                     {
@@ -446,7 +680,7 @@ SQL;
         $rows = $this->getDbConnection()->createCommand( $sql )->queryColumn();
 
         $_defaultSchema = $this->getDefaultSchema();
-        if ( !empty($_defaultSchema) && (false === array_search( $_defaultSchema, $rows ) ) )
+        if ( !empty( $_defaultSchema ) && ( false === array_search( $_defaultSchema, $rows ) ) )
         {
             $rows[] = $_defaultSchema;
         }
@@ -494,7 +728,7 @@ SELECT TABSCHEMA, TABNAME
 FROM SYSCAT.TABLES
 WHERE TYPE IN $condition AND OWNERTYPE != 'S'
 SQL;
-            if ( !empty($schema) )
+            if ( !empty( $schema ) )
             {
                 $sql .= <<<SQL
   AND TABSCHEMA=:schema
@@ -507,8 +741,8 @@ SQL;
 
         $defaultSchema = $this->getDefaultSchema();
 
-        $_params = ( !empty($schema) ) ? array(':schema' => $schema) : array();
-        $rows = $this->getDbConnection()->createCommand( $sql )->queryAll(true, $_params);
+        $_params = ( !empty( $schema ) ) ? array( ':schema' => $schema ) : array();
+        $rows = $this->getDbConnection()->createCommand( $sql )->queryAll( true, $_params );
 
         $names = array();
         foreach ( $rows as $row )
@@ -593,11 +827,11 @@ SQL;
     /**
      * Builds a SQL statement for changing the definition of a column.
      *
-     * @param string $table  the table whose column is to be changed. The table name will be properly quoted by the method.
-     * @param string $column the name of the column to be changed. The name will be properly quoted by the method.
-     * @param string $definition   the new column type. The {@link getColumnType} method will be invoked to convert abstract column type (if any)
-     *                       into the physical one. Anything that is not recognized as abstract type will be kept in the generated SQL.
-     *                       For example, 'string' will be turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not null'.
+     * @param string $table      the table whose column is to be changed. The table name will be properly quoted by the method.
+     * @param string $column     the name of the column to be changed. The name will be properly quoted by the method.
+     * @param string $definition the new column type. The {@link getColumnType} method will be invoked to convert abstract column type (if any)
+     *                           into the physical one. Anything that is not recognized as abstract type will be kept in the generated SQL.
+     *                           For example, 'string' will be turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not null'.
      *
      * @return string the SQL statement for changing the definition of a column.
      * @since 1.1.6
@@ -694,7 +928,7 @@ MYSQL;
                 $_paramStr .= ', ';
             }
 
-            switch ( strtoupper( strval( isset($_param['param_type']) ? $_param['param_type'] : 'IN' ) ) )
+            switch ( strtoupper( strval( isset( $_param['param_type'] ) ? $_param['param_type'] : 'IN' ) ) )
             {
                 case 'OUT':
                 case 'INOUT':
@@ -712,7 +946,7 @@ MYSQL;
         {
             $_pName = ( isset( $_param['name'] ) && !empty( $_param['name'] ) ) ? $_param['name'] : "p$_key";
 
-            switch ( strtoupper( strval( isset($_param['param_type']) ? $_param['param_type'] : 'IN' ) ) )
+            switch ( strtoupper( strval( isset( $_param['param_type'] ) ? $_param['param_type'] : 'IN' ) ) )
             {
                 case 'OUT':
                 case 'INOUT':
@@ -732,7 +966,7 @@ MYSQL;
         if ( $_reader->nextResult() )
         {
             // more data coming, make room
-            $_result = array($_result);
+            $_result = array( $_result );
             do
             {
                 $_result[] = $_reader->readAll();
@@ -777,7 +1011,7 @@ MYSQL;
      * @param string $name
      * @param array  $params
      *
-     * @throws Exception
+     * @throws \Exception
      * @return mixed
      */
     public function callFunction( $name, &$params )
@@ -806,7 +1040,7 @@ MYSQL;
         if ( $_reader->nextResult() )
         {
             // more data coming, make room
-            $_result = array($_result);
+            $_result = array( $_result );
             do
             {
                 $_result[] = $_reader->readAll();
@@ -825,7 +1059,7 @@ MYSQL;
      *                       default schema. If not empty, the returned stored function names will be prefixed with the
      *                       schema name.
      *
-     * @throws InvalidArgumentException
+     * @throws \InvalidArgumentException
      * @return array all stored function names in the database.
      */
     protected function _findRoutines( $type, $schema = '' )
@@ -842,10 +1076,10 @@ MYSQL;
                 $_params[':type'] = 'F';
                 break;
             default:
-                throw new InvalidArgumentException( 'The type "' . $type . '" is invalid.' );
+                throw new \InvalidArgumentException( 'The type "' . $type . '" is invalid.' );
         }
 
-        if (!empty( $schema ) )
+        if ( !empty( $schema ) )
         {
             $_where = ' AND ROUTINESCHEMA = :schema';
             $_params[':schema'] = $schema;
@@ -861,7 +1095,7 @@ WHERE
     {$_where}
 SQL;
 
-        $_results =  $this->getDbConnection()->createCommand( $_sql )->queryAll( true, $_params );
+        $_results = $this->getDbConnection()->createCommand( $_sql )->queryAll( true, $_params );
         $_names = array();
         foreach ( $_results as $_row )
         {
@@ -871,5 +1105,36 @@ SQL;
         }
 
         return $_names;
+    }
+
+    /**
+     * @param bool $update
+     *
+     * @return mixed
+     */
+    public function getTimestampForSet( $update = false )
+    {
+        if ( !$update )
+        {
+            return new CDbExpression( '(CURRENT_TIMESTAMP)' );
+        }
+        else
+        {
+            return new CDbExpression( '(GENERATED ALWAYS FOR EACH ROW ON UPDATE AS ROW CHANGE TIMESTAMP)' );
+        }
+    }
+
+    public function parseValueForSet( $value, $field_info )
+    {
+        $_type = ArrayUtils::get( $field_info, 'type' );
+
+        switch ( $_type )
+        {
+            case 'boolean':
+                $value = ( Scalar::boolval( $value ) ? 1 : 0 );
+                break;
+        }
+
+        return $value;
     }
 }

@@ -15,6 +15,10 @@
  * @package system.db.schema.mssql
  * @since   1.0
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Mssql;
+
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbProcedureSchema;
+
 class CMssqlProcedureSchema extends CDbProcedureSchema
 {
     /**

@@ -9,6 +9,7 @@
  */
 namespace DreamFactory\Rave\SqlDb\Driver\Schema;
 
+use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Rave\SqlDb\Driver\CDbConnection;
 
 /**
@@ -27,20 +28,43 @@ use DreamFactory\Rave\SqlDb\Driver\CDbConnection;
  */
 abstract class CDbSchema
 {
-    /**
-     * @var array the abstract column types mapped to physical column types.
-     * @since 1.1.6
-     */
-    public $columnTypes = array();
+    const DEFAULT_STRING_MAX_SIZE = 255;
 
+    /**
+     * @var array
+     */
     private $_schemaNames = array();
+    /**
+     * @var array
+     */
     private $_tableNames = array();
+    /**
+     * @var array
+     */
     private $_tables = array();
+    /**
+     * @var array
+     */
     private $_procedureNames = array();
+    /**
+     * @var array
+     */
     private $_procedures = array();
+    /**
+     * @var array
+     */
     private $_functionNames = array();
+    /**
+     * @var array
+     */
     private $_functions = array();
+    /**
+     * @var CDbConnection
+     */
     private $_connection;
+    /**
+     * @var
+     */
     private $_builder;
 
     /**
@@ -70,6 +94,9 @@ abstract class CDbSchema
         return $this->_connection;
     }
 
+    /**
+     * @param $schema
+     */
     public function setDefaultSchema( $schema )
     {
     }
@@ -206,7 +233,9 @@ abstract class CDbSchema
                 $names = array_merge( $names, $temp );
             }
 
-            return $names;
+            natcasesort( $names );
+
+            return array_values( $names );
         }
         else
         {
@@ -215,18 +244,27 @@ abstract class CDbSchema
                 $this->getCachedTableNames( $include_views );
             }
 
-            return ( isset( $this->_tableNames[$schema] ) ? $this->_tableNames[$schema] : array() );
+            $names = ( isset( $this->_tableNames[$schema] ) ? $this->_tableNames[$schema] : array() );
+            natcasesort( $names );
+
+            return array_values( $names );
         }
     }
 
+    /**
+     * @param bool $include_views
+     * @param bool $refresh
+     *
+     * @throws \Exception
+     */
     protected function getCachedTableNames( $include_views = true, $refresh = false )
     {
-            $names = array();
-            foreach ( $this->getSchemaNames( $refresh ) as $temp )
-            {
-                $names[$temp] = $this->findTableNames( $temp, $include_views );
-            }
-            $this->_tableNames = $names;
+        $names = array();
+        foreach ( $this->getSchemaNames( $refresh ) as $temp )
+        {
+            $names[$temp] = $this->findTableNames( $temp, $include_views );
+        }
+        $this->_tableNames = $names;
     }
 
     /**
@@ -265,7 +303,7 @@ abstract class CDbSchema
         {
             $realName = $name;
 
-                $this->_procedures[$name] = $procedure = $this->loadProcedure( $realName );
+            $this->_procedures[$name] = $procedure = $this->loadProcedure( $realName );
 
             return $procedure;
         }
@@ -348,7 +386,9 @@ abstract class CDbSchema
                 $names = array_merge( $names, $temp );
             }
 
-            return $names;
+            natcasesort( $names );
+
+            return array_values( $names );
         }
         else
         {
@@ -357,18 +397,26 @@ abstract class CDbSchema
                 $this->getCachedProcedureNames();
             }
 
-            return ( isset( $this->_procedureNames[$schema] ) ? $this->_procedureNames[$schema] : array() );
+            $names = ( isset( $this->_procedureNames[$schema] ) ? $this->_procedureNames[$schema] : array() );
+            natcasesort( $names );
+
+            return array_values( $names );
         }
     }
 
+    /**
+     * @param bool $refresh
+     *
+     * @throws \Exception
+     */
     protected function getCachedProcedureNames( $refresh = false )
     {
-            $names = array();
-            foreach ( $this->getSchemaNames( $refresh ) as $temp )
-            {
-                $names[$temp] = $this->findProcedureNames( $temp );
-            }
-            $this->_procedureNames = $names;
+        $names = array();
+        foreach ( $this->getSchemaNames( $refresh ) as $temp )
+        {
+            $names[$temp] = $this->findProcedureNames( $temp );
+        }
+        $this->_procedureNames = $names;
     }
 
     /**
@@ -405,7 +453,7 @@ abstract class CDbSchema
         else
         {
             $realName = $name;
-                $this->_functions[$name] = $function = $this->loadFunction( $realName );
+            $this->_functions[$name] = $function = $this->loadFunction( $realName );
 
             return $function;
         }
@@ -463,7 +511,9 @@ abstract class CDbSchema
                 $names = array_merge( $names, $temp );
             }
 
-            return $names;
+            natcasesort( $names );
+
+            return array_values( $names );
         }
         else
         {
@@ -472,18 +522,26 @@ abstract class CDbSchema
                 $this->getCachedFunctionNames();
             }
 
-            return ( isset( $this->_functionNames[$schema] ) ? $this->_functionNames[$schema] : array() );
+            $names = ( isset( $this->_functionNames[$schema] ) ? $this->_functionNames[$schema] : array() );
+            natcasesort( $names );
+
+            return array_values( $names );
         }
     }
 
+    /**
+     * @param bool $refresh
+     *
+     * @throws \Exception
+     */
     protected function getCachedFunctionNames( $refresh = false )
     {
-            $names = array();
-            foreach ( $this->getSchemaNames( $refresh ) as $temp )
-            {
-                $names[$temp] = $this->findFunctionNames( $temp );
-            }
-            $this->_functionNames = $names;
+        $names = array();
+        foreach ( $this->getSchemaNames( $refresh ) as $temp )
+        {
+            $names[$temp] = $this->findFunctionNames( $temp );
+        }
+        $this->_functionNames = $names;
     }
 
     /**
@@ -712,6 +770,72 @@ abstract class CDbSchema
     }
 
     /**
+     * @param array $info
+     */
+    protected function translateSimpleColumnTypes( array &$info )
+    {
+    }
+
+    /**
+     * @param array $info
+     */
+    protected function validateColumnSettings( array &$info )
+    {
+    }
+
+    /**
+     * @param array $info
+     *
+     * @return string
+     * @throws \Exception
+     */
+    protected function buildColumnDefinition( array $info )
+    {
+        // This works for most except Oracle
+        $type = ArrayUtils::get( $info, 'type' );
+        $typeExtras = ArrayUtils::get( $info, 'type_extras' );
+
+        $definition = $type . $typeExtras;
+
+        $allowNull = ArrayUtils::getBool( $info, 'allow_null', true );
+        $definition .= ( $allowNull ) ? ' NULL' : ' NOT NULL';
+
+        $default = ArrayUtils::get( $info, 'default' );
+        if ( isset( $default ) )
+        {
+            if ( is_array( $default ) )
+            {
+                if ( null !== $expression = ArrayUtils::get( $default, 'expression' ) )
+                {
+                    $definition .= ' DEFAULT ' . $expression;
+                }
+            }
+            else
+            {
+                $default = $this->getDbConnection()->quoteValue( $default );
+                $definition .= ' DEFAULT ' . $default;
+            }
+        }
+
+        $isUniqueKey = ArrayUtils::getBool( $info, 'is_unique', false );
+        $isPrimaryKey = ArrayUtils::getBool( $info, 'is_primary_key', false );
+        if ( $isPrimaryKey && $isUniqueKey )
+        {
+            throw new \Exception( 'Unique and Primary designations not allowed simultaneously.' );
+        }
+        if ( $isUniqueKey )
+        {
+            $definition .= ' UNIQUE KEY';
+        }
+        elseif ( $isPrimaryKey )
+        {
+            $definition .= ' PRIMARY KEY';
+        }
+
+        return $definition;
+    }
+
+    /**
      * Converts an abstract column type into a physical column type.
      * The conversion is done using the type map specified in {@link columnTypes}.
      * These abstract column types are supported (using MySQL as example to explain the corresponding
@@ -735,57 +859,56 @@ abstract class CDbSchema
      * then only the first part will be converted, and the rest of the parts will be appended to the conversion result.
      * For example, 'string NOT NULL' is converted to 'varchar(255) NOT NULL'.
      *
-     * @param string $type abstract column type
+     * @param string $info abstract column type
      *
-     * @return string physical column type.
+     * @return string physical column type including arguments, null designation and defaults.
      * @since 1.1.6
      */
-    public function getColumnType( $type )
+    protected function getColumnType( $info )
     {
-        if ( isset( $this->columnTypes[$type] ) )
+        $out = [ ];
+        $type = '';
+        if ( is_string( $info ) )
         {
-            return $this->columnTypes[$type];
+            $type = trim( $info ); // cleanup
         }
-        elseif ( ( $pos = strpos( $type, ' ' ) ) !== false )
+        elseif ( is_array( $info ) )
         {
-            $t = substr( $type, 0, $pos );
-            if ( isset( $this->columnTypes[$t] ) )
+            $sql = ArrayUtils::get( $info, 'sql' );
+            if ( !empty( $sql ) )
             {
-                return $this->columnTypes[$t] . substr( $type, $pos );
+                return $sql; // raw SQL statement given, pass it on.
             }
-            elseif ( ( $rpos = strpos( $t, '(' ) ) !== false )
-            {
-                $r = substr( $t, 0, $rpos );
-                if ( isset( $this->columnTypes[$r] ) )
-                {
-                    $s = $this->columnTypes[$r];
-                    // allow overriding of any parameter settings, like length
-                    if ( false != ( $spos = strpos( $s, '(' ) ) )
-                    {
-                        $s = substr( $s, 0, $spos );
-                    }
 
-                    return $s . substr( $t, $rpos ) . substr( $type, $pos );
+            $out = $info;
+            $type = ArrayUtils::get( $info, 'type' );
+            if ( empty( $type ) )
+            {
+                $type = ArrayUtils::get( $info, 'db_type' );
+                if ( empty( $type ) )
+                {
+                    throw new \Exception( "Invalid schema detected - no type or db_type element." );
                 }
             }
+            $type = trim( $type ); // cleanup
         }
-        elseif ( ( $pos = strpos( $type, '(' ) ) !== false )
+
+        if ( empty( $type ) )
         {
-            $t = substr( $type, 0, $pos );
-            if ( isset( $this->columnTypes[$t] ) )
-            {
-                $s = $this->columnTypes[$t];
-                // allow overriding of any parameter settings, like length
-                if ( false != ( $spos = strpos( $s, '(' ) ) )
-                {
-                    $s = substr( $s, 0, $spos );
-                }
-
-                return $s . substr( $type, $pos );
-            }
+            throw new \Exception( "Invalid schema detected - no type definition." );
         }
 
-        return $type;
+        //  If there are extras, then pass it on through
+        if ( ( false !== strpos( $type, ' ' ) ) || ( false !== strpos( $type, '(' ) ) )
+        {
+            return $type;
+        }
+
+        $out['type'] = $type;
+        $this->translateSimpleColumnTypes( $out );
+        $this->validateColumnSettings( $out );
+
+        return $this->buildColumnDefinition( $out );
     }
 
     /**
@@ -940,6 +1063,13 @@ abstract class CDbSchema
             $this->quoteColumnName( $column ) .
             ' ' .
             $this->getColumnType( $definition );
+    }
+
+    public function makeConstraintName( $prefix, $table, $column )
+    {
+        $_temp = $prefix . '_' . str_replace( '.', '_', $table ) . '_' . $column;
+
+        return $_temp;
     }
 
     /**
@@ -1105,4 +1235,57 @@ abstract class CDbSchema
     {
         return 'ALTER TABLE ' . $this->quoteTableName( $table ) . ' DROP CONSTRAINT ' . $this->quoteColumnName( $name );
     }
+
+    public function getPrimaryKeyCommands( $table, $column )
+    {
+        return [ ];
+    }
+
+    /**
+     * @param        $context
+     * @param        $field_info
+     * @param bool   $as_quoted_string
+     * @param string $out_as
+     *
+     * @return string
+     */
+    public function parseFieldsForSelect( $context, $field_info, $as_quoted_string = false, $out_as = '' )
+    {
+        if ( $as_quoted_string )
+        {
+            $context = $this->quoteColumnName( $context );
+            $out_as = $this->quoteColumnName( $out_as );
+        }
+        // find the type
+        $dbType = ArrayUtils::get( $field_info, 'db_type' );
+
+        switch ( $dbType )
+        {
+            default :
+                $out = $context;
+                if ( !empty( $as ) )
+                {
+                    $out .= ' AS ' . $out_as;
+                }
+                break;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param bool $update
+     *
+     * @return mixed
+     */
+    public function getTimestampForSet( $update = false )
+    {
+        return new CDbExpression( '(NOW())' );
+    }
+
+    public function parseValueForSet( $value, $field_info )
+    {
+        return $value;
+    }
+
 }

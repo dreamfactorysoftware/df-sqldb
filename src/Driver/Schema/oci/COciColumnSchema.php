@@ -7,6 +7,9 @@
  * @copyright Copyright &copy; 2008-2011 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Oci;
+
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
 
 /**
  * COciColumnSchema class describes the column meta data of an Oracle table.
@@ -20,14 +23,12 @@ class COciColumnSchema extends CDbColumnSchema
      * Extracts the PHP type from DB type.
      *
      * @param string $dbType DB type
-     *
-     * @return string
      */
-    protected function extractOraType( $dbType )
+    public function extractType( $dbType )
     {
         if ( strpos( $dbType, 'FLOAT' ) !== false )
         {
-            return 'double';
+            $this->phpType = 'double';
         }
 
         if ( strpos( $dbType, 'NUMBER' ) !== false || strpos( $dbType, 'INTEGER' ) !== false )
@@ -37,32 +38,22 @@ class COciColumnSchema extends CDbColumnSchema
                 $values = explode( ',', $matches[1] );
                 if ( isset( $values[1] ) and ( ( (int)$values[1] ) > 0 ) )
                 {
-                    return 'double';
+                    $this->phpType = 'double';
                 }
                 else
                 {
-                    return 'integer';
+                    $this->phpType = 'integer';
                 }
             }
             else
             {
-                return 'double';
+                $this->phpType = 'double';
             }
         }
         else
         {
-            return 'string';
+            $this->phpType = 'string';
         }
-    }
-
-    /**
-     * Extracts the PHP type from DB type.
-     *
-     * @param string $dbType DB type
-     */
-    protected function extractType( $dbType )
-    {
-        $this->type = $this->extractOraType( $dbType );
     }
 
     /**
@@ -71,7 +62,7 @@ class COciColumnSchema extends CDbColumnSchema
      *
      * @param mixed $defaultValue the default value obtained from metadata
      */
-    protected function extractDefault( $defaultValue )
+    public function extractDefault( $defaultValue )
     {
         if ( stripos( $defaultValue, 'timestamp' ) !== false )
             $this->defaultValue = null;

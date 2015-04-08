@@ -31,9 +31,17 @@ class CDbColumnSchema
      */
     public $dbType;
     /**
-     * @var string the PHP type of this column.
+     * @var string the DreamFactory simple type of this column.
      */
     public $type;
+    /**
+     * @var string the PHP type of this column.
+     */
+    public $phpType;
+    /**
+     * @var string the PHP PDO type of this column.
+     */
+    public $pdoType;
     /**
      * @var boolean whether this column can be null.
      */
@@ -57,26 +65,34 @@ class CDbColumnSchema
     /**
      * @var boolean whether this column is a primary key
      */
-    public $isPrimaryKey;
-    /**
-     * @var boolean whether this column is a foreign key
-     */
-    public $isForeignKey;
+    public $isPrimaryKey = false;
     /**
      * @var boolean whether this column has a unique constraint
      */
-    public $isUnique;
+    public $isUnique = false;
     /**
      * @var boolean whether this column is indexed
      */
-    public $isIndex;
+    public $isIndex = false;
+    /**
+     * @var boolean whether this column is a foreign key
+     */
+    public $isForeignKey = false;
+    /**
+     * @var string if a foreign key, then this is referenced table name
+     */
+    public $refTable;
+    /**
+     * @var string if a foreign key, then this is the referenced fields of the referenced table
+     */
+    public $refFields;
     /**
      * @var boolean whether this column is auto-incremental
      * @since 1.1.7
      */
     public $autoIncrement = false;
     /**
-     * @var boolean whether this column is auto-incremental
+     * @var boolean whether this column supports
      * @since 1.1.7
      */
     public $supportsMultibyte = false;
@@ -94,48 +110,191 @@ class CDbColumnSchema
     public $comment = '';
 
     /**
-     * Initializes the column with its DB type and default value.
-     * This sets up the column's PHP type, size, precision, scale as well as default value.
+     * Extracts the PHP type from DF type.
      *
-     * @param string $dbType       the column's DB type
-     * @param mixed  $defaultValue the default value
+     * @param string $type DF type
+     *
+     * @return string
      */
-    public function init( $dbType, $defaultValue )
+    public static function extractPhpType( $type )
     {
-        $this->dbType = $dbType;
-        $this->extractType( $dbType );
-        $this->extractLimit( $dbType );
-        $this->extractFixedLength( $dbType );
-        $this->extractMultiByteSupport( $dbType );
-        if ( $defaultValue !== null )
+        switch ( $type )
         {
-            $this->extractDefault( $defaultValue );
+            case 'boolean':
+                return 'boolean';
+
+            case 'integer':
+            case 'id':
+            case 'reference':
+                return 'integer';
+
+            case 'decimal':
+            case 'double':
+            case 'float':
+            case 'money':
+                return 'double';
+
+            case 'string':
+            case 'text':
+            case 'binary':
+            case 'date':
+            case 'time':
+            case 'datetime':
+            case 'timestamp':
+            default:
+                return 'string';
         }
     }
 
     /**
-     * Extracts the PHP type from DB type.
+     * Extracts the PHP PDO type from DF type.
+     *
+     * @param string $type DF type
+     *
+     * @return int|null
+     */
+    public static function extractPdoType( $type )
+    {
+        switch ( $type )
+        {
+            case 'boolean':
+                return \PDO::PARAM_BOOL;
+
+            case 'integer':
+            case 'id':
+            case 'reference':
+                return \PDO::PARAM_INT;
+
+            case 'string':
+                return \PDO::PARAM_STR;
+        }
+
+        return null;
+    }
+
+    /**
+     * Extracts the DreamFactory simple type from DB type.
      *
      * @param string $dbType DB type
      */
-    protected function extractType( $dbType )
+    public function extractType( $dbType )
     {
-        if ( stripos( $dbType, 'int' ) !== false && stripos( $dbType, 'unsigned int' ) === false )
+        $_simpleType = strstr( $dbType, '(', true );
+        $_simpleType = strtolower( $_simpleType ?: $dbType );
+
+        switch ( $_simpleType )
         {
-            $this->type = 'integer';
+            case 'bit':
+            case ( false !== strpos( $_simpleType, 'bool' ) ):
+                $this->type = 'boolean';
+                break;
+
+            case 'number': // Oracle for boolean, integers and decimals
+                if ( $this->size == 1 )
+                {
+                    $this->type = 'boolean';
+                }
+                elseif ( empty( $this->scale ) )
+                {
+                    $this->type = 'integer';
+                }
+                else
+                {
+                    $this->type = 'decimal';
+                }
+                break;
+
+            case 'decimal':
+            case 'numeric':
+            case 'percent':
+                $this->type = 'decimal';
+                break;
+
+            case ( false !== strpos( $_simpleType, 'double' ) ):
+                $this->type = 'double';
+                break;
+
+            case 'real':
+            case ( false !== strpos( $_simpleType, 'float' ) ):
+                if ( $this->size == 53 )
+                {
+                    $this->type = 'double';
+                }
+                else
+                {
+                    $this->type = 'float';
+                }
+                break;
+
+            case ( false !== strpos( $_simpleType, 'money' ) ):
+                $this->type = 'money';
+                break;
+
+            case 'tinyint':
+            case 'smallint':
+            case 'mediumint':
+            case 'bigint':
+            case 'int':
+            case 'integer':
+                // watch out for point here!
+                if ( $this->size == 1 )
+                {
+                    $this->type = 'boolean';
+                }
+                else
+                {
+                    $this->type = 'integer';
+                }
+                break;
+
+            case ( false !== strpos( $_simpleType, 'timestamp' ) ):
+            case 'datetimeoffset': //  MSSQL
+                $this->type = 'timestamp';
+                break;
+
+            case ( false !== strpos( $_simpleType, 'datetime' ) ):
+                $this->type = 'datetime';
+                break;
+
+            case 'date':
+                $this->type = 'date';
+                break;
+
+            case ( false !== strpos( $_simpleType, 'time' ) ):
+                $this->type = 'time';
+                break;
+
+            case ( false !== strpos( $_simpleType, 'binary' ) ):
+            case ( false !== strpos( $_simpleType, 'blob' ) ):
+                $this->type = 'binary';
+                break;
+
+            //	String types
+            case ( false !== strpos( $_simpleType, 'clob' ) ):
+            case ( false !== strpos( $_simpleType, 'text' ) ):
+                $this->type = 'text';
+                break;
+
+            case 'varchar':
+                if ( $this->size == -1 )
+                {
+                    $this->type = 'text'; // varchar(max) in MSSQL
+                }
+                else
+                {
+                    $this->type = 'string';
+                }
+                break;
+
+            case 'string':
+            case ( false !== strpos( $_simpleType, 'char' ) ):
+            default:
+                $this->type = 'string';
+                break;
         }
-        elseif ( stripos( $dbType, 'bool' ) !== false )
-        {
-            $this->type = 'boolean';
-        }
-        elseif ( preg_match( '/(real|floa|doub)/i', $dbType ) )
-        {
-            $this->type = 'double';
-        }
-        else
-        {
-            $this->type = 'string';
-        }
+
+        $this->phpType = static::extractPhpType( $this->type );
+        $this->pdoType = static::extractPdoType( $this->type );
     }
 
     /**
@@ -143,14 +302,15 @@ class CDbColumnSchema
      *
      * @param string $dbType the column's DB type
      */
-    protected function extractLimit( $dbType )
+    public function extractLimit( $dbType )
     {
         if ( strpos( $dbType, '(' ) && preg_match( '/\((.*)\)/', $dbType, $matches ) )
         {
             $values = explode( ',', $matches[1] );
-            $this->size = $this->precision = (int)$values[0];
+            $this->size = (int)$values[0];
             if ( isset( $values[1] ) )
             {
+                $this->precision = (int)$values[0];
                 $this->scale = (int)$values[1];
             }
         }
@@ -162,7 +322,7 @@ class CDbColumnSchema
      *
      * @param mixed $defaultValue the default value obtained from metadata
      */
-    protected function extractDefault( $defaultValue )
+    public function extractDefault( $defaultValue )
     {
         $this->defaultValue = $this->typecast( $defaultValue );
     }
@@ -176,15 +336,15 @@ class CDbColumnSchema
      */
     public function typecast( $value )
     {
-        if ( gettype( $value ) === $this->type || $value === null || $value instanceof CDbExpression )
+        if ( gettype( $value ) === $this->phpType || $value === null || $value instanceof CDbExpression )
         {
             return $value;
         }
         if ( $value === '' && $this->allowNull )
         {
-            return $this->type === 'string' ? '' : null;
+            return $this->phpType === 'string' ? '' : null;
         }
-        switch ( $this->type )
+        switch ( $this->phpType )
         {
             case 'string':
                 return (string)$value;

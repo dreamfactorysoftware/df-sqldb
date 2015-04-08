@@ -13,14 +13,18 @@
  * @author  Edgard L. Messias <edgardmessias@gmail.com>
  * @package ext.yiidb2
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Ibmdb2;
+
+use DreamFactory\Rave\SqlDb\Driver\CDbConnection;
+
 class CIbmDB2Connection extends CDbConnection
 {
 
     protected function initConnection( $pdo )
     {
         parent::initConnection( $pdo );
-        $this->setAttribute( PDO::ATTR_CASE, PDO::CASE_LOWER );
-        $this->setAttribute( PDO::ATTR_STRINGIFY_FETCHES, true );
+        $this->setAttribute( \PDO::ATTR_CASE, \PDO::CASE_LOWER );
+        $this->setAttribute( \PDO::ATTR_STRINGIFY_FETCHES, true );
     }
 
     public $driverMap = array(
@@ -32,7 +36,7 @@ class CIbmDB2Connection extends CDbConnection
     {
         if ( $type == 'NULL' )
         {
-            return PDO::PARAM_STR;
+            return \PDO::PARAM_STR;
         }
         else
         {

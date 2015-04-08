@@ -21,15 +21,23 @@
 namespace DreamFactory\Rave\SqlDb\Resources;
 
 use DreamFactory\Library\Utility\ArrayUtils;
-use DreamFactory\Rave\Utility\SqlDbUtilities;
 use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\RestException;
+use DreamFactory\Rave\Resources\BaseDbResource;
+use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Resources\BaseRestResource;
+use DreamFactory\Rave\Utility\DbUtilities;
 
-class StoredProcedure extends BaseRestResource
+class StoredProcedure extends BaseDbResource
 {
+    //*************************************************************************
+    //	Traits
+    //*************************************************************************
+
+    use SqlDbResource;
+
     //*************************************************************************
     //	Constants
     //*************************************************************************
@@ -43,33 +51,9 @@ class StoredProcedure extends BaseRestResource
     //	Members
     //*************************************************************************
 
-    /**
-     * @var null|SqlDbService
-     */
-    protected $service = null;
-
     //*************************************************************************
     //	Methods
     //*************************************************************************
-
-    /**
-     * @return null|SqlDbService
-     */
-    public function getService()
-    {
-        return $this->service;
-    }
-
-    /**
-     * @param SqlDbService $service
-     * @param array $settings
-     */
-    public function __construct( $service = null, $settings = array() )
-    {
-        parent::__construct( $settings );
-
-        $this->service = $service;
-    }
 
     /**
      * @param string $procedure
@@ -157,7 +141,7 @@ class StoredProcedure extends BaseRestResource
 
         try
         {
-            $_names = $this->service->getConnection()->getSchema()->getProcedureNames( '', $refresh );
+            $_names = $this->dbConn->getSchema()->getProcedureNames( '', $refresh );
             natcasesort( $_names );
             $_result = array_values( $_names );
 
@@ -206,7 +190,7 @@ class StoredProcedure extends BaseRestResource
             throw new BadRequestException( 'Stored procedure name can not be empty.' );
         }
 
-        if ( false === $params = SqlDbUtilities::validateAsArray( $params, ',', true ) )
+        if ( false === $params = DbUtilities::validateAsArray( $params, ',', true ) )
         {
             $params = array();
         }
@@ -258,7 +242,7 @@ class StoredProcedure extends BaseRestResource
 
         try
         {
-            $_result = $this->service->getConnection()->getSchema()->callProcedure( $name, $params );
+            $_result = $this->dbConn->getSchema()->callProcedure( $name, $params );
 
             if ( !empty( $returns ) && ( 0 !== strcasecmp( 'TABLE', $returns ) ) )
             {
@@ -271,7 +255,7 @@ class StoredProcedure extends BaseRestResource
                         $_result = current( $_result );
                     }
                 }
-                $_result = SqlDbUtilities::formatValue( $_result, $returns );
+                $_result = DbUtilities::formatValue( $_result, $returns );
             }
 
             // convert result field values to types according to schema received
@@ -292,7 +276,7 @@ class StoredProcedure extends BaseRestResource
                                     {
                                         if ( null !== $_type = ArrayUtils::get( $schema, $_key, null, false, true ) )
                                         {
-                                            $_sub[$_key] = SqlDbUtilities::formatValue( $_value, $_type );
+                                            $_sub[$_key] = DbUtilities::formatValue( $_value, $_type );
                                         }
                                     }
                                 }
@@ -304,7 +288,7 @@ class StoredProcedure extends BaseRestResource
                             {
                                 if ( null !== $_type = ArrayUtils::get( $schema, $_key, null, false, true ) )
                                 {
-                                    $_row[$_key] = SqlDbUtilities::formatValue( $_value, $_type );
+                                    $_row[$_key] = DbUtilities::formatValue( $_value, $_type );
                                 }
                             }
                         }
@@ -327,7 +311,7 @@ class StoredProcedure extends BaseRestResource
                     if ( null !== $_value = ArrayUtils::get( $_param, 'value', null ) )
                     {
                         $_type = ArrayUtils::get( $_param, 'type' );
-                        $_value = SqlDbUtilities::formatValue( $_value, $_type );
+                        $_value = DbUtilities::formatValue( $_value, $_type );
                     }
                     $_result[$_name] = $_value;
                 }

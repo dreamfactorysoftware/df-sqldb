@@ -7,6 +7,7 @@
  * @copyright Copyright &copy; 2008-2011 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Mssql;
 
 /**
  * This is an extension of default PDO class for mssql driver only
@@ -15,7 +16,7 @@
  * @author  Christophe Boulain <Christophe.Boulain@gmail.com>
  * @package system.db.schema.mssql
  */
-class CMssqlPdoAdapter extends PDO
+class CMssqlPdoAdapter extends \PDO
 {
     /**
      * Get the last inserted id value

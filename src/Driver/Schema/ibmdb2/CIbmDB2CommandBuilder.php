@@ -13,6 +13,13 @@
  * @author  Edgard L. Messias <edgardmessias@gmail.com>
  * @package ext.yiidb2
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Ibmdb2;
+
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCommandBuilder;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCriteria;
+use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
+
 class CIbmDB2CommandBuilder extends CDbCommandBuilder
 {
 

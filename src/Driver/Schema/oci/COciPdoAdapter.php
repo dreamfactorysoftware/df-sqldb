@@ -7,6 +7,8 @@
  * @copyright Copyright &copy; 2008-2012 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Oci;
+
 
 /**
  * This is an extension of default PDO class for OCI8 driver only.
@@ -16,7 +18,7 @@
  * @package system.db.schema.oci
  * @since   1.1.13
  */
-class COciPdoAdapter extends PDO
+class COciPdoAdapter extends \PDO
 {
     /**
      * @var resource
@@ -168,7 +170,7 @@ class COciPdoAdapter extends PDO
         return oci_error( $this->dbh );
     }
 
-    public function quote( $value, $parameter_type = PDO::PARAM_STR )
+    public function quote( $value, $parameter_type = \PDO::PARAM_STR )
     {
         if ( is_int( $value ) || is_float( $value ) )
         {
@@ -234,17 +236,17 @@ class OCI8Statement implements \IteratorAggregate
      * @var array
      */
     protected static $fetchModeMap = array(
-        PDO::FETCH_BOTH   => OCI_BOTH,
-        PDO::FETCH_ASSOC  => OCI_ASSOC,
-        PDO::FETCH_NUM    => OCI_NUM,
-        PDO::FETCH_COLUMN => OCI_NUM,
-        PDO::FETCH_BOUND  => OCI_ASSOC,
+        \PDO::FETCH_BOTH   => OCI_BOTH,
+        \PDO::FETCH_ASSOC  => OCI_ASSOC,
+        \PDO::FETCH_NUM    => OCI_NUM,
+        \PDO::FETCH_COLUMN => OCI_NUM,
+        \PDO::FETCH_BOUND  => OCI_ASSOC,
     );
 
     /**
      * @var integer
      */
-    protected $_defaultFetchMode = PDO::FETCH_BOTH;
+    protected $_defaultFetchMode = \PDO::FETCH_BOTH;
 
     /**
      * @var array
@@ -315,11 +317,11 @@ class OCI8Statement implements \IteratorAggregate
         return array($statement, $paramMap);
     }
 
-    public function bindParam( $parameter, &$variable, $data_type = PDO::PARAM_STR, $length = null, $driver_options = null )
+    public function bindParam( $parameter, &$variable, $data_type = \PDO::PARAM_STR, $length = null, $driver_options = null )
     {
         $column = isset( $this->_paramMap[$parameter] ) ? $this->_paramMap[$parameter] : $parameter;
 
-        if ( $data_type == PDO::PARAM_LOB )
+        if ( $data_type == \PDO::PARAM_LOB )
         {
             $lob = oci_new_descriptor( $this->_dbh, OCI_D_LOB );
             $lob->writeTemporary( $variable, OCI_TEMP_BLOB );
@@ -346,7 +348,7 @@ class OCI8Statement implements \IteratorAggregate
         return oci_define_by_name( $this->_sth, $column, $param, null );
     }
 
-    public function bindValue( $parameter, $value, $data_type = PDO::PARAM_STR )
+    public function bindValue( $parameter, $value, $data_type = \PDO::PARAM_STR )
     {
         return $this->bindParam( $parameter, $value, $data_type, null );
     }
@@ -435,7 +437,7 @@ class OCI8Statement implements \IteratorAggregate
         return oci_free_statement( $this->_sth );
     }
 
-    public function fetch( $fetch_style = null, $cursor_orientation = PDO::FETCH_ORI_NEXT, $cursor_offset = 0 )
+    public function fetch( $fetch_style = null, $cursor_orientation = \PDO::FETCH_ORI_NEXT, $cursor_offset = 0 )
     {
         $fetchMode = $fetch_style ?: $this->_defaultFetchMode;
         // binding doesn't currently seem to work here
@@ -452,7 +454,7 @@ class OCI8Statement implements \IteratorAggregate
         $row = oci_fetch_array( $this->_sth, self::$fetchModeMap[$fetchMode] | OCI_RETURN_NULLS | OCI_RETURN_LOBS );
 
         // must do type conversion here from previously bound types
-        if ( ( PDO::FETCH_BOUND === $fetchMode ) && !empty( $this->_bindTypeMap ) )
+        if ( ( \PDO::FETCH_BOUND === $fetchMode ) && !empty( $this->_bindTypeMap ) )
         {
             foreach ( $this->_bindTypeMap as $_column => $_binding )
             {
@@ -460,13 +462,13 @@ class OCI8Statement implements \IteratorAggregate
                 {
                     switch ( $_binding )
                     {
-                        case PDO::PARAM_BOOL:
+                        case \PDO::PARAM_BOOL:
                             $row[$_column] = ( !!$row[$_column] );
                             break;
-                        case PDO::PARAM_INT:
+                        case \PDO::PARAM_INT:
                             $row[$_column] = intval( $row[$_column] );
                             break;
-                        case PDO::PARAM_STR:
+                        case \PDO::PARAM_STR:
                             $row[$_column] = strval( $row[$_column] );
                             break;
                     }
@@ -503,7 +505,7 @@ class OCI8Statement implements \IteratorAggregate
         else
         {
             $fetchStructure = OCI_FETCHSTATEMENT_BY_ROW;
-            if ( $fetchMode == PDO::FETCH_COLUMN )
+            if ( $fetchMode == \PDO::FETCH_COLUMN )
             {
                 $fetchStructure = OCI_FETCHSTATEMENT_BY_COLUMN;
             }
@@ -516,7 +518,7 @@ class OCI8Statement implements \IteratorAggregate
                 self::$fetchModeMap[$fetchMode] | OCI_RETURN_NULLS | $fetchStructure | OCI_RETURN_LOBS
             );
 
-            if ( $fetchMode == PDO::FETCH_COLUMN )
+            if ( $fetchMode == \PDO::FETCH_COLUMN )
             {
                 $result = $result[0];
             }

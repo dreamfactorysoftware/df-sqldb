@@ -7,6 +7,13 @@
  * @copyright Copyright &copy; 2008-2011 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Pgsql;
+
+use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Library\Utility\Scalar;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
 
 /**
  * CPgsqlSchema is the class for retrieving metadata information from a PostgreSQL database.
@@ -19,27 +26,6 @@ class CPgsqlSchema extends CDbSchema
 {
     const DEFAULT_SCHEMA = 'public';
 
-    /**
-     * @var array the abstract column types mapped to physical column types.
-     * @since 1.1.6
-     */
-    public $columnTypes = array(
-        'pk'        => 'serial NOT NULL PRIMARY KEY',
-        'string'    => 'character varying (255)',
-        'text'      => 'text',
-        'integer'   => 'integer',
-        'float'     => 'real',
-        'double'    => 'double precision',
-        'decimal'   => 'numeric',
-        'datetime'  => 'timestamp',
-        'timestamp' => 'timestamp',
-        'time'      => 'time',
-        'date'      => 'date',
-        'binary'    => 'bytea',
-        'boolean'   => 'boolean',
-        'money'     => 'decimal(19,4)',
-    );
-
     private $_sequences = array();
 
     /**
@@ -48,6 +34,219 @@ class CPgsqlSchema extends CDbSchema
     public function getDefaultSchema()
     {
         return static::DEFAULT_SCHEMA;
+    }
+
+    protected function translateSimpleColumnTypes( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( $type )
+        {
+            // some types need massaging, some need other required properties
+            case 'pk':
+            case 'id':
+                $info['type'] = 'serial';
+                $info['allow_null'] = false;
+                $info['auto_increment'] = true;
+                $info['is_primary_key'] = true;
+                break;
+
+            case 'fk':
+            case 'reference':
+                $info['type'] = 'integer';
+                $info['is_foreign_key'] = true;
+                // check foreign tables
+                break;
+
+            case 'datetime':
+                $info['type'] = 'timestamp';
+                break;
+
+            case 'timestamp_on_create':
+            case 'timestamp_on_update':
+                $info['type'] = 'timestamp';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( !isset( $default ) )
+                {
+                    $default = 'CURRENT_TIMESTAMP';
+                    if ( 'timestamp_on_update' === $type )
+                    {
+                        $default .= ' ON UPDATE CURRENT_TIMESTAMP';
+                    }
+                    $info['default'] = $default;
+                }
+                break;
+
+            case 'int':
+                $info['type'] = 'integer';
+                break;
+
+            case 'float':
+                $info['type'] = 'real';
+                break;
+
+            case 'double':
+                $info['type'] = 'double precision';
+                break;
+
+            case 'string':
+                $fixed = ArrayUtils::getBool( $info, 'fixed_length' );
+                $national = ArrayUtils::getBool( $info, 'supports_multibyte' );
+                if ( $fixed )
+                {
+                    $info['type'] = ( $national ) ? 'national char' : 'char';
+                }
+                elseif ( $national )
+                {
+                    $info['type'] = 'national varchar';
+                }
+                else
+                {
+                    $info['type'] = 'varchar';
+                }
+                break;
+
+            case 'binary':
+                $info['type'] = 'bytea';
+                break;
+        }
+    }
+
+    protected function validateColumnSettings( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( $type )
+        {
+            // some types need massaging, some need other required properties
+            case 'boolean':
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) )
+                {
+                    // convert to bit 0 or 1, where necessary
+                    $info['default'] = ( Scalar::boolval( $default ) ) ? 'TRUE' : 'FALSE';
+                }
+                break;
+
+            case 'smallint':
+            case 'integer':
+            case 'int':
+            case 'bigint':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $info['type_extras'] = "($length)"; // sets the viewable length
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = intval( $default );
+                }
+                break;
+
+            case 'decimal':
+            case 'numeric':
+            case 'real':
+            case 'double precision':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $scale = ArrayUtils::get( $info, 'scale', ArrayUtils::get( $info, 'decimals' ) );
+                        $info['type_extras'] = ( !empty( $scale ) ) ? "($length,$scale)" : "($length)";
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = floatval( $default );
+                }
+                break;
+
+            case 'char':
+            case 'national char':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+
+            case 'varchar':
+            case 'national varchar':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                else // requires a max length
+                {
+                    $info['type_extras'] = '(' . static::DEFAULT_STRING_MAX_SIZE . ')';
+                }
+                break;
+
+            case 'time':
+            case 'timestamp':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+        }
+    }
+
+    /**
+     * @param array $info
+     *
+     * @return string
+     * @throws \Exception
+     */
+    protected function buildColumnDefinition( array $info )
+    {
+        // This works for most except Oracle
+        $type = ArrayUtils::get( $info, 'type' );
+        $typeExtras = ArrayUtils::get( $info, 'type_extras' );
+
+        $definition = $type . $typeExtras;
+
+        $allowNull = ArrayUtils::getBool( $info, 'allow_null', true );
+        $definition .= ( $allowNull ) ? ' NULL' : ' NOT NULL';
+
+        $default = ArrayUtils::get( $info, 'default' );
+        if ( isset( $default ) )
+        {
+            $quoteDefault = ArrayUtils::getBool( $info, 'quote_default', false );
+            if ( $quoteDefault )
+            {
+                $default = "'" . $default . "'";
+            }
+
+            $definition .= ' DEFAULT ' . $default;
+        }
+
+        $isUniqueKey = ArrayUtils::getBool( $info, 'is_unique', false );
+        $isPrimaryKey = ArrayUtils::getBool( $info, 'is_primary_key', false );
+        if ( $isPrimaryKey && $isUniqueKey )
+        {
+            throw new \Exception( 'Unique and Primary designations not allowed simultaneously.' );
+        }
+        if ( $isUniqueKey )
+        {
+            $definition .= ' UNIQUE';
+        }
+        elseif ( $isPrimaryKey )
+        {
+            $definition .= ' PRIMARY KEY';
+        }
+
+        return $definition;
     }
 
     /**
@@ -131,7 +330,7 @@ class CPgsqlSchema extends CDbSchema
      */
     protected function loadTable( $name )
     {
-        $table = new CPgsqlTableSchema;
+        $table = new CDbTableSchema;
         $this->resolveTableNames( $table, $name );
         if ( !$this->findColumns( $table ) )
         {
@@ -161,7 +360,7 @@ class CPgsqlSchema extends CDbSchema
     /**
      * Generates various kinds of table names.
      *
-     * @param CPgsqlTableSchema $table the table instance
+     * @param CDbTableSchema $table the table instance
      * @param string            $name  the unquoted table name
      */
     protected function resolveTableNames( $table, $name )
@@ -193,7 +392,7 @@ class CPgsqlSchema extends CDbSchema
     /**
      * Collects the table column metadata.
      *
-     * @param CPgsqlTableSchema $table the table metadata
+     * @param CDbTableSchema $table the table metadata
      *
      * @return boolean whether the table exists in the database
      */
@@ -252,11 +451,13 @@ EOD;
         $c->name = $column['attname'];
         $c->rawName = $this->quoteColumnName( $c->name );
         $c->allowNull = !$column['attnotnull'];
-        $c->isPrimaryKey = false;
-        $c->isForeignKey = false;
         $c->comment = $column['comment'] === null ? '' : $column['comment'];
-
-        $c->init( $column['type'], $column['atthasdef'] ? $column['adsrc'] : null );
+        $c->dbType = $column['type'];
+        $c->extractLimit( $column['type'] );
+        $c->extractFixedLength( $column['type'] );
+        $c->extractMultiByteSupport( $column['type'] );
+        $c->extractType( $column['type'] );
+        $c->extractDefault( $column['atthasdef'] ? $column['adsrc'] : null );
 
         return $c;
     }
@@ -264,7 +465,7 @@ EOD;
     /**
      * Collects the primary and foreign key column details for the given table.
      *
-     * @param CPgsqlTableSchema $table the table metadata
+     * @param CDbTableSchema $table the table metadata
      */
     protected function findConstraints( $table )
     {
@@ -317,6 +518,12 @@ EOD;
                 if ( isset( $table->columns[$cn] ) )
                 {
                     $table->columns[$cn]->isForeignKey = true;
+                    $table->columns[$cn]->refTable = $name;
+                    $table->columns[$cn]->refFields = $rcn;
+                    if ('integer' === $table->columns[$cn]->type)
+                    {
+                        $table->columns[$cn]->type = 'reference';
+                    }
                 }
 
                 // Add it to our foreign references as well
@@ -375,7 +582,7 @@ EOD;
     /**
      * Gets the primary key column(s) details for the given table.
      *
-     * @param CPgsqlTableSchema $table table
+     * @param CDbTableSchema $table table
      *
      * @return mixed primary keys (null if no pk, string if only 1 column pk, or array if composite pk)
      */
@@ -410,6 +617,10 @@ EOD;
             if ( isset( $table->columns[$name] ) )
             {
                 $table->columns[$name]->isPrimaryKey = true;
+                if (('integer' === $table->columns[$name]->type) && $table->columns[$name]->autoIncrement)
+                {
+                    $table->columns[$name]->type = 'id';
+                }
                 if ( $table->primaryKey === null )
                 {
                     $table->primaryKey = $name;
@@ -581,7 +792,7 @@ EOD;
      * @param string $name
      * @param array  $params
      *
-     * @throws Exception
+     * @throws \Exception
      * @return mixed
      */
     public function callFunction( $name, &$params )
@@ -617,7 +828,7 @@ EOD;
      *                       default schema. If not empty, the returned stored function names will be prefixed with the
      *                       schema name.
      *
-     * @throws InvalidArgumentException
+     * @throws \InvalidArgumentException
      * @return array all stored function names in the database.
      */
     protected function _findRoutines( $type, $schema = '' )
@@ -779,4 +990,19 @@ MYSQL;
     {
         return new CPgsqlCommandBuilder( $this );
     }
+
+    public function parseValueForSet( $value, $field_info )
+    {
+        $_type = ArrayUtils::get( $field_info, 'type' );
+
+        switch ( $_type )
+        {
+            case 'boolean':
+                $value = ( Scalar::boolval( $value ) ? 'TRUE' : 'FALSE' );
+                break;
+        }
+
+        return $value;
+    }
+
 }

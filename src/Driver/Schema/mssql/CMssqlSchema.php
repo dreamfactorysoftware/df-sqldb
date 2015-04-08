@@ -16,29 +16,19 @@
  * @author  Christophe Boulain <Christophe.Boulain@gmail.com>
  * @package system.db.schema.mssql
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Mssql;
+
+use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Library\Utility\Scalar;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCommandBuilder;
+
 class CMssqlSchema extends CDbSchema
 {
     const DEFAULT_SCHEMA = 'dbo';
-
-    /**
-     * @var array the abstract column types mapped to physical column types.
-     * @since 1.1.6
-     */
-    public $columnTypes = array(
-        'pk'        => 'int IDENTITY PRIMARY KEY',
-        'string'    => 'varchar(255)',
-        'text'      => 'varchar(max)',
-        'integer'   => 'int',
-        'float'     => 'real',
-        'double'    => 'float',
-        'decimal'   => 'decimal',
-        'datetime'  => 'datetime2',
-        'timestamp' => 'datetimeoffset',
-        'time'      => 'time',
-        'date'      => 'date',
-        'binary'    => 'binary',
-        'boolean'   => 'bit',
-    );
 
     /**
      * @return string default schema.
@@ -46,6 +36,260 @@ class CMssqlSchema extends CDbSchema
     public function getDefaultSchema()
     {
         return static::DEFAULT_SCHEMA;
+    }
+
+    protected function translateSimpleColumnTypes( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( $type )
+        {
+            // some types need massaging, some need other required properties
+            case 'pk':
+            case 'id':
+                $info['type'] = 'int';
+                $info['allow_null'] = false;
+                $info['auto_increment'] = true;
+                $info['is_primary_key'] = true;
+                break;
+
+            case 'fk':
+            case 'reference':
+                $info['type'] = 'int';
+                $info['is_foreign_key'] = true;
+                // check foreign tables
+                break;
+
+            case 'datetime':
+                $info['type'] = 'datetime2';
+                break;
+            case 'timestamp':
+                $info['type'] = 'datetimeoffset';
+                break;
+            case 'timestamp_on_create':
+            case 'timestamp_on_update':
+                $info['type'] = 'datetimeoffset';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( !isset( $default ) )
+                {
+                    $default = 'getdate()';
+                    if ( 'timestamp_on_update' === $type )
+                    {
+                        $default .= ' ON UPDATE CURRENT_TIMESTAMP';
+                    }
+                    $info['default'] = $default;
+                }
+                break;
+
+            case 'boolean':
+                $info['type'] = 'bit';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) )
+                {
+                    // convert to bit 0 or 1, where necessary
+                    $info['default'] = ( Scalar::boolval( $default ) ) ? 1 : 0;
+                }
+                break;
+
+            case 'integer':
+                $info['type'] = 'int';
+                break;
+
+            case 'double':
+                $info['type'] = 'float';
+                $info['type_extras'] = '(53)';
+                break;
+
+            case 'text':
+                $info['type'] = 'varchar';
+                $info['type_extras'] = '(max)';
+                break;
+            case 'ntext':
+                $info['type'] = 'nvarchar';
+                $info['type_extras'] = '(max)';
+                break;
+            case 'image':
+                $info['type'] = 'varbinary';
+                $info['type_extras'] = '(max)';
+                break;
+
+            case 'string':
+                $fixed = ArrayUtils::getBool( $info, 'fixed_length' );
+                $national = ArrayUtils::getBool( $info, 'supports_multibyte' );
+                if ( $fixed )
+                {
+                    $info['type'] = ( $national ) ? 'nchar' : 'char';
+                }
+                elseif ( $national )
+                {
+                    $info['type'] = 'nvarchar';
+                }
+                else
+                {
+                    $info['type'] = 'varchar';
+                }
+                break;
+
+            case 'binary':
+                $fixed = ArrayUtils::getBool( $info, 'fixed_length' );
+                $info['type'] = ( $fixed ) ? 'binary' : 'varbinary';
+                break;
+        }
+    }
+
+    protected function validateColumnSettings( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( $type )
+        {
+            // some types need massaging, some need other required properties
+            case 'bit':
+            case 'tinyint':
+            case 'smallint':
+            case 'int':
+            case 'bigint':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $info['type_extras'] = "($length)"; // sets the viewable length
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = intval( $default );
+                }
+                break;
+
+            case 'decimal':
+            case 'numeric':
+            case 'money':
+            case 'smallmoney':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $scale = ArrayUtils::get( $info, 'scale', ArrayUtils::get( $info, 'decimals' ) );
+                        $info['type_extras'] = ( !empty( $scale ) ) ? "($length,$scale)" : "($length)";
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = floatval( $default );
+                }
+                break;
+            case 'real':
+            case 'float':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $info['type_extras'] = "($length)";
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = floatval( $default );
+                }
+                break;
+
+            case 'char':
+            case 'nchar':
+            case 'binary':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+
+            case 'varchar':
+            case 'nvarchar':
+            case 'varbinary':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                else // requires a max length
+                {
+                    $info['type_extras'] = '(' . static::DEFAULT_STRING_MAX_SIZE . ')';
+                }
+                break;
+
+            case 'time':
+            case 'datetime':
+            case 'datetime2':
+            case 'datetimeoffset':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+        }
+    }
+
+    /**
+     * @param array $info
+     *
+     * @return string
+     * @throws \Exception
+     */
+    protected function buildColumnDefinition( array $info )
+    {
+        // This works for most except Oracle
+        $type = ArrayUtils::get( $info, 'type' );
+        $typeExtras = ArrayUtils::get( $info, 'type_extras' );
+
+        $definition = $type . $typeExtras;
+
+        $allowNull = ArrayUtils::getBool( $info, 'allow_null', true );
+        $definition .= ( $allowNull ) ? ' NULL' : ' NOT NULL';
+
+        $default = ArrayUtils::get( $info, 'default' );
+        if ( isset( $default ) )
+        {
+            $quoteDefault = ArrayUtils::getBool( $info, 'quote_default', false );
+            if ( $quoteDefault )
+            {
+                $default = "'" . $default . "'";
+            }
+
+            $definition .= ' DEFAULT ' . $default;
+        }
+
+        if ( ArrayUtils::getBool( $info, 'auto_increment', false ) )
+        {
+            $definition .= ' IDENTITY';
+        }
+
+        $isUniqueKey = ArrayUtils::getBool( $info, 'is_unique', false );
+        $isPrimaryKey = ArrayUtils::getBool( $info, 'is_primary_key', false );
+        if ( $isPrimaryKey && $isUniqueKey )
+        {
+            throw new \Exception( 'Unique and Primary designations not allowed simultaneously.' );
+        }
+        if ( $isUniqueKey )
+        {
+            $definition .= ' UNIQUE KEY';
+        }
+        elseif ( $isPrimaryKey )
+        {
+            $definition .= ' PRIMARY KEY';
+        }
+
+        return $definition;
     }
 
     /**
@@ -88,8 +332,8 @@ class CMssqlSchema extends CDbSchema
      */
     public function compareTableNames( $name1, $name2 )
     {
-        $name1 = str_replace( array('[', ']'), '', $name1 );
-        $name2 = str_replace( array('[', ']'), '', $name2 );
+        $name1 = str_replace( array( '[', ']' ), '', $name1 );
+        $name2 = str_replace( array( '[', ']' ), '', $name2 );
 
         return parent::compareTableNames( strtolower( $name1 ), strtolower( $name2 ) );
     }
@@ -120,7 +364,7 @@ class CMssqlSchema extends CDbSchema
         {
             $value = (int)$this->getDbConnection()->createCommand( "SELECT MAX([{$table->primaryKey}]) FROM {$table->rawName}" )->queryScalar();
         }
-        $name = strtr( $table->rawName, array('[' => '', ']' => '') );
+        $name = strtr( $table->rawName, array( '[' => '', ']' => '' ) );
         $this->getDbConnection()->createCommand( "DBCC CHECKIDENT ('$name',RESEED,$value)" )->execute();
     }
 
@@ -180,7 +424,7 @@ class CMssqlSchema extends CDbSchema
      */
     protected function resolveTableNames( $table, $name )
     {
-        $parts = explode( '.', str_replace( array('[', ']'), '', $name ) );
+        $parts = explode( '.', str_replace( array( '[', ']' ), '', $name ) );
         if ( ( $c = count( $parts ) ) == 3 )
         {
             // Catalog name, schema name and table name provided
@@ -248,6 +492,10 @@ EOD;
                 if ( isset( $table->columns[$primary] ) )
                 {
                     $table->columns[$primary]->isPrimaryKey = true;
+                    if ( ( 'integer' === $table->columns[$primary]->type ) && $table->columns[$primary]->autoIncrement )
+                    {
+                        $table->columns[$primary]->type = 'id';
+                    }
                 }
                 break;
             default:
@@ -320,10 +568,16 @@ EOD;
             {
                 $name = ( $rts == static::DEFAULT_SCHEMA ) ? $rtn : $rts . '.' . $rtn;
 
-                $table->foreignKeys[$cn] = array($name, $rcn);
+                $table->foreignKeys[$cn] = array( $name, $rcn );
                 if ( isset( $table->columns[$cn] ) )
                 {
                     $table->columns[$cn]->isForeignKey = true;
+                    $table->columns[$cn]->refTable = $name;
+                    $table->columns[$cn]->refFields = $rcn;
+                    if ( 'integer' === $table->columns[$cn]->type )
+                    {
+                        $table->columns[$cn]->type = 'reference';
+                    }
                 }
 
                 // Add it to our foreign references as well
@@ -402,37 +656,51 @@ EOD;
             $where[] = "t1.TABLE_SCHEMA='" . $table->schemaName . "'";
         }
 
-        if ( false === strpos( $this->dbConnection->connectionString, '.database.windows.net' ) )
+        $isAzure = ( false !== strpos( $this->getDbConnection()->connectionString, '.database.windows.net' ) );
+        $sql = "SELECT t1.*, columnproperty(object_id(t1.table_schema+'.'+t1.table_name), t1.column_name, 'IsIdentity') AS IsIdentity";
+
+        if ( !$isAzure )
         {
-            $sql =
-                "SELECT t1.*, columnproperty(object_id(t1.table_schema+'.'+t1.table_name), t1.column_name, 'IsIdentity') AS IsIdentity, " .
-                "CONVERT(VARCHAR, t2.value) AS Comment FROM " .
-                $this->quoteTableName( $columnsTable ) .
-                " AS t1 " .
-                "LEFT OUTER JOIN sys.extended_properties AS t2 ON t1.ORDINAL_POSITION = t2.minor_id AND " .
-                "object_name(t2.major_id) = t1.TABLE_NAME AND t2.class=1 AND t2.class_desc='OBJECT_OR_COLUMN' AND t2.name='MS_Description' " .
-                "WHERE " .
-                join( ' AND ', $where );
+            $sql .= ", CONVERT(VARCHAR, t2.value) AS Comment";
         }
-        else
+
+        $sql .= " FROM " . $this->quoteTableName( $columnsTable ) . " AS t1";
+
+        if ( !$isAzure )
         {
-            $sql =
-                "SELECT t1.*, columnproperty(object_id(t1.table_schema+'.'+t1.table_name), t1.column_name, 'IsIdentity') AS IsIdentity " .
-                "FROM " .
-                $this->quoteTableName( $columnsTable ) .
-                " AS t1 WHERE " .
-                join( ' AND ', $where );
+            $sql .=
+                " LEFT OUTER JOIN sys.extended_properties AS t2" .
+                " ON t1.ORDINAL_POSITION = t2.minor_id AND object_name(t2.major_id) = t1.TABLE_NAME" .
+                " AND t2.class=1 AND t2.class_desc='OBJECT_OR_COLUMN' AND t2.name='MS_Description'";
         }
+
+        $sql .= " ";
+        $sql .= " WHERE " . join( ' AND ', $where );
 
         try
         {
+            $test =
+                "SELECT col.name, col.precision, col.scale, col.max_length, col.collation_name, col.is_nullable, col.is_identity" .
+                ", coltype.name as type, idx.name as constraint_name, idx.is_unique, idx.is_primary_key" .
+                " FROM sys.columns AS col" .
+                " LEFT OUTER JOIN sys.types AS coltype ON coltype.user_type_id = col.user_type_id" .
+                " LEFT OUTER JOIN sys.index_columns AS idx_cols ON idx_cols.column_id = col.column_id AND idx_cols.object_id = col.object_id" .
+                " LEFT OUTER JOIN sys.indexes AS idx ON idx_cols.index_id = idx.index_id AND idx.object_id = col.object_id" .
+                " WHERE col.object_id = object_id('" .
+                $table->schemaName .
+                '.' .
+                $table->name .
+                "')";
+
+            $columnsB = $this->getDbConnection()->createCommand( $test )->queryAll();
+
             $columns = $this->getDbConnection()->createCommand( $sql )->queryAll();
             if ( empty( $columns ) )
             {
                 return false;
             }
         }
-        catch ( Exception $e )
+        catch ( \Exception $e )
         {
             return false;
         }
@@ -480,7 +748,11 @@ EOD;
         $c->autoIncrement = ( isset( $column['IsIdentity'] ) ? ( $column['IsIdentity'] == 1 ) : false );
         $c->comment = ( isset( $column['Comment'] ) ? ( $column['Comment'] === null ? '' : $column['Comment'] ) : '' );
 
-        $c->init( $column['DATA_TYPE'], $column['COLUMN_DEFAULT'] );
+        $c->dbType = $column['DATA_TYPE'];
+        $c->extractFixedLength( $column['DATA_TYPE'] );
+        $c->extractMultiByteSupport( $column['DATA_TYPE'] );
+        $c->extractType( $column['DATA_TYPE'] );
+        $c->extractDefault( $column['COLUMN_DEFAULT'] );
 
         return $c;
     }
@@ -624,7 +896,7 @@ EOD;
                     $_rType = ( isset( $_param['type'] ) ) ? $_param['type'] : 'string';
                     $_rLength = ( isset( $_param['length'] ) ) ? $_param['length'] : 256;
                     $_pdoType = $_command->getConnection()->getPdoType( $_rType );
-                    $_command->bindParam( ":$_pName", $params[$_key]['value'], $_pdoType | PDO::PARAM_INPUT_OUTPUT, $_rLength );
+                    $_command->bindParam( ":$_pName", $params[$_key]['value'], $_pdoType | \PDO::PARAM_INPUT_OUTPUT, $_rLength );
                     break;
             }
         }
@@ -634,7 +906,7 @@ EOD;
         if ( $_reader->nextResult() )
         {
             // more data coming, make room
-            $_result = array($_result);
+            $_result = array( $_result );
             do
             {
                 $_result[] = $_reader->readAll();
@@ -709,7 +981,7 @@ EOD;
         if ( $_reader->nextResult() )
         {
             // more data coming, make room
-            $_result = array($_result);
+            $_result = array( $_result );
             do
             {
                 $_temp = $_reader->readAll();
@@ -761,7 +1033,7 @@ EOD;
      * @param string $name
      * @param array  $params
      *
-     * @throws Exception
+     * @throws \Exception
      * @return mixed
      */
     public function callFunction( $name, &$params )
@@ -795,7 +1067,7 @@ EOD;
         if ( $_reader->nextResult() )
         {
             // more data coming, make room
-            $_result = array($_result);
+            $_result = array( $_result );
             do
             {
                 $_result[] = $_reader->readAll();
@@ -849,11 +1121,11 @@ EOD;
     /**
      * Builds a SQL statement for changing the definition of a column.
      *
-     * @param string $table  the table whose column is to be changed. The table name will be properly quoted by the method.
-     * @param string $column the name of the column to be changed. The name will be properly quoted by the method.
-     * @param string $definition   the new column type. The {@link getColumnType} method will be invoked to convert abstract column type (if any)
-     *                       into the physical one. Anything that is not recognized as abstract type will be kept in the generated SQL.
-     *                       For example, 'string' will be turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not null'.
+     * @param string $table      the table whose column is to be changed. The table name will be properly quoted by the method.
+     * @param string $column     the name of the column to be changed. The name will be properly quoted by the method.
+     * @param string $definition the new column type. The {@link getColumnType} method will be invoked to convert abstract column type (if any)
+     *                           into the physical one. Anything that is not recognized as abstract type will be kept in the generated SQL.
+     *                           For example, 'string' will be turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not null'.
      *
      * @return string the SQL statement for changing the definition of a column.
      * @since 1.1.6
@@ -861,7 +1133,8 @@ EOD;
     public function alterColumn( $table, $column, $definition )
     {
         $definition = $this->getColumnType( $definition );
-        $sql = 'ALTER TABLE ' . $this->quoteTableName( $table ) . ' ALTER COLUMN ' . $this->quoteColumnName( $column ) . ' ' . $this->getColumnType( $definition );
+        $sql =
+            'ALTER TABLE ' . $this->quoteTableName( $table ) . ' ALTER COLUMN ' . $this->quoteColumnName( $column ) . ' ' . $this->getColumnType( $definition );
 
         return $sql;
     }
@@ -874,7 +1147,7 @@ EOD;
      *                       default schema. If not empty, the returned stored function names will be prefixed with the
      *                       schema name.
      *
-     * @throws InvalidArgumentException
+     * @throws \InvalidArgumentException
      * @return array all stored function names in the database.
      */
     protected function _findRoutines( $_type, $schema = '' )
@@ -884,7 +1157,7 @@ EOD;
 
         if ( $_type != 'PROCEDURE' && $_type != 'FUNCTION' )
         {
-            throw new InvalidArgumentException( 'The type "' . $_type . '" is invalid.' );
+            throw new \InvalidArgumentException( 'The type "' . $_type . '" is invalid.' );
         }
 
         $_where = !empty( $schema ) ? " AND ROUTINE_SCHEMA = '" . $schema . "'" : null;
@@ -899,7 +1172,7 @@ WHERE
     {$_where}
 MYSQL;
 
-        $_results = $this->getDbConnection()->createCommand( $_sql )->queryColumn( array(':routine_type' => $_type) );
+        $_results = $this->getDbConnection()->createCommand( $_sql )->queryColumn( array( ':routine_type' => $_type ) );
         if ( !empty( $_results ) && ( $_defaultSchema != $schema ) )
         {
             foreach ( $_results as $_key => $_name )
@@ -909,5 +1182,80 @@ MYSQL;
         }
 
         return $_results;
+    }
+
+    /**
+     * @param        $context
+     * @param        $field_info
+     * @param bool   $as_quoted_string
+     * @param string $out_as
+     *
+     * @return string
+     */
+    public function parseFieldsForSelect( $context, $field_info, $as_quoted_string = false, $out_as = '' )
+    {
+        if ( $as_quoted_string )
+        {
+            $context = $this->quoteColumnName( $context );
+            $out_as = $this->quoteColumnName( $out_as );
+        }
+        // find the type
+        $dbType = ArrayUtils::get( $field_info, 'db_type' );
+
+        switch ( $dbType )
+        {
+            case 'datetime':
+            case 'datetimeoffset':
+                if ( !$as_quoted_string )
+                {
+                    $context = $this->quoteColumnName( $context );
+                    $out_as = $this->quoteColumnName( $out_as );
+                }
+                $out = "(CONVERT(nvarchar(30), $context, 127)) AS $out_as";
+                break;
+            case 'geometry':
+            case 'geography':
+            case 'hierarchyid':
+                if ( !$as_quoted_string )
+                {
+                    $context = $this->quoteColumnName( $context );
+                    $out_as = $this->quoteColumnName( $out_as );
+                }
+                $out = "($context.ToString()) AS $out_as";
+                break;
+            default :
+                $out = $context;
+                if ( !empty( $as ) )
+                {
+                    $out .= ' AS ' . $out_as;
+                }
+                break;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param bool $update
+     *
+     * @return mixed
+     */
+    public function getTimestampForSet( $update = false )
+    {
+        return new CDbExpression( '(SYSDATETIMEOFFSET())' );
+    }
+
+    public function parseValueForSet( $value, $field_info )
+    {
+        $_type = ArrayUtils::get( $field_info, 'type' );
+
+        switch ( $_type )
+        {
+            case 'boolean':
+                $value = ( Scalar::boolval( $value ) ? 1 : 0 );
+                break;
+        }
+
+        return $value;
     }
 }

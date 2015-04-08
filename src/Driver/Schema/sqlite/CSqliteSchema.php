@@ -7,6 +7,13 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Sqlite;
+
+use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Library\Utility\Scalar;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
 
 /**
  * CSqliteSchema is the class for retrieving metadata information from a SQLite (2/3) database.
@@ -17,25 +24,232 @@
  */
 class CSqliteSchema extends CDbSchema
 {
+    protected function translateSimpleColumnTypes( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( $type )
+        {
+            // some types need massaging, some need other required properties
+            case 'pk':
+            case 'id':
+                $info['type'] = 'int';
+                $info['allow_null'] = false;
+                $info['auto_increment'] = true;
+                $info['is_primary_key'] = true;
+                break;
+
+            case 'fk':
+            case 'reference':
+                $info['type'] = 'int';
+                $info['type_extras'] = '(11)';
+                $info['is_foreign_key'] = true;
+                // check foreign tables
+                break;
+
+            case 'timestamp_on_create':
+            case 'timestamp_on_update':
+                $info['type'] = 'timestamp';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( !isset( $default ) )
+                {
+                    $default = 'CURRENT_TIMESTAMP';
+                    if ( 'timestamp_on_update' === $type )
+                    {
+                        $default .= ' ON UPDATE CURRENT_TIMESTAMP';
+                    }
+                    $info['default'] = $default;
+                }
+                break;
+
+            case 'boolean':
+                $info['type'] = 'tinyint';
+                $info['type_extras'] = '(1)';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) )
+                {
+                    // convert to bit 0 or 1, where necessary
+                    $info['default'] = ( Scalar::boolval( $default ) ) ? 1 : 0;
+                }
+                break;
+
+            case 'money':
+                $info['type'] = 'decimal';
+                $info['type_extras'] = '(19,4)';
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) )
+                {
+                    $info['default'] = floatval( $default );
+                }
+                break;
+
+            case 'string':
+                $fixed = ArrayUtils::getBool( $info, 'fixed_length' );
+                $national = ArrayUtils::getBool( $info, 'supports_multibyte' );
+                if ( $fixed )
+                {
+                    $info['type'] = ( $national ) ? 'nchar' : 'char';
+                }
+                elseif ( $national )
+                {
+                    $info['type'] = 'nvarchar';
+                }
+                else
+                {
+                    $info['type'] = 'varchar';
+                }
+                break;
+
+            case 'binary':
+                $info['type'] = 'blob';
+                break;
+        }
+    }
+
+    protected function validateColumnSettings( array &$info )
+    {
+        // override this in each schema class
+        $type = ArrayUtils::get( $info, 'type' );
+        switch ( $type )
+        {
+            // some types need massaging, some need other required properties
+            case 'tinyint':
+            case 'smallint':
+            case 'mediumint':
+            case 'int':
+            case 'bigint':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $info['type_extras'] = "($length)"; // sets the viewable length
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = intval( $default );
+                }
+                break;
+
+            case 'decimal':
+            case 'numeric':
+            case 'real':
+            case 'float':
+            case 'double':
+                if ( !isset( $info['type_extras'] ) )
+                {
+                    $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'precision' ) );
+                    if ( !empty( $length ) )
+                    {
+                        $scale = ArrayUtils::get( $info, 'scale', ArrayUtils::get( $info, 'decimals' ) );
+                        $info['type_extras'] = ( !empty( $scale ) ) ? "($length,$scale)" : "($length)";
+                    }
+                }
+
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( isset( $default ) && is_numeric( $default ) )
+                {
+                    $info['default'] = floatval( $default );
+                }
+                break;
+
+            case 'char':
+            case 'nchar':
+            case 'binary':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+
+            case 'varchar':
+            case 'nvarchar':
+            case 'varbinary':
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                else // requires a max length
+                {
+                    $info['type_extras'] = '(' . static::DEFAULT_STRING_MAX_SIZE . ')';
+                }
+                break;
+
+            case 'time':
+            case 'timestamp':
+            case 'datetime':
+                $default = ArrayUtils::get( $info, 'default' );
+                if ( '0000-00-00 00:00:00' == $default )
+                {
+                    // read back from MySQL has formatted zeros, can't send that back
+                    $info['default'] = 0;
+                }
+
+                $length = ArrayUtils::get( $info, 'length', ArrayUtils::get( $info, 'size' ) );
+                if ( isset( $length ) )
+                {
+                    $info['type_extras'] = "($length)";
+                }
+                break;
+        }
+    }
+
     /**
-     * @var array the abstract column types mapped to physical column types.
-     * @since 1.1.6
+     * @param array $info
+     *
+     * @return string
+     * @throws \Exception
      */
-    public $columnTypes = array(
-        'pk'        => 'integer PRIMARY KEY AUTOINCREMENT NOT NULL',
-        'string'    => 'varchar(255)',
-        'text'      => 'text',
-        'integer'   => 'integer',
-        'float'     => 'float',
-        'decimal'   => 'decimal',
-        'datetime'  => 'datetime',
-        'timestamp' => 'timestamp',
-        'time'      => 'time',
-        'date'      => 'date',
-        'binary'    => 'blob',
-        'boolean'   => 'tinyint(1)',
-        'money'     => 'decimal(19,4)',
-    );
+    protected function buildColumnDefinition( array $info )
+    {
+        // This works for most except Oracle
+        $type = ArrayUtils::get( $info, 'type' );
+        $typeExtras = ArrayUtils::get( $info, 'type_extras' );
+
+        $definition = $type . $typeExtras;
+
+        $allowNull = ArrayUtils::getBool( $info, 'allow_null', true );
+        $definition .= ( $allowNull ) ? ' NULL' : ' NOT NULL';
+
+        $default = ArrayUtils::get( $info, 'default' );
+        if ( isset( $default ) )
+        {
+            $quoteDefault = ArrayUtils::getBool( $info, 'quote_default', false );
+            if ( $quoteDefault )
+            {
+                $default = "'" . $default . "'";
+            }
+
+            $definition .= ' DEFAULT ' . $default;
+        }
+
+        if ( ArrayUtils::getBool( $info, 'auto_increment', false ) )
+        {
+            $definition .= ' AUTOINCREMENT';
+        }
+
+        $isUniqueKey = ArrayUtils::getBool( $info, 'is_unique', false );
+        $isPrimaryKey = ArrayUtils::getBool( $info, 'is_primary_key', false );
+        if ( $isPrimaryKey && $isUniqueKey )
+        {
+            throw new \Exception( 'Unique and Primary designations not allowed simultaneously.' );
+        }
+        if ( $isUniqueKey )
+        {
+            $definition .= ' UNIQUE KEY';
+        }
+        elseif ( $isPrimaryKey )
+        {
+            $definition .= ' PRIMARY KEY';
+        }
+
+        return $definition;
+    }
 
     /**
      * Resets the sequence value of a table's primary key.
@@ -68,7 +282,7 @@ class CSqliteSchema extends CDbSchema
             // it's possible that 'sqlite_sequence' does not exist
             $this->getDbConnection()->createCommand( "UPDATE sqlite_sequence SET seq='$value' WHERE name='{$table->name}'" )->execute();
         }
-        catch ( Exception $e )
+        catch ( \Exception $e )
         {
         }
     }
@@ -165,7 +379,7 @@ class CSqliteSchema extends CDbSchema
                 }
                 elseif ( is_string( $table->primaryKey ) )
                 {
-                    $table->primaryKey = array($table->primaryKey, $c->name);
+                    $table->primaryKey = array( $table->primaryKey, $c->name );
                 }
                 else
                 {
@@ -196,7 +410,13 @@ class CSqliteSchema extends CDbSchema
         {
             $column = $table->columns[$key['from']];
             $column->isForeignKey = true;
-            $foreignKeys[$key['from']] = array($key['table'], $key['to']);
+            $column->refTable = $key['table'];
+            $column->refFields = $key['to'];
+            if ( 'integer' === $column->type )
+            {
+                $column->type = 'reference';
+            }
+            $foreignKeys[$key['from']] = array( $key['table'], $key['to'] );
         }
         $table->foreignKeys = $foreignKeys;
     }
@@ -215,10 +435,14 @@ class CSqliteSchema extends CDbSchema
         $c->rawName = $this->quoteColumnName( $c->name );
         $c->allowNull = !$column['notnull'];
         $c->isPrimaryKey = $column['pk'] != 0;
-        $c->isForeignKey = false;
         $c->comment = null; // SQLite does not support column comments at all
 
-        $c->init( strtolower( $column['type'] ), $column['dflt_value'] );
+        $c->dbType = strtolower( $column['type'] );
+        $c->extractLimit( strtolower( $column['type'] ) );
+        $c->extractFixedLength( $column['type'] );
+        $c->extractMultiByteSupport( $column['type'] );
+        $c->extractType( strtolower( $column['type'] ) );
+        $c->extractDefault( $column['dflt_value'] );
 
         return $c;
     }
@@ -324,11 +548,11 @@ class CSqliteSchema extends CDbSchema
      * Builds a SQL statement for changing the definition of a column.
      * Because SQLite does not support altering a DB column, calling this method will throw an exception.
      *
-     * @param string $table  the table whose column is to be changed. The table name will be properly quoted by the method.
-     * @param string $column the name of the column to be changed. The name will be properly quoted by the method.
-     * @param string $definition   the new column type. The {@link getColumnType} method will be invoked to convert abstract column type (if any)
-     *                       into the physical one. Anything that is not recognized as abstract type will be kept in the generated SQL.
-     *                       For example, 'string' will be turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not null'.
+     * @param string $table      the table whose column is to be changed. The table name will be properly quoted by the method.
+     * @param string $column     the name of the column to be changed. The name will be properly quoted by the method.
+     * @param string $definition the new column type. The {@link getColumnType} method will be invoked to convert abstract column type (if any)
+     *                           into the physical one. Anything that is not recognized as abstract type will be kept in the generated SQL.
+     *                           For example, 'string' will be turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not null'.
      *
      * @throws \Exception
      * @return string the SQL statement for changing the definition of a column.

@@ -7,6 +7,11 @@
  * @copyright 2008-2013 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Sqlite;
+
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbCommandBuilder;
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
 
 /**
  * CSqliteCommandBuilder provides basic methods to create query commands for SQLite tables.

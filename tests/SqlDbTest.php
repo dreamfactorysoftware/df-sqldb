@@ -27,7 +27,7 @@ use DreamFactory\Rave\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Rave\SqlDb\Resources\StoredFunction;
 use DreamFactory\Rave\Testing\TestServiceRequest;
 
-class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
+class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 {
     /**
      * @const string
@@ -43,7 +43,7 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
     const TABLE_ID = 'id';
 
     /**
-     * @var SqlDbService
+     * @var SqlDb
      */
     protected $service = null;
 
@@ -53,6 +53,7 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 
         $this->service = new SqlDb(
             [
+                'id'          => 1,
                 'name'        => static::SERVICE_NAME,
                 'label'       => 'SQL Database',
                 'description' => 'SQL database for testing',
@@ -352,7 +353,7 @@ class SqlDbServiceTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         {
             $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\InternalServerErrorException', $ex );
             $this->assertEquals( 500, $ex->getCode() );
-            $this->assertContains( "Duplicate entry 'test1'", $ex->getMessage() );
+            $this->assertContains( "duplicate ", $ex->getMessage(), '', true );
         }
     }
 

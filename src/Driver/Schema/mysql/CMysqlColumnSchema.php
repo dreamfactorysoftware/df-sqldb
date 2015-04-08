@@ -21,49 +21,16 @@ use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
 class CMysqlColumnSchema extends CDbColumnSchema
 {
     /**
-     * Extracts the PHP type from DB type.
-     *
-     * @param string $dbType DB type
-     */
-    protected function extractType( $dbType )
-    {
-        if ( strncmp( $dbType, 'enum', 4 ) === 0 )
-        {
-            $this->type = 'string';
-        }
-        elseif ( strpos( $dbType, 'float' ) !== false || strpos( $dbType, 'double' ) !== false )
-        {
-            $this->type = 'double';
-        }
-        elseif ( strpos( $dbType, 'bool' ) !== false )
-        {
-            $this->type = 'boolean';
-        }
-        elseif ( strpos( $dbType, 'int' ) === 0 && strpos( $dbType, 'unsigned' ) === false || preg_match( '/(bit|tinyint|smallint|mediumint)/', $dbType ) )
-        {
-            $this->type = 'integer';
-        }
-        else
-        {
-            $this->type = 'string';
-        }
-    }
-
-    /**
      * Extracts the default value for the column.
      * The value is typecasted to correct PHP type.
      *
      * @param mixed $defaultValue the default value obtained from metadata
      */
-    protected function extractDefault( $defaultValue )
+    public function extractDefault( $defaultValue )
     {
         if ( strncmp( $this->dbType, 'bit', 3 ) === 0 )
         {
             $this->defaultValue = bindec( trim( $defaultValue, 'b\'' ) );
-        }
-        elseif ( $this->dbType === 'timestamp' && $defaultValue === 'CURRENT_TIMESTAMP' )
-        {
-            $this->defaultValue = null;
         }
         else
         {
@@ -76,7 +43,7 @@ class CMysqlColumnSchema extends CDbColumnSchema
      *
      * @param string $dbType the column's DB type
      */
-    protected function extractLimit( $dbType )
+    public function extractLimit( $dbType )
     {
         if ( strncmp( $dbType, 'enum', 4 ) === 0 && preg_match( '/\(([\'"])(.*)\\1\)/', $dbType, $matches ) )
         {

@@ -7,6 +7,7 @@
  * @copyright Copyright &copy; 2008-2012 Yii Software LLC
  * @license   http://www.yiiframework.com/license/
  */
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Mssql;
 
 /**
  * This is an extension of default PDO class for MSSQL SQLSRV driver only.
@@ -16,7 +17,7 @@
  * @package system.db.schema.mssql
  * @since   1.1.13
  */
-class CMssqlSqlsrvPdoAdapter extends PDO
+class CMssqlSqlsrvPdoAdapter extends \PDO
 {
     /**
      * Returns last inserted ID value.
