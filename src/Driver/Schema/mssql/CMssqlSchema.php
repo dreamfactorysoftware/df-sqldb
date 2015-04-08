@@ -643,57 +643,40 @@ EOD;
      */
     protected function findColumns( $table )
     {
-        $columnsTable = "INFORMATION_SCHEMA.COLUMNS";
-        $where = array();
-        $where[] = "t1.TABLE_NAME='" . $table->name . "'";
+        $columnsTable = $table->schemaName . '.' . $table->name;
         if ( isset( $table->catalogName ) )
         {
-            $where[] = "t1.TABLE_CATALOG='" . $table->catalogName . "'";
             $columnsTable = $table->catalogName . '.' . $columnsTable;
         }
-        if ( isset( $table->schemaName ) )
-        {
-            $where[] = "t1.TABLE_SCHEMA='" . $table->schemaName . "'";
-        }
 
-        $isAzure = ( false !== strpos( $this->getDbConnection()->connectionString, '.database.windows.net' ) );
-        $sql = "SELECT t1.*, columnproperty(object_id(t1.table_schema+'.'+t1.table_name), t1.column_name, 'IsIdentity') AS IsIdentity";
+//        $isAzure = ( false !== strpos( $this->getDbConnection()->connectionString, '.database.windows.net' ) );
+//        $sql = "SELECT t1.*, columnproperty(object_id(t1.table_schema+'.'+t1.table_name), t1.column_name, 'IsIdentity') AS IsIdentity";
+//        if ( !$isAzure )
+//        {
+//            $sql .= ", CONVERT(VARCHAR, t2.value) AS Comment";
+//        }
+//        $sql .= " FROM " . $this->quoteTableName( $columnsTable ) . " AS t1";
+//        if ( !$isAzure )
+//        {
+//            $sql .=
+//                " LEFT OUTER JOIN sys.extended_properties AS t2" .
+//                " ON t1.ORDINAL_POSITION = t2.minor_id AND object_name(t2.major_id) = t1.TABLE_NAME" .
+//                " AND t2.class=1 AND t2.class_desc='OBJECT_OR_COLUMN' AND t2.name='MS_Description'";
+//        }
+//        $sql .= " WHERE " . join( ' AND ', $where );
 
-        if ( !$isAzure )
-        {
-            $sql .= ", CONVERT(VARCHAR, t2.value) AS Comment";
-        }
-
-        $sql .= " FROM " . $this->quoteTableName( $columnsTable ) . " AS t1";
-
-        if ( !$isAzure )
-        {
-            $sql .=
-                " LEFT OUTER JOIN sys.extended_properties AS t2" .
-                " ON t1.ORDINAL_POSITION = t2.minor_id AND object_name(t2.major_id) = t1.TABLE_NAME" .
-                " AND t2.class=1 AND t2.class_desc='OBJECT_OR_COLUMN' AND t2.name='MS_Description'";
-        }
-
-        $sql .= " ";
-        $sql .= " WHERE " . join( ' AND ', $where );
+        $sql =
+            "SELECT col.name, col.precision, col.scale, col.max_length, col.collation_name, col.is_nullable, col.is_identity" .
+            ", coltype.name as type, coldef.definition as default_definition, idx.name as constraint_name, idx.is_unique, idx.is_primary_key" .
+            " FROM sys.columns AS col" .
+            " LEFT OUTER JOIN sys.types AS coltype ON coltype.user_type_id = col.user_type_id" .
+            " LEFT OUTER JOIN sys.default_constraints AS coldef ON coldef.parent_column_id = col.column_id AND coldef.parent_object_id = col.object_id" .
+            " LEFT OUTER JOIN sys.index_columns AS idx_cols ON idx_cols.column_id = col.column_id AND idx_cols.object_id = col.object_id" .
+            " LEFT OUTER JOIN sys.indexes AS idx ON idx_cols.index_id = idx.index_id AND idx.object_id = col.object_id" .
+            " WHERE col.object_id = object_id('" . $columnsTable . "')";
 
         try
         {
-            $test =
-                "SELECT col.name, col.precision, col.scale, col.max_length, col.collation_name, col.is_nullable, col.is_identity" .
-                ", coltype.name as type, idx.name as constraint_name, idx.is_unique, idx.is_primary_key" .
-                " FROM sys.columns AS col" .
-                " LEFT OUTER JOIN sys.types AS coltype ON coltype.user_type_id = col.user_type_id" .
-                " LEFT OUTER JOIN sys.index_columns AS idx_cols ON idx_cols.column_id = col.column_id AND idx_cols.object_id = col.object_id" .
-                " LEFT OUTER JOIN sys.indexes AS idx ON idx_cols.index_id = idx.index_id AND idx.object_id = col.object_id" .
-                " WHERE col.object_id = object_id('" .
-                $table->schemaName .
-                '.' .
-                $table->name .
-                "')";
-
-            $columnsB = $this->getDbConnection()->createCommand( $test )->queryAll();
-
             $columns = $this->getDbConnection()->createCommand( $sql )->queryAll();
             if ( empty( $columns ) )
             {
@@ -728,31 +711,40 @@ EOD;
     protected function createColumn( $column )
     {
         $c = new CMssqlColumnSchema;
-        $c->name = $column['COLUMN_NAME'];
+        $c->name = $column['name'];
         $c->rawName = $this->quoteColumnName( $c->name );
-        $c->allowNull = $column['IS_NULLABLE'] == 'YES';
-        if ( $column['NUMERIC_PRECISION_RADIX'] !== null )
+        $c->allowNull = $column['is_nullable'] == '1';
+        $c->isPrimaryKey = $column['is_primary_key'] == '1';
+        $c->isUnique = $column['is_unique'] == '1';
+        $c->isIndex = $column['constraint_name'] !== null;
+        $c->dbType = $column['type'];
+        if ( $column['precision'] !== '0' )
         {
-            // We have a numeric datatype
-            $c->size = $c->precision = $column['NUMERIC_PRECISION'] !== null ? (int)$column['NUMERIC_PRECISION'] : null;
-            $c->scale = $column['NUMERIC_SCALE'] !== null ? (int)$column['NUMERIC_SCALE'] : null;
-        }
-        elseif ( $column['DATA_TYPE'] == 'image' || $column['DATA_TYPE'] == 'text' )
-        {
-            $c->size = $c->precision = null;
+            if ( $column['scale'] !== '0' )
+            {
+                // We have a numeric datatype
+                $c->precision = (int)$column['precision'];
+                $c->scale = (int)$column['scale'];
+            }
+            else
+            {
+                $c->size = (int)$column['precision'];
+            }
         }
         else
         {
-            $c->size = $c->precision = ( $column['CHARACTER_MAXIMUM_LENGTH'] !== null ) ? (int)$column['CHARACTER_MAXIMUM_LENGTH'] : null;
+            $c->size = ( $column['max_length'] !== '-1' ) ? (int)$column['max_length'] : null;
         }
-        $c->autoIncrement = ( isset( $column['IsIdentity'] ) ? ( $column['IsIdentity'] == 1 ) : false );
+        $c->autoIncrement = ( $column['is_identity'] === '1' );
         $c->comment = ( isset( $column['Comment'] ) ? ( $column['Comment'] === null ? '' : $column['Comment'] ) : '' );
 
-        $c->dbType = $column['DATA_TYPE'];
-        $c->extractFixedLength( $column['DATA_TYPE'] );
-        $c->extractMultiByteSupport( $column['DATA_TYPE'] );
-        $c->extractType( $column['DATA_TYPE'] );
-        $c->extractDefault( $column['COLUMN_DEFAULT'] );
+        $c->extractFixedLength( $column['type'] );
+        $c->extractMultiByteSupport( $column['type'] );
+        $c->extractType( $column['type'] );
+        if ( isset( $column['default_definition'] ) )
+        {
+            $c->extractDefault( $column['default_definition'] );
+        }
 
         return $c;
     }

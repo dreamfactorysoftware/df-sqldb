@@ -9,6 +9,10 @@
  * @license   http://www.yiiframework.com/license/
  */
 
+namespace DreamFactory\Rave\SqlDb\Driver\Schema\Mssql;
+
+use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
+
 /**
  * CMssqlColumnSchema class describes the column meta data of a MSSQL table.
  *
@@ -16,10 +20,6 @@
  * @author  Christophe Boulain <Christophe.Boulain@gmail.com>
  * @package system.db.schema.mssql
  */
-namespace DreamFactory\Rave\SqlDb\Driver\Schema\Mssql;
-
-use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
-
 class CMssqlColumnSchema extends CDbColumnSchema
 {
     /**
@@ -31,6 +31,10 @@ class CMssqlColumnSchema extends CDbColumnSchema
     {
         parent::extractType( $dbType );
 
+        if ( ( false !== strpos( $dbType, 'varchar' ) ) && ( null === $this->size ) )
+        {
+            $this->type = 'text';
+        }
         // bigint too big to represent as number in php
         if ( 0 === strpos( $dbType, 'bigint' ) )
         {
@@ -49,15 +53,30 @@ class CMssqlColumnSchema extends CDbColumnSchema
     {
         if ( $defaultValue == '(NULL)' )
         {
-            $defaultValue = null;
+            $this->defaultValue = null;
         }
-        if ( $this->dbType === 'timestamp' )
+        elseif ( $this->type === 'boolean' )
+        {
+            if ( '((1))' === $defaultValue )
+            {
+                $this->defaultValue = true;
+            }
+            elseif ( '((0))' === $defaultValue )
+            {
+                $this->defaultValue = false;
+            }
+            else
+            {
+                $this->defaultValue = null;
+            }
+        }
+        elseif ( $this->type === 'timestamp' )
         {
             $this->defaultValue = null;
         }
         else
         {
-            parent::extractDefault( str_replace( array('(', ')', "'"), '', $defaultValue ) );
+            parent::extractDefault( str_replace( array( '(', ')', "'" ), '', $defaultValue ) );
         }
     }
 
@@ -81,8 +100,12 @@ class CMssqlColumnSchema extends CDbColumnSchema
     public function typecast( $value )
     {
         if ( $this->phpType === 'boolean' )
+        {
             return $value ? 1 : 0;
+        }
         else
+        {
             return parent::typecast( $value );
+        }
     }
 }
