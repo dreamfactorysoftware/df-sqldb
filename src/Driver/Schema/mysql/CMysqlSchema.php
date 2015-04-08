@@ -364,11 +364,11 @@ MYSQL
      *
      * @param string $name table name
      *
-     * @return CMysqlTableSchema driver dependent table metadata. Null if the table does not exist.
+     * @return CDbTableSchema driver dependent table metadata. Null if the table does not exist.
      */
     protected function loadTable( $name )
     {
-        $table = new CMysqlTableSchema;
+        $table = new CDbTableSchema;
         $this->resolveTableNames( $table, $name );
 
         if ( !$this->findColumns( $table ) )
@@ -384,7 +384,7 @@ MYSQL
     /**
      * Generates various kinds of table names.
      *
-     * @param CMysqlTableSchema $table the table instance
+     * @param CDbTableSchema $table the table instance
      * @param string            $name  the unquoted table name
      */
     protected function resolveTableNames( $table, $name )
@@ -406,7 +406,7 @@ MYSQL
     /**
      * Collects the table column metadata.
      *
-     * @param CMysqlTableSchema $table the table metadata
+     * @param CDbTableSchema $table the table metadata
      *
      * @return boolean whether the table exists in the database
      */
@@ -521,7 +521,7 @@ MYSQL
      * Collects the foreign key column details for the given table.
      * Also, collects the foreign tables and columns that reference the given table.
      *
-     * @param CMysqlTableSchema $table the table metadata
+     * @param CDbTableSchema $table the table metadata
      */
     protected function findConstraints( $table )
     {
