@@ -27,12 +27,20 @@ namespace DreamFactory\Rave\SqlDb\Driver\Schema;
  */
 class CDbFunctionSchema
 {
-	/**
-	 * @var string name of this function.
-	 */
-	public $name;
-	/**
-	 * @var string raw name of this function. This is the quoted version of function name with optional schema name. It can be directly used in SQLs.
-	 */
-	public $rawName;
+    /**
+     * @var string name of the schema that this function belongs to.
+     */
+    public $schemaName;
+    /**
+     * @var string name of this function.
+     */
+    public $name;
+    /**
+     * @var string raw name of this function. This is the quoted version of function name with optional schema name. It can be directly used in SQLs.
+     */
+    public $rawName;
+    /**
+     * @var string public display name of this function. This is the function name with optional non-default schema name. It is to be used by clients.
+     */
+    public $displayName;
 }

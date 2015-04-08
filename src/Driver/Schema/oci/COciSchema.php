@@ -386,10 +386,12 @@ class COciSchema extends CDbSchema
         if ( $schemaName === $this->getDefaultSchema() )
         {
             $table->rawName = $this->quoteTableName( $tableName );
+            $table->displayName = $tableName;
         }
         else
         {
             $table->rawName = $this->quoteTableName( $schemaName ) . '.' . $this->quoteTableName( $tableName );
+            $table->displayName = $schemaName . '.' . $tableName;
         }
     }
 
@@ -556,29 +558,19 @@ EOD;
                     $table->columns[$cn]->isForeignKey = true;
                     $table->columns[$cn]->refTable = $name;
                     $table->columns[$cn]->refFields = $rcn;
-                    if ('integer' === $table->columns[$cn]->type)
+                    if ( 'integer' === $table->columns[$cn]->type )
                     {
                         $table->columns[$cn]->type = 'reference';
                     }
                 }
 
                 // Add it to our foreign references as well
-                $table->foreignRefs[] = array(
-                    'type'      => 'belongs_to',
-                    'ref_table' => $name,
-                    'ref_field' => $rcn,
-                    'field'     => $cn
-                );
+                $table->addReference( 'belongs_to', $name, $rcn, $cn );
             }
             elseif ( ( 0 == strcasecmp( $rtn, $table->name ) ) && ( 0 == strcasecmp( $rts, $schema ) ) )
             {
                 $name = ( $ts == $defaultSchema ) ? $tn : $ts . '.' . $tn;
-                $table->foreignRefs[] = array(
-                    'type'      => 'has_many',
-                    'ref_table' => $name,
-                    'ref_field' => $cn,
-                    'field'     => $rcn
-                );
+                $table->addReference( 'has_many', $name, $cn, $rcn );
 
                 // if other has foreign keys to other tables, we can say these are related as well
                 foreach ( $columns2 as $key2 => $column2 )
@@ -600,13 +592,7 @@ EOD;
                                 $name2 = ( $rts2 == $defaultSchema ) ? $rtn2 : $rts2 . '.' . $rtn2;
                                 // not same as parent, i.e. via reference back to self
                                 // not the same key
-                                $table->foreignRefs[] = array(
-                                    'type'      => 'many_many',
-                                    'ref_table' => $name2,
-                                    'ref_field' => $rcn2,
-                                    'join'      => "$name($cn,$cn2)",
-                                    'field'     => $rcn
-                                );
+                                $table->addReference( 'many_many', $name2, $rcn2, $rcn, "$name($cn,$cn2)" );
                             }
                         }
                     }

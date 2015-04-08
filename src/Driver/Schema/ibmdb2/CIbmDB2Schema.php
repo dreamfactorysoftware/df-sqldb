@@ -341,7 +341,7 @@ class CIbmDB2Schema extends CDbSchema
      * Generates various kinds of table names.
      *
      * @param CDbTableSchema $table the table instance
-     * @param string             $name  the unquoted table name
+     * @param string         $name  the unquoted table name
      */
     protected function resolveTableNames( $table, $name )
     {
@@ -351,11 +351,13 @@ class CIbmDB2Schema extends CDbSchema
             $table->schemaName = $parts[0];
             $table->name = $parts[1];
             $table->rawName = $this->quoteTableName( $table->schemaName ) . '.' . $this->quoteTableName( $table->name );
+            $table->displayName = ( $table->schemaName === $this->getDefaultSchema() ) ? $table->name : ( $table->schemaName . '.' . $table->name );
         }
         else
         {
             $table->name = $parts[0];
             $table->rawName = $this->quoteTableName( $table->name );
+            $table->displayName = $table->name;
         }
     }
 
@@ -524,29 +526,19 @@ SQL;
                     $table->columns[$cn]->isForeignKey = true;
                     $table->columns[$cn]->refTable = $name;
                     $table->columns[$cn]->refFields = $rcn;
-                    if ('integer' === $table->columns[$cn]->type)
+                    if ( 'integer' === $table->columns[$cn]->type )
                     {
                         $table->columns[$cn]->type = 'reference';
                     }
                 }
 
                 // Add it to our foreign references as well
-                $table->foreignRefs[] = array(
-                    'type'      => 'belongs_to',
-                    'ref_table' => $name,
-                    'ref_field' => $rcn,
-                    'field'     => $cn
-                );
+                $table->addReference( 'belongs_to', $name, $rcn, $cn );
             }
             elseif ( ( 0 == strcasecmp( $rtn, $table->name ) ) && ( 0 == strcasecmp( $rts, $schema ) ) )
             {
                 $name = ( $ts == $defaultSchema ) ? $tn : $ts . '.' . $tn;
-                $table->foreignRefs[] = array(
-                    'type'      => 'has_many',
-                    'ref_table' => $name,
-                    'ref_field' => $cn,
-                    'field'     => $rcn
-                );
+                $table->addReference('has_many',$name,$cn,$rcn );
 
                 // if other has foreign keys to other tables, we can say these are related as well
                 foreach ( $columns2 as $key2 => $column2 )
@@ -568,13 +560,7 @@ SQL;
                                 $name2 = ( $rts2 == $defaultSchema ) ? $rtn2 : $rts2 . '.' . $rtn2;
                                 // not same as parent, i.e. via reference back to self
                                 // not the same key
-                                $table->foreignRefs[] = array(
-                                    'type'      => 'many_many',
-                                    'ref_table' => $name2,
-                                    'ref_field' => $rcn2,
-                                    'join'      => "$name($cn,$cn2)",
-                                    'field'     => $rcn
-                                );
+                                $table->addReference('many_many',$name2,$rcn2,"$name($cn,$cn2)",$rcn );
                             }
                         }
                     }
@@ -630,7 +616,7 @@ SQL;
                 if ( isset( $table->columns[$colname] ) )
                 {
                     $table->columns[$colname]->isPrimaryKey = true;
-                    if (('integer' === $table->columns[$colname]->type) && $table->columns[$colname]->autoIncrement)
+                    if ( ( 'integer' === $table->columns[$colname]->type ) && $table->columns[$colname]->autoIncrement )
                     {
                         $table->columns[$colname]->type = 'id';
                     }

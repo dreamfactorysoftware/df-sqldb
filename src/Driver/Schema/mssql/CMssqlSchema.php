@@ -433,21 +433,23 @@ class CMssqlSchema extends CDbSchema
             $table->name = $parts[2];
             $table->rawName =
                 $this->quoteTableName( $table->catalogName ) . '.' . $this->quoteTableName( $table->schemaName ) . '.' . $this->quoteTableName( $table->name );
+            $table->displayName = $table->catalogName . '.' . $table->schemaName . '.' . $table->name;
         }
         elseif ( $c == 2 )
         {
             // Only schema name and table name provided
-            $table->name = $parts[1];
             $table->schemaName = $parts[0];
+            $table->name = $parts[1];
             $table->rawName = $this->quoteTableName( $table->schemaName ) . '.' . $this->quoteTableName( $table->name );
+            $table->displayName = ( $table->schemaName === $this->getDefaultSchema() ) ? $table->name : ( $table->schemaName . '.' . $table->name );
         }
         else
         {
-            // Only the name given, we need to get at least the schema name
-            //if (empty($this->_schemaNames)) $this->findTableNames();
+            // Only the name given, we need at least the default schema name
+            $table->schemaName = $this->getDefaultSchema();
             $table->name = $parts[0];
-            $table->schemaName = self::DEFAULT_SCHEMA;
             $table->rawName = $this->quoteTableName( $table->schemaName ) . '.' . $this->quoteTableName( $table->name );
+            $table->displayName = $table->name;
         }
     }
 
@@ -581,22 +583,12 @@ EOD;
                 }
 
                 // Add it to our foreign references as well
-                $table->foreignRefs[] = array(
-                    'type'      => 'belongs_to',
-                    'ref_table' => $name,
-                    'ref_field' => $rcn,
-                    'field'     => $cn
-                );
+                $table->addReference( 'belongs_to', $name, $rcn, $cn );
             }
             elseif ( ( 0 == strcasecmp( $rtn, $table->name ) ) && ( 0 == strcasecmp( $rts, $schema ) ) )
             {
                 $name = ( $ts == static::DEFAULT_SCHEMA ) ? $tn : $ts . '.' . $tn;
-                $table->foreignRefs[] = array(
-                    'type'      => 'has_many',
-                    'ref_table' => $name,
-                    'ref_field' => $cn,
-                    'field'     => $rcn
-                );
+                $table->addReference( 'has_many', $name, $cn, $rcn );
 
                 // if other has foreign keys to other tables, we can say these are related as well
                 foreach ( $columns2 as $key2 => $column2 )
@@ -618,13 +610,7 @@ EOD;
                                 $name2 = ( $rts2 == $schema ) ? $rtn2 : $rts2 . '.' . $rtn2;
                                 // not same as parent, i.e. via reference back to self
                                 // not the same key
-                                $table->foreignRefs[] = array(
-                                    'type'      => 'many_many',
-                                    'ref_table' => $name2,
-                                    'ref_field' => $rcn2,
-                                    'join'      => "$name($cn,$cn2)",
-                                    'field'     => $rcn
-                                );
+                                $table->addReference( 'many_many', $name2, $rcn2, $rcn, "$name($cn,$cn2)" );
                             }
                         }
                     }
@@ -673,7 +659,9 @@ EOD;
             " LEFT OUTER JOIN sys.default_constraints AS coldef ON coldef.parent_column_id = col.column_id AND coldef.parent_object_id = col.object_id" .
             " LEFT OUTER JOIN sys.index_columns AS idx_cols ON idx_cols.column_id = col.column_id AND idx_cols.object_id = col.object_id" .
             " LEFT OUTER JOIN sys.indexes AS idx ON idx_cols.index_id = idx.index_id AND idx.object_id = col.object_id" .
-            " WHERE col.object_id = object_id('" . $columnsTable . "')";
+            " WHERE col.object_id = object_id('" .
+            $columnsTable .
+            "')";
 
         try
         {

@@ -116,22 +116,11 @@ class Schema extends BaseDbSchemaResource
                 throw new NotFoundException( "Table '$name' does not exist in the database." );
             }
 
-            $defaultSchema = $this->dbConn->getSchema()->getDefaultSchema();
             $extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $name );
             $extras = DbUtilities::reformatFieldLabelArray( $extras );
             $labelInfo = ArrayUtils::get( $extras, '', array() );
 
-            $publicName = $table->name;
-            $schemaName = $table->schemaName;
-            if ( !empty( $schemaName ) )
-            {
-                if ( $defaultSchema !== $schemaName )
-                {
-                    $publicName = $schemaName . '.' . $publicName;
-                }
-            }
-
-            $label = ArrayUtils::get( $labelInfo, 'label', Inflector::camelize( $publicName, '_', true ) );
+            $label = ArrayUtils::get( $labelInfo, 'label', Inflector::camelize( $table->displayName, '_', true ) );
             $plural = ArrayUtils::get( $labelInfo, 'plural', Inflector::pluralize( $label ) );
             $name_field = ArrayUtils::get( $labelInfo, 'name_field' );
 
@@ -143,13 +132,13 @@ class Schema extends BaseDbSchemaResource
             }
 
             $_result = array(
-                'name'        => $publicName,
+                'name'        => $table->displayName,
                 'label'       => $label,
                 'plural'      => $plural,
                 'primary_key' => $table->primaryKey,
                 'name_field'  => $name_field,
                 'field'       => $fields,
-                'related'     => $this->describeTableRelated( $name )
+                'related'     => $table->references
             );
             $_result['access'] = $this->getPermissions( $table );
 
@@ -528,22 +517,6 @@ class Schema extends BaseDbSchemaResource
     {
         $_schema = $this->dbConn->getSchema()->getTable( $parent_table );
         $_related = array();
-
-        // foreign keys point to relationships that this table "belongs to"
-        // currently handled by schema handler, see below
-//        foreach ( $_schema->foreignKeys as $_key => $_value )
-//        {
-//            $_refTable = ArrayUtils::get( $_value, 0 );
-//            $_refField = ArrayUtils::get( $_value, 1 );
-//            $_name = $_refTable . '_by_' . $_key;
-//            $_related[] = array(
-//                'name'      => $_name,
-//                'type'      => 'belongs_to',
-//                'ref_table' => $_refTable,
-//                'ref_field' => $_refField,
-//                'field'     => $_key
-//            );
-//        }
 
         // foreign refs point to relationships other tables have with this table
         foreach ( $_schema->foreignRefs as $_refs )

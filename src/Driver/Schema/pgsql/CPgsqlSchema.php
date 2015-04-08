@@ -361,7 +361,7 @@ class CPgsqlSchema extends CDbSchema
      * Generates various kinds of table names.
      *
      * @param CDbTableSchema $table the table instance
-     * @param string            $name  the unquoted table name
+     * @param string         $name  the unquoted table name
      */
     protected function resolveTableNames( $table, $name )
     {
@@ -382,10 +382,12 @@ class CPgsqlSchema extends CDbSchema
         if ( $schemaName === self::DEFAULT_SCHEMA )
         {
             $table->rawName = $this->quoteTableName( $tableName );
+            $table->displayName = $tableName;
         }
         else
         {
             $table->rawName = $this->quoteTableName( $schemaName ) . '.' . $this->quoteTableName( $tableName );
+            $table->rawName = $schemaName . '.' . $tableName;
         }
     }
 
@@ -514,35 +516,25 @@ EOD;
             {
                 $name = ( $rts == static::DEFAULT_SCHEMA ) ? $rtn : $rts . '.' . $rtn;
 
-                $table->foreignKeys[$cn] = array($name, $rcn);
+                $table->foreignKeys[$cn] = array( $name, $rcn );
                 if ( isset( $table->columns[$cn] ) )
                 {
                     $table->columns[$cn]->isForeignKey = true;
                     $table->columns[$cn]->refTable = $name;
                     $table->columns[$cn]->refFields = $rcn;
-                    if ('integer' === $table->columns[$cn]->type)
+                    if ( 'integer' === $table->columns[$cn]->type )
                     {
                         $table->columns[$cn]->type = 'reference';
                     }
                 }
 
                 // Add it to our foreign references as well
-                $table->foreignRefs[] = array(
-                    'type'      => 'belongs_to',
-                    'ref_table' => $name,
-                    'ref_field' => $rcn,
-                    'field'     => $cn
-                );
+                $table->addReference( 'belongs_to', $name, $rcn, $cn );
             }
             elseif ( ( 0 == strcasecmp( $rtn, $table->name ) ) && ( 0 == strcasecmp( $rts, $schema ) ) )
             {
                 $name = ( $ts == static::DEFAULT_SCHEMA ) ? $tn : $ts . '.' . $tn;
-                $table->foreignRefs[] = array(
-                    'type'      => 'has_many',
-                    'ref_table' => $name,
-                    'ref_field' => $cn,
-                    'field'     => $rcn
-                );
+                $table->addReference( 'has_many', $name, $cn, $rcn );
 
                 // if other has foreign keys to other tables, we can say these are related as well
                 foreach ( $columns2 as $key2 => $column2 )
@@ -564,13 +556,7 @@ EOD;
                                 $name2 = ( $rts2 == static::DEFAULT_SCHEMA ) ? $rtn2 : $rts2 . '.' . $rtn2;
                                 // not same as parent, i.e. via reference back to self
                                 // not the same key
-                                $table->foreignRefs[] = array(
-                                    'type'      => 'many_many',
-                                    'ref_table' => $name2,
-                                    'ref_field' => $rcn2,
-                                    'join'      => "$name($cn,$cn2)",
-                                    'field'     => $rcn
-                                );
+                                $table->addReference( 'many_many', $name2, $rcn2, $rcn, "$name($cn,$cn2)" );
                             }
                         }
                     }
@@ -617,7 +603,7 @@ EOD;
             if ( isset( $table->columns[$name] ) )
             {
                 $table->columns[$name]->isPrimaryKey = true;
-                if (('integer' === $table->columns[$name]->type) && $table->columns[$name]->autoIncrement)
+                if ( ( 'integer' === $table->columns[$name]->type ) && $table->columns[$name]->autoIncrement )
                 {
                     $table->columns[$name]->type = 'id';
                 }
@@ -627,7 +613,7 @@ EOD;
                 }
                 elseif ( is_string( $table->primaryKey ) )
                 {
-                    $table->primaryKey = array($table->primaryKey, $name);
+                    $table->primaryKey = array( $table->primaryKey, $name );
                 }
                 else
                 {
@@ -886,11 +872,11 @@ MYSQL;
     /**
      * Builds a SQL statement for changing the definition of a column.
      *
-     * @param string $table  the table whose column is to be changed. The table name will be properly quoted by the method.
-     * @param string $column the name of the column to be changed. The name will be properly quoted by the method.
-     * @param string $definition   the new column type. The {@link getColumnType} method will be invoked to convert abstract column type (if any)
-     *                       into the physical one. Anything that is not recognized as abstract type will be kept in the generated SQL.
-     *                       For example, 'string' will be turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not null'.
+     * @param string $table      the table whose column is to be changed. The table name will be properly quoted by the method.
+     * @param string $column     the name of the column to be changed. The name will be properly quoted by the method.
+     * @param string $definition the new column type. The {@link getColumnType} method will be invoked to convert abstract column type (if any)
+     *                           into the physical one. Anything that is not recognized as abstract type will be kept in the generated SQL.
+     *                           For example, 'string' will be turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not null'.
      *
      * @return string the SQL statement for changing the definition of a column.
      * @since 1.1.6
@@ -898,7 +884,7 @@ MYSQL;
     public function alterColumn( $table, $column, $definition )
     {
         $sql = 'ALTER TABLE ' . $this->quoteTableName( $table ) . ' ALTER COLUMN ' . $this->quoteColumnName( $column );
-        if (false !== $_pos = strpos( $definition, ' ') )
+        if ( false !== $_pos = strpos( $definition, ' ' ) )
         {
             $sql .= ' TYPE ' . $this->getColumnType( substr( $definition, 0, $_pos ) );
             switch ( substr( $definition, $_pos + 1 ) )
