@@ -30,7 +30,7 @@ use DreamFactory\Rave\Resources\BaseDbSchemaResource;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
 use DreamFactory\Rave\SqlDbCore\Command;
 use DreamFactory\Rave\SqlDbCore\Connection;
-use DreamFactory\Rave\SqlDbCore\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDbCore\Schema\ColumnSchema;
 use DreamFactory\Rave\SqlDbCore\Schema\TableSchema;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\DbUtilities;
@@ -726,7 +726,7 @@ class Schema extends BaseDbSchemaResource
     }
 
     /**
-     * @param CDbColumnSchema $column
+     * @param ColumnSchema $column
      * @param array           $label_info
      *
      * @throws \Exception

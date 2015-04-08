@@ -34,8 +34,8 @@ use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
 use DreamFactory\Rave\SqlDbCore\Command;
 use DreamFactory\Rave\SqlDbCore\Connection;
 use DreamFactory\Rave\SqlDbCore\Transaction;
-use DreamFactory\Rave\SqlDbCore\Schema\CDbExpression;
-use DreamFactory\Rave\SqlDbCore\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDbCore\Schema\Expression;
+use DreamFactory\Rave\SqlDbCore\Schema\ColumnSchema;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\DbUtilities;
 
@@ -777,7 +777,7 @@ class Table extends BaseDbTableResource
                             continue;
                         }
 
-                        if ( !is_null( $_fieldVal ) && !( $_fieldVal instanceof CDbExpression ) )
+                        if ( !is_null( $_fieldVal ) && !( $_fieldVal instanceof Expression ) )
                         {
                             $_fieldVal = $this->dbConn->getSchema()->parseValueForSet($_fieldVal, $_fieldInfo);
 
@@ -885,7 +885,7 @@ class Table extends BaseDbTableResource
                 $_expression = $_expression['value'];
             }
 
-            $value = new CDbExpression( $_expression, $_params );
+            $value = new Expression( $_expression, $_params );
         }
     }
 
@@ -2989,7 +2989,7 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param CDbColumnSchema $column
+     * @param ColumnSchema $column
      * @param array           $foreign_keys
      * @param array           $label_info
      *
