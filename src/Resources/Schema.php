@@ -28,10 +28,10 @@ use DreamFactory\Rave\Exceptions\NotFoundException;
 use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\Rave\Resources\BaseDbSchemaResource;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
-use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
-use DreamFactory\Rave\SqlDb\Driver\CDbConnection;
-use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
-use DreamFactory\Rave\SqlDb\Driver\Schema\CDbTableSchema;
+use DreamFactory\Rave\SqlDbCore\Command;
+use DreamFactory\Rave\SqlDbCore\Connection;
+use DreamFactory\Rave\SqlDbCore\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDbCore\Schema\TableSchema;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\DbUtilities;
 
@@ -570,7 +570,7 @@ class Schema extends BaseDbSchemaResource
         {
             $names = array();
             $results = $this->buildTableFields( $table_name, $fields, $_schema, $allow_update, $allow_delete );
-            /** @var CDbCommand $command */
+            /** @var Command $command */
             $command = $this->dbConn->createCommand();
             $columns = ArrayUtils::get( $results, 'columns', array() );
             foreach ( $columns as $name => $definition )
@@ -829,7 +829,7 @@ class Schema extends BaseDbSchemaResource
     /**
      * @param string              $table_name
      * @param array               $fields
-     * @param null|CDbTableSchema $schema
+     * @param null|TableSchema $schema
      * @param bool                $allow_update
      * @param bool                $allow_delete
      *
@@ -1084,7 +1084,7 @@ class Schema extends BaseDbSchemaResource
      */
     protected function createFieldExtras( $extras )
     {
-        /** @var CDbCommand $command */
+        /** @var Command $command */
         $command = $this->dbConn->createCommand();
         $references = ArrayUtils::get( $extras, 'references', array() );
         if ( !empty( $references ) )
@@ -1266,7 +1266,7 @@ class Schema extends BaseDbSchemaResource
         {
             try
             {
-                /** @var CDbCommand $_command */
+                /** @var Command $_command */
                 $_command = $this->dbConn->createCommand();
                 $_results = $this->buildTableFields( $table_name, $_fields, $old_schema, true, $allow_delete );
                 $_columns = ArrayUtils::get( $_results, 'columns', array() );

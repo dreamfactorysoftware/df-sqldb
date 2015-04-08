@@ -19,7 +19,7 @@
  */
 namespace DreamFactory\Rave\SqlDb\Components;
 
-use DreamFactory\Rave\SqlDb\Driver\CDbConnection;
+use DreamFactory\Rave\SqlDbCore\Connection;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 
 trait SqlDbResource
@@ -29,7 +29,7 @@ trait SqlDbResource
     //*************************************************************************
 
     /**
-     * @var CDbConnection
+     * @var Connection
      */
     protected $dbConn = null;
 

@@ -31,11 +31,11 @@ use DreamFactory\Rave\Exceptions\NotImplementedException;
 use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\Rave\Resources\BaseDbTableResource;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
-use DreamFactory\Rave\SqlDb\Driver\CDbCommand;
-use DreamFactory\Rave\SqlDb\Driver\CDbConnection;
-use DreamFactory\Rave\SqlDb\Driver\CDbTransaction;
-use DreamFactory\Rave\SqlDb\Driver\Schema\CDbExpression;
-use DreamFactory\Rave\SqlDb\Driver\Schema\CDbColumnSchema;
+use DreamFactory\Rave\SqlDbCore\Command;
+use DreamFactory\Rave\SqlDbCore\Connection;
+use DreamFactory\Rave\SqlDbCore\Transaction;
+use DreamFactory\Rave\SqlDbCore\Schema\CDbExpression;
+use DreamFactory\Rave\SqlDbCore\Schema\CDbColumnSchema;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\DbUtilities;
 
@@ -52,7 +52,7 @@ class Table extends BaseDbTableResource
     //*************************************************************************
 
     /**
-     * @var null | CDbTransaction
+     * @var null | Transaction
      */
     protected $_transaction = null;
 
@@ -194,7 +194,7 @@ class Table extends BaseDbTableResource
 
             if ( !empty( $_parsed ) )
             {
-                /** @var CDbCommand $_command */
+                /** @var Command $_command */
                 $_command = $this->dbConn->createCommand();
                 $_command->update( $table, $_parsed, $_where, $_params );
             }
@@ -245,7 +245,7 @@ class Table extends BaseDbTableResource
         // truncate the table, return success
         try
         {
-            /** @var CDbCommand $_command */
+            /** @var Command $_command */
             $_command = $this->dbConn->createCommand();
 
             // build filter string if necessary, add server-side filters if necessary
@@ -305,7 +305,7 @@ class Table extends BaseDbTableResource
 
             $_results = $this->_recordQuery( $table, $_fields, $_where, $_params, $_bindings, $extras );
 
-            /** @var CDbCommand $_command */
+            /** @var Command $_command */
             $_command = $this->dbConn->createCommand();
             $_command->delete( $table, $_where, $_params );
 
@@ -365,7 +365,7 @@ class Table extends BaseDbTableResource
         $_needLimit = false;
 
         // use query builder
-        /** @var CDbCommand $_command */
+        /** @var Command $_command */
         $_command = $this->dbConn->createCommand();
         $_command->select( $select );
 
@@ -1375,7 +1375,7 @@ class Table extends BaseDbTableResource
                 }
             }
 
-            /** @var CDbCommand $_command */
+            /** @var Command $_command */
             $_command = $this->dbConn->createCommand();
 
             // resolve any upsert situations
@@ -1750,7 +1750,7 @@ class Table extends BaseDbTableResource
                 }
             }
 
-            /** @var CDbCommand $_command */
+            /** @var Command $_command */
             $_command = $this->dbConn->createCommand();
 
             // resolve any upsert situations
@@ -2013,7 +2013,7 @@ class Table extends BaseDbTableResource
         }
         try
         {
-            /** @var CDbCommand $command */
+            /** @var Command $command */
             $command = $this->dbConn->createCommand( $query );
             $reader = $command->query();
             $dummy = array();
@@ -2072,7 +2072,7 @@ class Table extends BaseDbTableResource
         }
         try
         {
-            /** @var CDbCommand $command */
+            /** @var Command $command */
             $command = $this->dbConn->createCommand( $query );
             if ( isset( $params ) && !empty( $params ) )
             {
@@ -2104,7 +2104,7 @@ class Table extends BaseDbTableResource
         }
         try
         {
-            /** @var CDbCommand $command */
+            /** @var Command $command */
             $command = $this->dbConn->createCommand( $query );
             if ( isset( $params ) && !empty( $params ) )
             {
@@ -2221,7 +2221,7 @@ class Table extends BaseDbTableResource
             $_where = ArrayUtils::get( $_where, 0, null );
         }
 
-        /** @var CDbCommand $_command */
+        /** @var Command $_command */
         $_command = $this->dbConn->createCommand();
 
         $_out = array();
@@ -2538,7 +2538,7 @@ class Table extends BaseDbTableResource
         }
         elseif ( !empty( $this->_batchIds ) )
         {
-            /** @var CDbCommand $_command */
+            /** @var Command $_command */
             $_command = $this->dbConn->createCommand();
 
             switch ( $_action )

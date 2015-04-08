@@ -27,7 +27,7 @@ use DreamFactory\Rave\SqlDb\Resources\Schema;
 use DreamFactory\Rave\SqlDb\Resources\StoredFunction;
 use DreamFactory\Rave\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Rave\SqlDb\Resources\Table;
-use DreamFactory\Rave\SqlDb\Driver\CDbConnection;
+use DreamFactory\Rave\SqlDbCore\Connection;
 use DreamFactory\Rave\Contracts\ServiceResponseInterface;
 use DreamFactory\Rave\Enums\SqlDbDriverTypes;
 use DreamFactory\Rave\Services\BaseDbService;
@@ -50,7 +50,7 @@ class SqlDb extends BaseDbService
     //*************************************************************************
 
     /**
-     * @var CDbConnection
+     * @var Connection
      */
     protected $dbConn;
     /**
@@ -111,9 +111,9 @@ class SqlDb extends BaseDbService
         $user = ArrayUtils::get( $config, 'username' );
         $password = ArrayUtils::get( $config, 'password' );
 
-        $this->dbConn = new CDbConnection( $dsn, $user, $password );
+        $this->dbConn = new Connection( $dsn, $user, $password );
 
-        switch ( $this->dbConn->getDriverName())
+        switch ( $this->dbConn->getDBName())
         {
             case SqlDbDriverTypes::MYSQL:
             case SqlDbDriverTypes::MYSQLI:
@@ -157,7 +157,7 @@ class SqlDb extends BaseDbService
     }
 
     /**
-     * @return CDbConnection
+     * @return Connection
      */
     public function getConnection()
     {
