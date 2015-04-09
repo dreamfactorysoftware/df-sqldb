@@ -508,41 +508,6 @@ class Schema extends BaseDbSchemaResource
     }
 
     /**
-     * @param                $parent_table
-     *
-     * @return array
-     * @throws \Exception
-     */
-    public function describeTableRelated( $parent_table )
-    {
-        $_schema = $this->dbConn->getSchema()->getTable( $parent_table );
-        $_related = array();
-
-        // foreign refs point to relationships other tables have with this table
-        foreach ( $_schema->foreignRefs as $_refs )
-        {
-            $_name = array();
-            switch ( ArrayUtils::get( $_refs, 'type' ) )
-            {
-                case 'belongs_to':
-                    $_name['name'] = ArrayUtils::get( $_refs, 'ref_table', '' ) . '_by_' . ArrayUtils::get( $_refs, 'field', '' );
-                    break;
-                case 'has_many':
-                    $_name['name'] = Inflector::pluralize( ArrayUtils::get( $_refs, 'ref_table', '' ) ) . '_by_' . ArrayUtils::get( $_refs, 'ref_field', '' );
-                    break;
-                case 'many_many':
-                    $_join = ArrayUtils::get( $_refs, 'join', '' );
-                    $_join = substr( $_join, 0, strpos( $_join, '(' ) );
-                    $_name['name'] = Inflector::pluralize( ArrayUtils::get( $_refs, 'ref_table', '' ) ) . '_by_' . $_join;
-                    break;
-            }
-            $_related[] = $_name + $_refs;
-        }
-
-        return $_related;
-    }
-
-    /**
      * @param string $table_name
      * @param array  $fields
      * @param bool   $allow_update

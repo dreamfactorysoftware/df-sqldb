@@ -520,9 +520,9 @@ class Table extends BaseDbTableResource
      */
     protected function describeTableRelated( $name )
     {
-        $relations = $this->describeTableRelatedInternal( $name );
-        $relatives = array();
-        foreach ( $relations as $relation )
+        $schema = $this->dbConn->getSchema()->getTable( $name );
+        $relatives = [];
+        foreach ( $schema->references as $relation )
         {
             $how = ArrayUtils::get( $relation, 'name', '' );
             $relatives[$how] = $relation;
@@ -2788,7 +2788,7 @@ class Table extends BaseDbTableResource
      * @throws \Exception
      * @return array
      */
-    public function describeTable( $name, $remove_prefix = '', $refresh = false )
+    public function describeTable( $name, $refresh = false )
     {
         $this->correctTableName( $name );
         try
@@ -2799,30 +2799,11 @@ class Table extends BaseDbTableResource
                 throw new NotFoundException( "Table '$name' does not exist in the database." );
             }
 
-            $defaultSchema = $this->dbConn->getSchema()->getDefaultSchema();
             $extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $name );
             $extras = DbUtilities::reformatFieldLabelArray( $extras );
             $labelInfo = ArrayUtils::get( $extras, '', array() );
 
-            $publicName = $table->name;
-            $schemaName = $table->schemaName;
-            if ( !empty( $schemaName ) )
-            {
-                if ( $defaultSchema !== $schemaName )
-                {
-                    $publicName = $schemaName . '.' . $publicName;
-                }
-            }
-
-            if ( !empty( $remove_prefix ) )
-            {
-                if ( substr( $publicName, 0, strlen( $remove_prefix ) ) == $remove_prefix )
-                {
-                    $publicName = substr( $publicName, strlen( $remove_prefix ), strlen( $publicName ) );
-                }
-            }
-
-            $label = ArrayUtils::get( $labelInfo, 'label', Inflector::camelize( $publicName, '_', true ) );
+            $label = ArrayUtils::get( $labelInfo, 'label', Inflector::camelize( $table->displayName, '_', true ) );
             $plural = ArrayUtils::get( $labelInfo, 'plural', Inflector::pluralize( $label ) );
             $name_field = ArrayUtils::get( $labelInfo, 'name_field' );
 
@@ -2830,17 +2811,17 @@ class Table extends BaseDbTableResource
             foreach ( $table->columns as $column )
             {
                 $_info = ArrayUtils::get( $extras, $column->name, array() );
-                $fields[] = static::describeFieldInternal( $column, $table->foreignKeys, $_info );
+                $fields[] = $this->describeFieldInternal( $column, $_info );
             }
 
             return array(
-                'name'        => $publicName,
+                'name'        => $table->displayName,
                 'label'       => $label,
                 'plural'      => $plural,
                 'primary_key' => $table->primaryKey,
                 'name_field'  => $name_field,
                 'field'       => $fields,
-                'related'     => $this->describeTableRelatedInternal( $name )
+                'related'     => $table->references
             );
         }
         catch ( RestException $ex )
@@ -2910,57 +2891,6 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param                $parent_table
-     *
-     * @return array
-     * @throws \Exception
-     */
-    public function describeTableRelatedInternal( $parent_table )
-    {
-        $_schema = $this->dbConn->getSchema()->getTable( $parent_table );
-        $_related = array();
-
-        // foreign keys point to relationships that this table "belongs to"
-        // currently handled by schema handler, see below
-//        foreach ( $_schema->foreignKeys as $_key => $_value )
-//        {
-//            $_refTable = ArrayUtils::get( $_value, 0 );
-//            $_refField = ArrayUtils::get( $_value, 1 );
-//            $_name = $_refTable . '_by_' . $_key;
-//            $_related[] = array(
-//                'name'      => $_name,
-//                'type'      => 'belongs_to',
-//                'ref_table' => $_refTable,
-//                'ref_field' => $_refField,
-//                'field'     => $_key
-//            );
-//        }
-
-        // foreign refs point to relationships other tables have with this table
-        foreach ( $_schema->foreignRefs as $_refs )
-        {
-            $_name = array();
-            switch ( ArrayUtils::get( $_refs, 'type' ) )
-            {
-                case 'belongs_to':
-                    $_name['name'] = ArrayUtils::get( $_refs, 'ref_table', '' ) . '_by_' . ArrayUtils::get( $_refs, 'field', '' );
-                    break;
-                case 'has_many':
-                    $_name['name'] = Inflector::pluralize( ArrayUtils::get( $_refs, 'ref_table', '' ) ) . '_by_' . ArrayUtils::get( $_refs, 'ref_field', '' );
-                    break;
-                case 'many_many':
-                    $_join = ArrayUtils::get( $_refs, 'join', '' );
-                    $_join = substr( $_join, 0, strpos( $_join, '(' ) );
-                    $_name['name'] = Inflector::pluralize( ArrayUtils::get( $_refs, 'ref_table', '' ) ) . '_by_' . $_join;
-                    break;
-            }
-            $_related[] = $_name + $_refs;
-        }
-
-        return $_related;
-    }
-
-    /**
      * @param $type
      *
      * @return int | null
@@ -2990,13 +2920,12 @@ class Table extends BaseDbTableResource
 
     /**
      * @param ColumnSchema $column
-     * @param array           $foreign_keys
      * @param array           $label_info
      *
      * @throws \Exception
      * @return array
      */
-    protected static function describeFieldInternal( $column, $foreign_keys, $label_info )
+    protected static function describeFieldInternal( $column, $label_info )
     {
         $label = ArrayUtils::get( $label_info, 'label', Inflector::camelize( $column->name, '_', true ) );
         $validation = json_decode( ArrayUtils::get( $label_info, 'validation' ), true );
@@ -3008,14 +2937,6 @@ class Table extends BaseDbTableResource
         }
         $picklist = ArrayUtils::get( $label_info, 'picklist' );
         $picklist = ( !empty( $picklist ) ) ? explode( "\r", $picklist ) : array();
-        $refTable = '';
-        $refFields = '';
-        if ( 1 == $column->isForeignKey )
-        {
-            $referenceTo = ArrayUtils::get( $foreign_keys, $column->name );
-            $refTable = ArrayUtils::get( $referenceTo, 0 );
-            $refFields = ArrayUtils::get( $referenceTo, 1 );
-        }
 
         return array(
             'name'               => $column->name,
@@ -3037,8 +2958,8 @@ class Table extends BaseDbTableResource
             'is_foreign_key'     => $column->isForeignKey,
             'is_unique'          => $column->isUnique,
             'is_index'           => $column->isIndex,
-            'ref_table'          => $refTable,
-            'ref_fields'         => $refFields,
+            'ref_table'          => $column->refTable,
+            'ref_fields'         => $column->refFields,
             'validation'         => $validation,
             'value'              => $picklist
         );
