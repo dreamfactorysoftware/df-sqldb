@@ -30,8 +30,8 @@ use DreamFactory\Rave\Resources\BaseDbSchemaResource;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
 use DreamFactory\Rave\SqlDbCore\Command;
 use DreamFactory\Rave\SqlDbCore\Connection;
-use DreamFactory\Rave\SqlDbCore\Schema\ColumnSchema;
-use DreamFactory\Rave\SqlDbCore\Schema\TableSchema;
+use DreamFactory\Rave\SqlDbCore\ColumnSchema;
+use DreamFactory\Rave\SqlDbCore\TableSchema;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\DbUtilities;
 

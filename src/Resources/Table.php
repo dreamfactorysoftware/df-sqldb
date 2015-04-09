@@ -34,8 +34,8 @@ use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
 use DreamFactory\Rave\SqlDbCore\Command;
 use DreamFactory\Rave\SqlDbCore\Connection;
 use DreamFactory\Rave\SqlDbCore\Transaction;
-use DreamFactory\Rave\SqlDbCore\Schema\Expression;
-use DreamFactory\Rave\SqlDbCore\Schema\ColumnSchema;
+use DreamFactory\Rave\SqlDbCore\Expression;
+use DreamFactory\Rave\SqlDbCore\ColumnSchema;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\DbUtilities;
 
