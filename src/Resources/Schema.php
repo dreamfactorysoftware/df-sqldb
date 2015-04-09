@@ -28,6 +28,7 @@ use DreamFactory\Rave\Exceptions\NotFoundException;
 use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\Rave\Resources\BaseDbSchemaResource;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
+use DreamFactory\Rave\SqlDb\Components\TableDescriber;
 use DreamFactory\Rave\SqlDbCore\Command;
 use DreamFactory\Rave\SqlDbCore\Connection;
 use DreamFactory\Rave\SqlDbCore\ColumnSchema;
@@ -42,10 +43,7 @@ class Schema extends BaseDbSchemaResource
     //*************************************************************************
 
     use SqlDbResource;
-
-    //*************************************************************************
-    //	Members
-    //*************************************************************************
+    use TableDescriber;
 
     //*************************************************************************
     //	Methods
@@ -118,29 +116,8 @@ class Schema extends BaseDbSchemaResource
 
             $extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $name );
             $extras = DbUtilities::reformatFieldLabelArray( $extras );
-            $labelInfo = ArrayUtils::get( $extras, '', array() );
-
-            $label = ArrayUtils::get( $labelInfo, 'label', Inflector::camelize( $table->displayName, '_', true ) );
-            $plural = ArrayUtils::get( $labelInfo, 'plural', Inflector::pluralize( $label ) );
-            $name_field = ArrayUtils::get( $labelInfo, 'name_field' );
-
-            $fields = array();
-            foreach ( $table->columns as $column )
-            {
-                $_info = ArrayUtils::get( $extras, $column->name, array() );
-                $fields[] = $this->describeFieldInternal( $column, $_info );
-            }
-
-            $_result = array(
-                'name'        => $table->displayName,
-                'label'       => $label,
-                'plural'      => $plural,
-                'primary_key' => $table->primaryKey,
-                'name_field'  => $name_field,
-                'field'       => $fields,
-                'related'     => $table->references
-            );
-            $_result['access'] = $this->getPermissions( $table );
+            $_result = static::mergeTableExtras($table->toArray(), $extras);
+            $_result['access'] = $this->getPermissions( $name );
 
             return $_result;
         }
@@ -484,13 +461,14 @@ class Schema extends BaseDbSchemaResource
         $_out = array();
         try
         {
+            /** @var ColumnSchema $column */
             foreach ( $_table->columns as $column )
             {
 
                 if ( empty( $field_names ) || ( false !== array_search( $column->name, $field_names ) ) )
                 {
                     $_info = ArrayUtils::get( $extras, $column->name, array() );
-                    $_out[] = $this->describeFieldInternal( $column, $_info );
+                    $_out[] = static::mergeFieldExtras( $column->toArray(), $_info );
                 }
             }
         }
@@ -688,107 +666,6 @@ class Schema extends BaseDbSchemaResource
         }
 
         return null;
-    }
-
-    /**
-     * @param ColumnSchema $column
-     * @param array           $label_info
-     *
-     * @throws \Exception
-     * @return array
-     */
-    protected static function describeFieldInternal( $column, $label_info )
-    {
-        $label = ArrayUtils::get( $label_info, 'label', Inflector::camelize( $column->name, '_', true ) );
-        $validation = json_decode( ArrayUtils::get( $label_info, 'validation' ), true );
-        if ( !empty( $validation ) && is_string( $validation ) )
-        {
-            // backwards compatible with old strings
-            $validation = array_map( 'trim', explode( ',', $validation ) );
-            $validation = array_flip( $validation );
-        }
-        $picklist = ArrayUtils::get( $label_info, 'picklist' );
-        $picklist = ( !empty( $picklist ) ) ? explode( "\r", $picklist ) : array();
-
-        return array(
-            'name'               => $column->name,
-            'label'              => $label,
-            'type'               => static::determineDfType( $column, $label_info ),
-            'db_type'            => $column->dbType,
-            'php_type'           => $column->phpType,
-            'pdo_type'           => $column->pdoType,
-            'length'             => $column->size,
-            'precision'          => $column->precision,
-            'scale'              => $column->scale,
-            'default'            => $column->defaultValue,
-            'required'           => static::determineRequired( $column, $validation ),
-            'allow_null'         => $column->allowNull,
-            'fixed_length'       => $column->fixedLength,
-            'supports_multibyte' => $column->supportsMultibyte,
-            'auto_increment'     => $column->autoIncrement,
-            'is_primary_key'     => $column->isPrimaryKey,
-            'is_unique'          => $column->isUnique,
-            'is_index'           => $column->isIndex,
-            'is_foreign_key'     => $column->isForeignKey,
-            'ref_table'          => $column->refTable,
-            'ref_fields'         => $column->refFields,
-            'validation'         => $validation,
-            'value'              => $picklist
-        );
-    }
-
-    /**
-     * @param            $column
-     * @param null|array $label_info
-     *
-     * @return string
-     */
-    protected static function determineDfType( $column, $label_info = null )
-    {
-        switch ( $column->type )
-        {
-            case 'integer':
-                if ( isset( $label_info['user_id_on_update'] ) )
-                {
-                    return 'user_id_on_' . ( ArrayUtils::getBool( $label_info, 'user_id_on_update' ) ? 'update' : 'create' );
-                }
-
-                if ( null !== ArrayUtils::get( $label_info, 'user_id' ) )
-                {
-                    return 'user_id';
-                }
-                break;
-
-            case 'timestamp':
-                if ( isset( $label_info['timestamp_on_update'] ) )
-                {
-                    return 'timestamp_on_' . ( ArrayUtils::getBool( $label_info, 'timestamp_on_update' ) ? 'update' : 'create' );
-                }
-                break;
-        }
-
-        return $column->type;
-    }
-
-    /**
-     * @param            $column
-     * @param array|null $validations
-     *
-     * @return bool
-     */
-    protected static function determineRequired( $column, $validations = null )
-    {
-        if ( ( 1 == $column->allowNull ) || ( isset( $column->defaultValue ) ) || ( 1 == $column->autoIncrement ) )
-        {
-            return false;
-        }
-
-        if ( is_array( $validations ) && isset( $validations['api_read_only'] ) )
-        {
-            return false;
-        }
-
-        return true;
     }
 
     /**
