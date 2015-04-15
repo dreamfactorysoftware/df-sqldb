@@ -23,6 +23,7 @@ namespace DreamFactory\Rave\SqlDb\Services;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\NotFoundException;
+use DreamFactory\Rave\Services\Swagger;
 use DreamFactory\Rave\SqlDb\Resources\Schema;
 use DreamFactory\Rave\SqlDb\Resources\StoredFunction;
 use DreamFactory\Rave\SqlDb\Resources\StoredProcedure;
@@ -96,7 +97,7 @@ class SqlDb extends BaseDbService
      * @throws \InvalidArgumentException
      * @throws \Exception
      */
-    public function __construct( $settings = array() )
+    public function __construct( $settings = [ ] )
     {
         parent::__construct( $settings );
 
@@ -113,7 +114,7 @@ class SqlDb extends BaseDbService
 
         $this->dbConn = new Connection( $dsn, $user, $password );
 
-        switch ( $this->dbConn->getDBName())
+        switch ( $this->dbConn->getDBName() )
         {
             case SqlDbDriverTypes::MYSQL:
             case SqlDbDriverTypes::MYSQLI:
@@ -283,96 +284,44 @@ class SqlDb extends BaseDbService
             return parent::listResources( $include_properties );
         }
 
-        $_resources = [ ];
-
-        $refresh = $this->request->queryBool( 'refresh' );
-
-        $_name = Schema::RESOURCE_NAME . '/';
-        $_access = $this->getPermissions( $_name );
-        if ( !empty( $_access ) )
+        $output = [ ];
+        foreach ($this->resources as $resourceInfo)
         {
-            $_resources[] = $_name;
-            $_resources[] = $_name . '*';
-        }
+            $className = $resourceInfo['class_name'];
 
-        $_result = $this->dbConn->getSchema()->getTableNames( null, true, $refresh );
-        foreach ( $_result as $_name )
-        {
-            $_name = Schema::RESOURCE_NAME . '/' . $_name;
-            $_access = $this->getPermissions( $_name );
+            if ( !class_exists( $className ) )
+            {
+                throw new InternalServerErrorException( 'Service configuration class name lookup failed for resource ' . $this->resourcePath );
+            }
+
+            /** @var BaseRestResource $resource */
+            $resource = $this->instantiateResource( $className, $resourceInfo );
+
+            $name = $className::RESOURCE_NAME . '/';
+            $_access = $this->getPermissions( $name );
             if ( !empty( $_access ) )
             {
-                $_resources[] = $_name;
+                $output[] = $name;
+                $output[] = $name . '*';
             }
-        }
 
-        $_name = Table::RESOURCE_NAME . '/';
-        $_access = $this->getPermissions( $_name );
-        if ( !empty( $_access ) )
-        {
-            $_resources[] = $_name;
-            $_resources[] = $_name . '*';
-        }
-
-        foreach ( $_result as $_name )
-        {
-            $_name = Table::RESOURCE_NAME . '/' . $_name;
-            $_access = $this->getPermissions( $_name );
-            if ( !empty( $_access ) )
+            $results = $resource->listResources(false);
+            foreach ( $results as $name )
             {
-                $_resources[] = $_name;
-            }
-        }
-
-        $_name = StoredProcedure::RESOURCE_NAME . '/';
-        $_access = $this->getPermissions( $_name );
-        if ( !empty( $_access ) )
-        {
-            $_resources[] = $_name;
-            $_resources[] = $_name . '*';
-        }
-
-        $_result = $this->dbConn->getSchema()->getProcedureNames('', $refresh );
-        if ( !empty( $_result ) )
-        {
-            foreach ( $_result as $_name )
-            {
-                $_name = StoredProcedure::RESOURCE_NAME . '/' . $_name;
-                $_access = $this->getPermissions( $_name );
+                $name = Schema::RESOURCE_NAME . '/' . $name;
+                $_access = $this->getPermissions( $name );
                 if ( !empty( $_access ) )
                 {
-                    $_resources[] = $_name;
+                    $output[] = $name;
                 }
             }
         }
 
-        $_name = StoredFunction::RESOURCE_NAME . '/';
-        $_access = $this->getPermissions( $_name );
-        if ( !empty( $_access ) )
-        {
-            $_resources[] = $_name;
-            $_resources[] = $_name . '*';
-        }
-
-        $_result = $this->dbConn->getSchema()->getFunctionNames('', $refresh );
-        if ( !empty( $_result ) )
-        {
-            foreach ( $_result as $_name )
-            {
-                $_name = StoredFunction::RESOURCE_NAME . '/' . $_name;
-                $_access = $this->getPermissions( $_name );
-                if ( !empty( $_access ) )
-                {
-                    $_resources[] = $_name;
-                }
-            }
-        }
-
-        return array( 'resource' => $_resources );
+        return [ 'resource' => $output ];
     }
 
     /**
-     * @return ServiceResponseInterface
+     * {@inheritdoc}
      */
 //    protected function respond()
 //    {
@@ -393,4 +342,46 @@ class SqlDb extends BaseDbService
 //        parent::respond();
 //    }
 
+    /**
+     * {@inheritdoc}
+     */
+    public function getApiDocInfo()
+    {
+        $base = parent::getApiDocInfo();
+
+        $apis = [ ];
+        $models = [ ];
+        foreach ($this->resources as $resourceInfo)
+        {
+            $className = $resourceInfo['class_name'];
+
+            if ( !class_exists( $className ) )
+            {
+                throw new InternalServerErrorException( 'Service configuration class name lookup failed for resource ' . $this->resourcePath );
+            }
+
+            /** @var BaseRestResource $resource */
+            $resource = $this->instantiateResource( $className, $resourceInfo );
+
+            $name = $className::RESOURCE_NAME . '/';
+            $_access = $this->getPermissions( $name );
+            if ( !empty( $_access ) )
+            {
+                $results = $resource->getApiDocInfo();
+                if (isset($results, $results['apis']))
+                {
+                    $apis = array_merge( $apis, $results['apis'] );
+                }
+                if (isset($results, $results['models']))
+                {
+                    $models = array_merge( $models, $results['models'] );
+                }
+            }
+        }
+
+        $base['apis'] = array_merge( $base['apis'], $apis );
+        $base['models'] = array_merge( $base['models'], $models );
+
+        return $base;
+    }
 }

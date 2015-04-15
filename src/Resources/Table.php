@@ -2898,4 +2898,26 @@ class Table extends BaseDbTableResource
 
         return null;
     }
+    public function getApiDocInfo()
+    {
+        $_base = parent::getApiDocInfo();
+
+        $_addTableParameters = [
+            [
+                'name'          => 'related',
+                'description'   => 'Comma-delimited list of relationship names to retrieve for each record, or \'*\' to retrieve all.',
+                'allowMultiple' => true,
+                'type'          => 'string',
+                'paramType'     => 'query',
+                'required'      => false,
+            ]
+        ];
+
+        $_addTableNotes =
+            'Use the <b>related</b> parameter to return related records for each resource. ' . 'By default, no related records are returned.<br/> ';
+
+        $_base['models'] = array_merge( $_base['models'], static::getApiDocCommonModels() );
+
+        return $_base;
+    }
 }

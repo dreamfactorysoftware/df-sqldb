@@ -1172,4 +1172,12 @@ class Schema extends BaseDbSchemaResource
         $this->dbConn->getSchema()->refresh();
     }
 
+    public function getApiDocInfo()
+    {
+        $_base = parent::getApiDocInfo();
+
+        $_base['models'] = array_merge( $_base['models'], static::getApiDocCommonModels() );
+
+        return $_base;
+    }
 }

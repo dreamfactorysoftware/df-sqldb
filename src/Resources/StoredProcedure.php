@@ -25,6 +25,7 @@ use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\Rave\Resources\BaseDbResource;
+use DreamFactory\Rave\Services\Swagger;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Resources\BaseRestResource;
@@ -81,7 +82,7 @@ class StoredProcedure extends BaseDbResource
             $_refresh = ArrayUtils::getBool( $options, 'refresh' );
             $_result = $this->listProcedures( $_namesOnly, $_refresh );
 
-            return array( 'resource' => $_result );
+            return [ 'resource' => $_result ];
         }
 
         $payload = $this->request->getPayloadData();
@@ -94,7 +95,7 @@ class StoredProcedure extends BaseDbResource
         else
         {
             $_name = $this->resource;
-            $_params = ArrayUtils::get( $payload, 'params', array() );
+            $_params = ArrayUtils::get( $payload, 'params', [] );
         }
 
         $_returns = ArrayUtils::get( $payload, 'returns' );
@@ -121,7 +122,7 @@ class StoredProcedure extends BaseDbResource
         else
         {
             $_name = $this->resource;
-            $_params = ArrayUtils::get( $payload, 'params', array() );
+            $_params = ArrayUtils::get( $payload, 'params', [] );
         }
 
         $_returns = ArrayUtils::get( $payload, 'returns' );
@@ -137,7 +138,7 @@ class StoredProcedure extends BaseDbResource
      */
     public function listProcedures( $names_only = false, $refresh = false )
     {
-        $_resources = array();
+        $_resources = [];
 
         try
         {
@@ -156,7 +157,7 @@ class StoredProcedure extends BaseDbResource
                     }
                     else
                     {
-                        $_resources[] = array( 'name' => $_name, 'access' => $_access );
+                        $_resources[] = [ 'name' => $_name, 'access' => $_access ];
                     }
                 }
             }
@@ -192,7 +193,7 @@ class StoredProcedure extends BaseDbResource
 
         if ( false === $params = DbUtilities::validateAsArray( $params, ',', true ) )
         {
-            $params = array();
+            $params = [];
         }
 
         foreach ( $params as $_key => $_param )
@@ -236,7 +237,7 @@ class StoredProcedure extends BaseDbResource
             }
             else
             {
-                $params[$_key] = array( 'name' => "p$_key", 'param_type' => 'IN', 'value' => $_param );
+                $params[$_key] = [ 'name' => "p$_key", 'param_type' => 'IN', 'value' => $_param ];
             }
         }
 
@@ -299,7 +300,7 @@ class StoredProcedure extends BaseDbResource
             // wrap the result set if desired
             if ( !empty( $wrapper ) )
             {
-                $_result = array( $wrapper => $_result );
+                $_result = [ $wrapper => $_result ];
             }
 
             // add back output parameters to results
@@ -323,5 +324,227 @@ class StoredProcedure extends BaseDbResource
         {
             throw new InternalServerErrorException( "Failed to call database stored procedure.\n{$ex->getMessage()}" );
         }
+    }
+    public function getApiDocInfo()
+    {
+        $_base = parent::getApiDocInfo();
+
+        $_apis = [
+            [
+                'path'        => '/{api_name}/' . static::RESOURCE_NAME,
+                'operations'  => [
+                    [
+                        'method'           => 'GET',
+                        'summary'          => 'getStoredProcs() - List callable stored procedures.',
+                        'nickname'         => 'getStoredProcs',
+                        'notes'            => 'List the names of the available stored procedures on this database. ',
+                        'type'             => 'Resources',
+                        'event_name'       => [ '{api_name}.' . static::RESOURCE_NAME . '.list' ],
+                        'parameters'       => [
+                            [
+                                'name'          => 'names_only',
+                                'description'   => 'Return only the names of the procedures in an array.',
+                                'allowMultiple' => false,
+                                'type'          => 'boolean',
+                                'paramType'     => 'query',
+                                'required'      => false,
+                                'default'       => false,
+                            ],
+                            [
+                                'name'          => 'refresh',
+                                'description'   => 'Refresh any cached copy of the resource list.',
+                                'allowMultiple' => false,
+                                'type'          => 'boolean',
+                                'paramType'     => 'query',
+                                'required'      => false,
+                            ],
+                        ],
+                        'responseMessages' => Swagger::getCommonResponses( [ 400, 401, 500 ] ),
+                    ],
+                ],
+                'description' => 'Operations for retrieving callable stored procedures.',
+            ],
+            [
+                'path'        => '/{api_name}/' . static::RESOURCE_NAME . '/{procedure_name}',
+                'operations'  => [
+                    [
+                        'method'           => 'GET',
+                        'summary'          => 'callStoredProc() - Call a stored procedure.',
+                        'nickname'         => 'callStoredProc',
+                        'notes'            => 'Call a stored procedure with no parameters. ' . 'Set an optional wrapper for the returned data set. ',
+                        'type'             => 'StoredProcResponse',
+                        'event_name'       => [
+                            '{api_name}.' . static::RESOURCE_NAME . '.{procedure_name}.call',
+                            '{api_name}.' . static::RESOURCE_NAME . '.procedure_called',
+                        ],
+                        'parameters'       => [
+                            [
+                                'name'          => 'procedure_name',
+                                'description'   => 'Name of the stored procedure to call.',
+                                'allowMultiple' => false,
+                                'type'          => 'string',
+                                'paramType'     => 'path',
+                                'required'      => true,
+                            ],
+                            [
+                                'name'          => 'wrapper',
+                                'description'   => 'Add this wrapper around the expected data set before returning.',
+                                'allowMultiple' => false,
+                                'type'          => 'string',
+                                'paramType'     => 'query',
+                                'required'      => false,
+                            ],
+                            [
+                                'name'          => 'returns',
+                                'description'   => 'If returning a single value, use this to set the type of that value.',
+                                'allowMultiple' => false,
+                                'type'          => 'string',
+                                'paramType'     => 'query',
+                                'required'      => false,
+                            ],
+                        ],
+                        'responseMessages' => Swagger::getCommonResponses(),
+                    ],
+                    [
+                        'method'           => 'POST',
+                        'summary'          => 'callStoredProcWithParams() - Call a stored procedure.',
+                        'nickname'         => 'callStoredProcWithParams',
+                        'notes'            => 'Call a stored procedure with parameters. ' . 'Set an optional wrapper and schema for the returned data set. ',
+                        'type'             => 'StoredProcResponse',
+                        'event_name'       => [
+                            '{api_name}.' . static::RESOURCE_NAME . '.{procedure_name}.call',
+                            '{api_name}.' . static::RESOURCE_NAME . '.procedure_called',
+                        ],
+                        'parameters'       => [
+                            [
+                                'name'          => 'procedure_name',
+                                'description'   => 'Name of the stored procedure to call.',
+                                'allowMultiple' => false,
+                                'type'          => 'string',
+                                'paramType'     => 'path',
+                                'required'      => true,
+                            ],
+                            [
+                                'name'          => 'body',
+                                'description'   => 'Data containing in and out parameters to pass to procedure.',
+                                'allowMultiple' => false,
+                                'type'          => 'StoredProcRequest',
+                                'paramType'     => 'body',
+                                'required'      => true,
+                            ],
+                            [
+                                'name'          => 'wrapper',
+                                'description'   => 'Add this wrapper around the expected data set before returning.',
+                                'allowMultiple' => false,
+                                'type'          => 'string',
+                                'paramType'     => 'query',
+                                'required'      => false,
+                            ],
+                            [
+                                'name'          => 'returns',
+                                'description'   => 'If returning a single value, use this to set the type of that value.',
+                                'allowMultiple' => false,
+                                'type'          => 'string',
+                                'paramType'     => 'query',
+                                'required'      => false,
+                            ],
+                        ],
+                        'responseMessages' => Swagger::getCommonResponses(),
+                    ],
+                ],
+                'description' => 'Operations for SQL database stored procedures.',
+            ],
+        ];
+
+        $_models = [
+            'StoredProcResponse'     => [
+                'id'         => 'StoredProcResponse',
+                'properties' => [
+                    '_wrapper_if_supplied_' => [
+                        'type'        => 'Array',
+                        'description' => 'Array of returned data.',
+                        'items'       => [
+                            'type' => 'string'
+                        ],
+                    ],
+                    '_out_param_name_'      => [
+                        'type'        => 'string',
+                        'description' => 'Name and value of any given output parameter.',
+                    ],
+                ],
+            ],
+            'StoredProcRequest'      => [
+                'id'         => 'StoredProcRequest',
+                'properties' => [
+                    'params'  => [
+                        'type'        => 'array',
+                        'description' => 'Optional array of input and output parameters.',
+                        'items'       => [
+                            '$ref' => 'StoredProcParam',
+                        ],
+                    ],
+                    'schema'  => [
+                        'type'        => 'StoredProcResultSchema',
+                        'description' => 'Optional name to type pairs to be applied to returned data.',
+                    ],
+                    'wrapper' => [
+                        'type'        => 'string',
+                        'description' => 'Add this wrapper around the expected data set before returning, same as URL parameter.',
+                    ],
+                    'returns' => [
+                        'type'        => 'string',
+                        'description' => 'If returning a single value, use this to set the type of that value, same as URL parameter.',
+                    ],
+                ],
+            ],
+            'StoredProcParam'        => [
+                'id'         => 'StoredProcParam',
+                'properties' => [
+                    'name'       => [
+                        'type'        => 'string',
+                        'description' =>
+                            'Name of the parameter, required for OUT and INOUT types, ' .
+                            'must be the same as the stored procedure\'s parameter name.',
+                    ],
+                    'param_type' => [
+                        'type'        => 'string',
+                        'description' => 'Parameter type of IN, OUT, or INOUT, defaults to IN.',
+                    ],
+                    'value'      => [
+                        'type'        => 'string',
+                        'description' => 'Value of the parameter, used for the IN and INOUT types, defaults to NULL.',
+                    ],
+                    'type'       => [
+                        'type'        => 'string',
+                        'description' =>
+                            'For INOUT and OUT parameters, the requested type for the returned value, ' .
+                            'i.e. integer, boolean, string, etc. Defaults to value type for INOUT and string for OUT.',
+                    ],
+                    'length'     => [
+                        'type'        => 'integer',
+                        'format'      => 'int32',
+                        'description' =>
+                            'For INOUT and OUT parameters, the requested length for the returned value. ' .
+                            'May be required by some database drivers.',
+                    ],
+                ],
+            ],
+            'StoredProcResultSchema' => [
+                'id'         => 'StoredProcResultSchema',
+                'properties' => [
+                    '_field_name_' => [
+                        'type'        => 'string',
+                        'description' =>
+                            'The name of the returned element where the value is set to the requested type ' .
+                            'for the returned value, i.e. integer, boolean, string, etc.',
+                    ],
+                ],
+            ],
+        ];
+
+        $_base['apis'] = array_merge( $_base['apis'], $_apis );
+        $_base['models'] = array_merge( $_base['models'], $_models );
+
+        return $_base;
     }
 }
