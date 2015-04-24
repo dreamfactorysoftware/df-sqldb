@@ -23,17 +23,14 @@ namespace DreamFactory\Rave\SqlDb\Services;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\NotFoundException;
-use DreamFactory\Rave\Services\Swagger;
 use DreamFactory\Rave\SqlDb\Resources\Schema;
 use DreamFactory\Rave\SqlDb\Resources\StoredFunction;
 use DreamFactory\Rave\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Rave\SqlDb\Resources\Table;
 use DreamFactory\Rave\SqlDbCore\Connection;
-use DreamFactory\Rave\Contracts\ServiceResponseInterface;
 use DreamFactory\Rave\Enums\SqlDbDriverTypes;
 use DreamFactory\Rave\Services\BaseDbService;
 use DreamFactory\Rave\Resources\BaseRestResource;
-use DreamFactory\Rave\Utility\ResponseFactory;
 
 /**
  * Class SqlDb

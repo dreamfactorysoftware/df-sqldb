@@ -25,10 +25,9 @@ use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\Rave\Resources\BaseDbResource;
-use DreamFactory\Rave\Services\Swagger;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
-use DreamFactory\Rave\Resources\BaseRestResource;
+use DreamFactory\Rave\Utility\ApiDocUtilities;
 use DreamFactory\Rave\Utility\DbUtilities;
 
 class StoredFunction extends BaseDbResource
@@ -318,7 +317,7 @@ class StoredFunction extends BaseDbResource
                                 'required'      => false,
                             ],
                         ],
-                        'responseMessages' => Swagger::getCommonResponses( [ 400, 401, 500 ] ),
+                        'responseMessages' => ApiDocUtilities::getCommonResponses( [ 400, 401, 500 ] ),
                     ],
                 ],
                 'description' => 'Operations for retrieving callable stored functions.',
@@ -362,7 +361,7 @@ class StoredFunction extends BaseDbResource
                                 'required'      => false,
                             ],
                         ],
-                        'responseMessages' => Swagger::getCommonResponses(),
+                        'responseMessages' => ApiDocUtilities::getCommonResponses(),
                     ],
                     [
                         'method'           => 'POST',
@@ -408,7 +407,7 @@ class StoredFunction extends BaseDbResource
                                 'required'      => false,
                             ],
                         ],
-                        'responseMessages' => Swagger::getCommonResponses(),
+                        'responseMessages' => ApiDocUtilities::getCommonResponses(),
                     ],
                 ],
                 'description' => 'Operations for SQL database stored functions.',
