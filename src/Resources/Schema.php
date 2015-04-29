@@ -54,7 +54,7 @@ class Schema extends BaseDbSchemaResource
      */
     public function listResources( $include_properties = null )
     {
-        $refresh = $this->request->queryBool( 'refresh' );
+        $refresh = $this->request->getParameterAsBool( 'refresh' );
         $_names = $this->dbConn->getSchema()->getTableNames( null, true, $refresh );
 
         if ( empty( $include_properties ) )

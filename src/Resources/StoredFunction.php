@@ -74,11 +74,10 @@ class StoredFunction extends BaseDbResource
      */
     protected function handleGET()
     {
-        $options = $this->request->query();
         if ( empty( $this->resource ) )
         {
-            $_namesOnly = ArrayUtils::getBool( $options, 'names_only' );
-            $_refresh = ArrayUtils::getBool( $options, 'refresh' );
+            $_namesOnly = $this->request->getParameterAsBool( 'names_only' );
+            $_refresh = $this->request->getParameterAsBool( 'refresh' );
             $_result = $this->listFunctions( $_namesOnly, $_refresh );
 
             return [ 'resource' => $_result ];
