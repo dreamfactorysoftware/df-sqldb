@@ -159,7 +159,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
         $this->deleteDbService(9);
 
         $this->assertContains('{"error":{"context":{"errors":[1],"record":[{"id":'.$id1.'},"SQLSTATE[23000]: ', $rs->getContent());
-        $this->assertContains("1062 Duplicate entry 'db1' for key 'services_name_unique'", $rs->getContent());
+        $this->assertContains("1062 Duplicate entry 'db1' for key 'service_name_unique'", $rs->getContent());
         $this->assertContains('"code":400', $rs->getContent());
         $this->assertResponseStatus(400);
     }
