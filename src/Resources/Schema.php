@@ -22,6 +22,7 @@ namespace DreamFactory\Rave\SqlDb\Resources;
 
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Inflector;
+use DreamFactory\Rave\Enums\VerbsMask;
 use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\NotFoundException;
@@ -30,10 +31,8 @@ use DreamFactory\Rave\Resources\BaseDbSchemaResource;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
 use DreamFactory\Rave\SqlDb\Components\TableDescriber;
 use DreamFactory\Rave\SqlDbCore\Command;
-use DreamFactory\Rave\SqlDbCore\Connection;
 use DreamFactory\Rave\SqlDbCore\ColumnSchema;
 use DreamFactory\Rave\SqlDbCore\TableSchema;
-use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\DbUtilities;
 
 class Schema extends BaseDbSchemaResource
@@ -52,47 +51,71 @@ class Schema extends BaseDbSchemaResource
     /**
      * {@inheritdoc}
      */
-    public function listResources( $include_properties = null )
+    public function listTables( $schema = null, $refresh = false )
+    {
+        return $this->dbConn->getSchema()->getTableNames( $schema, true, $refresh );
+    }
+
+    /**
+     * @param null|string|array $fields
+     *
+     * @throws \Exception
+     * @return array
+     */
+    public function listResources( $fields = null )
     {
         $refresh = $this->request->getParameterAsBool( 'refresh' );
-        $_names = $this->dbConn->getSchema()->getTableNames( null, true, $refresh );
+        $schema = $this->request->getParameter( 'schema', '' );
 
-        if ( empty( $include_properties ) )
+        $result = $this->listTables( $schema, $refresh );
+
+        $extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $result, false, 'table,label,plural' );
+
+        $resources = [ ];
+        foreach ( $result as $name )
         {
-            return array( 'resource' => $_names );
-        }
-
-        $_extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $_names, false, 'table,label,plural' );
-
-        $_tables = array();
-        foreach ( $_names as $name )
-        {
-            $label = '';
-            $plural = '';
-            foreach ( $_extras as $each )
+            $access = $this->getPermissions( $name );
+            if ( !empty( $access ) )
             {
-                if ( 0 == strcasecmp( $name, ArrayUtils::get( $each, 'table', '' ) ) )
+                $label = '';
+                $plural = '';
+                foreach ( $extras as $each )
                 {
-                    $label = ArrayUtils::get( $each, 'label' );
-                    $plural = ArrayUtils::get( $each, 'plural' );
-                    break;
+                    if ( 0 == strcasecmp( $name, ArrayUtils::get( $each, 'table', '' ) ) )
+                    {
+                        $label = ArrayUtils::get( $each, 'label' );
+                        $plural = ArrayUtils::get( $each, 'plural' );
+                        break;
+                    }
                 }
-            }
 
-            if ( empty( $label ) )
-            {
-                $label = Inflector::camelize( $name, [ '_', '.' ], true );
-            }
+                if ( empty( $label ) )
+                {
+                    $label = Inflector::camelize( $name, [ '_', '.' ], true );
+                }
 
-            if ( empty( $plural ) )
-            {
-                $plural = Inflector::pluralize( $label );
-            }
+                if ( empty( $plural ) )
+                {
+                    $plural = Inflector::pluralize( $label );
+                }
 
-            $_tables[] = array( 'name' => $name, 'label' => $label, 'plural' => $plural );
+                $resources[] = [ 'name' => $name, 'label' => $label, 'plural' => $plural, 'access' => VerbsMask::maskToArray( $access ) ];
+            }
         }
 
-        return $this->makeResourceList( $_tables, $include_properties, true );
+        return $this->makeResourceList( $resources, 'name', $fields, 'resource' );
+    }
+
+    public function listAccessComponents( $schema = null, $refresh = false )
+    {
+        $output = [ ];
+        $result = $this->listTables( $schema, $refresh );
+        foreach ( $result as $name )
+        {
+            $output[] = static::RESOURCE_NAME . '/' . $name;
+        }
+
+        return $output;
     }
 
     /**
@@ -116,7 +139,7 @@ class Schema extends BaseDbSchemaResource
 
             $extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $name );
             $extras = DbUtilities::reformatFieldLabelArray( $extras );
-            $_result = static::mergeTableExtras($table->toArray(), $extras);
+            $_result = static::mergeTableExtras( $table->toArray(), $extras );
             $_result['access'] = $this->getPermissions( $name );
 
             return $_result;
@@ -189,14 +212,14 @@ class Schema extends BaseDbSchemaResource
     /**
      * {@inheritdoc}
      */
-    public function createTable( $table, $properties = array(), $check_exist = false, $return_schema = false )
+    public function createTable( $table, $properties = [ ], $check_exist = false, $return_schema = false )
     {
         $properties = ArrayUtils::clean( $properties );
         $properties['name'] = $table;
 
         $_tables = DbUtilities::validateAsArray( $properties, null, true, 'Bad data format in request.' );
         $_result = $this->updateTablesInternal( $_tables );
-        $_result = ArrayUtils::get( $_result, 0, array() );
+        $_result = ArrayUtils::get( $_result, 0, [ ] );
 
         //  Any changes here should refresh cached schema
         static::refreshCachedTables( $this->dbConn );
@@ -212,7 +235,7 @@ class Schema extends BaseDbSchemaResource
     /**
      * {@inheritdoc}
      */
-    public function createField( $table, $field, $properties = array(), $check_exist = false, $return_schema = false )
+    public function createField( $table, $field, $properties = [ ], $check_exist = false, $return_schema = false )
     {
         $properties = ArrayUtils::clean( $properties );
         $properties['name'] = $field;
@@ -271,7 +294,7 @@ class Schema extends BaseDbSchemaResource
         $_tables = DbUtilities::validateAsArray( $properties, null, true, 'Bad data format in request.' );
 
         $_result = $this->updateTablesInternal( $_tables, true, $allow_delete_fields );
-        $_result = ArrayUtils::get( $_result, 0, array() );
+        $_result = ArrayUtils::get( $_result, 0, [ ] );
 
         //  Any changes here should refresh cached schema
         static::refreshCachedTables( $this->dbConn );
@@ -287,7 +310,7 @@ class Schema extends BaseDbSchemaResource
     /**
      * {@inheritdoc}
      */
-    public function updateField( $table, $field, $properties = array(), $allow_delete_parts = false, $return_schema = false )
+    public function updateField( $table, $field, $properties = [ ], $allow_delete_parts = false, $return_schema = false )
     {
         if ( empty( $table ) )
         {
@@ -458,7 +481,7 @@ class Schema extends BaseDbSchemaResource
 
         $extras = DbUtilities::reformatFieldLabelArray( $extras );
 
-        $_out = array();
+        $_out = [ ];
         try
         {
             /** @var ColumnSchema $column */
@@ -467,7 +490,7 @@ class Schema extends BaseDbSchemaResource
 
                 if ( empty( $field_names ) || ( false !== array_search( $column->name, $field_names ) ) )
                 {
-                    $_info = ArrayUtils::get( $extras, $column->name, array() );
+                    $_info = ArrayUtils::get( $extras, $column->name, [ ] );
                     $_out[] = static::mergeFieldExtras( $column->toArray(), $_info );
                 }
             }
@@ -511,25 +534,25 @@ class Schema extends BaseDbSchemaResource
 
         try
         {
-            $names = array();
+            $names = [ ];
             $results = $this->buildTableFields( $table_name, $fields, $_schema, $allow_update, $allow_delete );
             /** @var Command $command */
             $command = $this->dbConn->createCommand();
-            $columns = ArrayUtils::get( $results, 'columns', array() );
+            $columns = ArrayUtils::get( $results, 'columns', [ ] );
             foreach ( $columns as $name => $definition )
             {
                 $command->reset();
                 $command->addColumn( $table_name, $name, $definition );
                 $names[] = $name;
             }
-            $columns = ArrayUtils::get( $results, 'alter_columns', array() );
+            $columns = ArrayUtils::get( $results, 'alter_columns', [ ] );
             foreach ( $columns as $name => $definition )
             {
                 $command->reset();
                 $command->alterColumn( $table_name, $name, $definition );
                 $names[] = $name;
             }
-            $columns = ArrayUtils::get( $results, 'drop_columns', array() );
+            $columns = ArrayUtils::get( $results, 'drop_columns', [ ] );
             foreach ( $columns as $name )
             {
                 $command->reset();
@@ -544,7 +567,7 @@ class Schema extends BaseDbSchemaResource
                 DbUtilities::setSchemaExtras( $this->serviceId, $labels );
             }
 
-            return array( 'names' => $names );
+            return [ 'names' => $names ];
         }
         catch ( \Exception $ex )
         {
@@ -566,7 +589,7 @@ class Schema extends BaseDbSchemaResource
     {
         $tables = DbUtilities::validateAsArray( $tables, null, true, 'There are no table sets in the request.' );
 
-        $_created = $_references = $_indexes = $_labels = $_out = array();
+        $_created = $_references = $_indexes = $_labels = $_out = [ ];
         $_count = 0;
         $_singleTable = ( 1 == count( $tables ) );
 
@@ -605,10 +628,10 @@ class Schema extends BaseDbSchemaResource
                     }
                 }
 
-                $_labels = array_merge( $_labels, ArrayUtils::get( $_results, 'labels', array() ) );
-                $_references = array_merge( $_references, ArrayUtils::get( $_results, 'references', array() ) );
-                $_indexes = array_merge( $_indexes, ArrayUtils::get( $_results, 'indexes', array() ) );
-                $_out[$_count] = array( 'name' => $_tableName );
+                $_labels = array_merge( $_labels, ArrayUtils::get( $_results, 'labels', [ ] ) );
+                $_references = array_merge( $_references, ArrayUtils::get( $_results, 'references', [ ] ) );
+                $_indexes = array_merge( $_indexes, ArrayUtils::get( $_results, 'indexes', [ ] ) );
+                $_out[$_count] = [ 'name' => $_tableName ];
             }
             catch ( \Exception $ex )
             {
@@ -618,18 +641,18 @@ class Schema extends BaseDbSchemaResource
                     throw $ex;
                 }
 
-                $_out[$_count] = array(
-                    'error' => array(
+                $_out[$_count] = [
+                    'error' => [
                         'message' => $ex->getMessage(),
                         'code'    => $ex->getCode()
-                    )
-                );
+                    ]
+                ];
             }
 
             $_count++;
         }
 
-        $_results = array( 'references' => $_references, 'indexes' => $_indexes );
+        $_results = [ 'references' => $_references, 'indexes' => $_indexes ];
         static::createFieldExtras( $_results );
 
         if ( !empty( $_labels ) )
@@ -669,11 +692,11 @@ class Schema extends BaseDbSchemaResource
     }
 
     /**
-     * @param string              $table_name
-     * @param array               $fields
+     * @param string           $table_name
+     * @param array            $fields
      * @param null|TableSchema $schema
-     * @param bool                $allow_update
-     * @param bool                $allow_delete
+     * @param bool             $allow_update
+     * @param bool             $allow_delete
      *
      * @throws \Exception
      * @return string
@@ -682,14 +705,14 @@ class Schema extends BaseDbSchemaResource
     {
         $fields = DbUtilities::validateAsArray( $fields, null, true, "No valid fields exist in the received table schema." );
 
-        $_columns = array();
-        $_alterColumns = array();
-        $_references = array();
-        $_indexes = array();
-        $_labels = array();
-        $_dropColumns = array();
-        $_oldFields = array();
-        $_extraCommands = array();
+        $_columns = [ ];
+        $_alterColumns = [ ];
+        $_references = [ ];
+        $_indexes = [ ];
+        $_labels = [ ];
+        $_dropColumns = [ ];
+        $_oldFields = [ ];
+        $_extraCommands = [ ];
         if ( $schema )
         {
             foreach ( ArrayUtils::clean( ArrayUtils::get( $schema, 'field' ) ) as $_old )
@@ -699,7 +722,7 @@ class Schema extends BaseDbSchemaResource
                 $_oldFields[ArrayUtils::get( $_old, 'name' )] = $_old;
             }
         }
-        $_fields = array();
+        $_fields = [ ];
         foreach ( $fields as $_field )
         {
             $_field = array_change_key_case( $_field, CASE_LOWER );
@@ -732,9 +755,9 @@ class Schema extends BaseDbSchemaResource
                 throw new BadRequestException( "Field '$_name' already exists in table '$table_name'." );
             }
 
-            $_oldField = ( $_isAlter ) ? $_oldFields[$_name] : array();
+            $_oldField = ( $_isAlter ) ? $_oldFields[$_name] : [ ];
             $_oldForeignKey = ArrayUtils::get( $_oldField, 'is_foreign_key', false );
-            $_temp = array();
+            $_temp = [ ];
 
             // if same as old, don't bother
             if ( !empty( $_oldField ) )
@@ -814,7 +837,7 @@ class Schema extends BaseDbSchemaResource
                 $_keyName = $this->dbConn->getSchema()->makeConstraintName( 'fk', $table_name, $_name );
                 if ( !$_isAlter || !$_oldForeignKey )
                 {
-                    $_references[] = array(
+                    $_references[] = [
                         'name'       => $_keyName,
                         'table'      => $table_name,
                         'column'     => $_name,
@@ -822,7 +845,7 @@ class Schema extends BaseDbSchemaResource
                         'ref_fields' => $refColumns,
                         'delete'     => $refOnDelete,
                         'update'     => $refOnUpdate
-                    );
+                    ];
                 }
             }
 
@@ -831,30 +854,30 @@ class Schema extends BaseDbSchemaResource
             {
                 // will get to it later, create after table built
                 $_keyName = $this->dbConn->getSchema()->makeConstraintName( 'undx', $table_name, $_name );
-                $_indexes[] = array(
+                $_indexes[] = [
                     'name'   => $_keyName,
                     'table'  => $table_name,
                     'column' => $_name,
                     'unique' => true,
                     'drop'   => $_isAlter
-                );
+                ];
             }
             elseif ( ArrayUtils::get( $_field, 'is_index' ) )
             {
                 // will get to it later, create after table built
                 $_keyName = $this->dbConn->getSchema()->makeConstraintName( 'ndx', $table_name, $_name );
-                $_indexes[] = array(
+                $_indexes[] = [
                     'name'   => $_keyName,
                     'table'  => $table_name,
                     'column' => $_name,
                     'drop'   => $_isAlter
-                );
+                ];
             }
 
             $_values = ArrayUtils::get( $_field, 'value' );
             if ( empty( $_values ) )
             {
-                $_values = ArrayUtils::getDeep( $_field, 'values', 'value', array() );
+                $_values = ArrayUtils::getDeep( $_field, 'values', 'value', [ ] );
             }
             if ( !is_array( $_values ) )
             {
@@ -908,7 +931,7 @@ class Schema extends BaseDbSchemaResource
 
         }
 
-        return array(
+        return [
             'columns'       => $_columns,
             'alter_columns' => $_alterColumns,
             'drop_columns'  => $_dropColumns,
@@ -916,7 +939,7 @@ class Schema extends BaseDbSchemaResource
             'indexes'       => $_indexes,
             'labels'        => $_labels,
             'extras'        => $_extraCommands
-        );
+        ];
     }
 
     /**
@@ -928,7 +951,7 @@ class Schema extends BaseDbSchemaResource
     {
         /** @var Command $command */
         $command = $this->dbConn->createCommand();
-        $references = ArrayUtils::get( $extras, 'references', array() );
+        $references = ArrayUtils::get( $extras, 'references', [ ] );
         if ( !empty( $references ) )
         {
             foreach ( $references as $reference )
@@ -965,7 +988,7 @@ class Schema extends BaseDbSchemaResource
                 }
             }
         }
-        $indexes = ArrayUtils::get( $extras, 'indexes', array() );
+        $indexes = ArrayUtils::get( $extras, 'indexes', [ ] );
         if ( !empty( $indexes ) )
         {
             foreach ( $indexes as $index )
@@ -1045,18 +1068,18 @@ class Schema extends BaseDbSchemaResource
                 }
             }
 
-            $_labels = ArrayUtils::get( $_results, 'labels', array() );
+            $_labels = ArrayUtils::get( $_results, 'labels', [ ] );
             // add table labels
             $_label = ArrayUtils::get( $data, 'label' );
             $_plural = ArrayUtils::get( $data, 'plural' );
             if ( !empty( $_label ) || !empty( $_plural ) )
             {
-                $_labels[] = array(
+                $_labels[] = [
                     'table'  => $table_name,
                     'field'  => '',
                     'label'  => $_label,
                     'plural' => $_plural
-                );
+                ];
             }
             $_results['labels'] = $_labels;
 
@@ -1100,9 +1123,9 @@ class Schema extends BaseDbSchemaResource
 
         // update column types
 
-        $_labels = array();
-        $_references = array();
-        $_indexes = array();
+        $_labels = [ ];
+        $_references = [ ];
+        $_indexes = [ ];
         $_fields = ArrayUtils::get( $data, 'field' );
         if ( !empty( $_fields ) )
         {
@@ -1111,19 +1134,19 @@ class Schema extends BaseDbSchemaResource
                 /** @var Command $_command */
                 $_command = $this->dbConn->createCommand();
                 $_results = $this->buildTableFields( $table_name, $_fields, $old_schema, true, $allow_delete );
-                $_columns = ArrayUtils::get( $_results, 'columns', array() );
+                $_columns = ArrayUtils::get( $_results, 'columns', [ ] );
                 foreach ( $_columns as $_name => $_definition )
                 {
                     $_command->reset();
                     $_command->addColumn( $table_name, $_name, $_definition );
                 }
-                $_columns = ArrayUtils::get( $_results, 'alter_columns', array() );
+                $_columns = ArrayUtils::get( $_results, 'alter_columns', [ ] );
                 foreach ( $_columns as $_name => $_definition )
                 {
                     $_command->reset();
                     $_command->alterColumn( $table_name, $_name, $_definition );
                 }
-                $_columns = ArrayUtils::get( $_results, 'drop_columns', array() );
+                $_columns = ArrayUtils::get( $_results, 'drop_columns', [ ] );
                 foreach ( $_columns as $_name )
                 {
                     $_command->reset();
@@ -1136,9 +1159,9 @@ class Schema extends BaseDbSchemaResource
                 throw $ex;
             }
 
-            $_labels = ArrayUtils::get( $_results, 'labels', array() );
-            $_references = ArrayUtils::get( $_results, 'references', array() );
-            $_indexes = ArrayUtils::get( $_results, 'indexes', array() );
+            $_labels = ArrayUtils::get( $_results, 'labels', [ ] );
+            $_references = ArrayUtils::get( $_results, 'references', [ ] );
+            $_indexes = ArrayUtils::get( $_results, 'indexes', [ ] );
         }
 
         // add table labels
@@ -1148,16 +1171,16 @@ class Schema extends BaseDbSchemaResource
         {
             if ( ( $_label != ArrayUtils::get( $old_schema, 'label' ) ) && ( $_plural != ArrayUtils::get( $old_schema, 'plural' ) ) )
             {
-                $_labels[] = array(
+                $_labels[] = [
                     'table'  => $table_name,
                     'field'  => '',
                     'label'  => $_label,
                     'plural' => $_plural
-                );
+                ];
             }
         }
 
-        $_results = array( 'references' => $_references, 'indexes' => $_indexes, 'labels' => $_labels );
+        $_results = [ 'references' => $_references, 'indexes' => $_indexes, 'labels' => $_labels ];
 
         return $_results;
     }

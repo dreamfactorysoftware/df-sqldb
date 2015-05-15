@@ -19,6 +19,7 @@
  */
 namespace DreamFactory\Rave\SqlDb\Components;
 
+use DreamFactory\Rave\Contracts\RequestHandlerInterface;
 use DreamFactory\Rave\SqlDbCore\Connection;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 
@@ -38,13 +39,13 @@ trait SqlDbResource
     //*************************************************************************
 
     /**
-     * @param SqlDb $service
-     *
+     * @param RequestHandlerInterface $parent
      */
-    public function setService( $service )
+    public function setParent( RequestHandlerInterface $parent )
     {
-        $this->service = $service;
-        $this->serviceId = $service->getServiceId();
-        $this->dbConn = $service->getConnection();
+        parent::setParent($parent);
+
+        /** @var SqlDb $parent */
+        $this->dbConn = $parent->getConnection();
     }
 }

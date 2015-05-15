@@ -21,12 +21,12 @@
 namespace DreamFactory\Rave\SqlDb\Resources;
 
 use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Rave\Enums\VerbsMask;
 use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\Rave\Resources\BaseDbResource;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
-use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\ApiDocUtilities;
 use DreamFactory\Rave\Utility\DbUtilities;
 
@@ -63,9 +63,14 @@ class StoredFunction extends BaseDbResource
      */
     protected function validateStoredFunctionAccess( &$function, $action = null )
     {
-        // finally check that the current user has privileges to access this function
-        $_resource = static::RESOURCE_NAME;
-        $this->service->validateResourceAccess( $_resource, $function, $action );
+        // check that the current user has privileges to access this function
+        $resource = $function;
+        if ( !empty( $function ) )
+        {
+            $resource .= rtrim( ( false !== strpos( $function, '(' ) ) ? strstr( $function, '(', true ) : $function );
+        }
+
+        $this->checkPermission( $action, $resource );
     }
 
     /**
@@ -76,11 +81,7 @@ class StoredFunction extends BaseDbResource
     {
         if ( empty( $this->resource ) )
         {
-            $_namesOnly = $this->request->getParameterAsBool( 'names_only' );
-            $_refresh = $this->request->getParameterAsBool( 'refresh' );
-            $_result = $this->listFunctions( $_namesOnly, $_refresh );
-
-            return [ 'resource' => $_result ];
+            return parent::handleGET();
         }
 
         $payload = $this->request->getPayloadData();
@@ -93,7 +94,7 @@ class StoredFunction extends BaseDbResource
         else
         {
             $_name = $this->resource;
-            $_params = ArrayUtils::get( $payload, 'params', [] );
+            $_params = ArrayUtils::get( $payload, 'params', [ ] );
         }
 
         $_returns = ArrayUtils::get( $payload, 'returns' );
@@ -119,7 +120,7 @@ class StoredFunction extends BaseDbResource
         else
         {
             $_name = $this->resource;
-            $_params = ArrayUtils::get( $payload, 'params', [] );
+            $_params = ArrayUtils::get( $payload, 'params', [ ] );
         }
 
         $_returns = ArrayUtils::get( $payload, 'returns' );
@@ -130,39 +131,23 @@ class StoredFunction extends BaseDbResource
     }
 
     /**
-     * @param boolean $names_only
-     * @param boolean $refresh
+     * @param null|string $schema
+     * @param bool        $refresh
      *
-     * @throws \Exception
      * @return array
+     * @throws InternalServerErrorException
+     * @throws RestException
+     * @throws \Exception
+     *
      */
-    public function listFunctions( $names_only = false, $refresh = false )
+    protected function listFunctions( $schema = null, $refresh = false )
     {
-        $_resources = [];
-
         try
         {
-            $_names = $this->dbConn->getSchema()->getFunctionNames( '', $refresh );
+            $_names = $this->dbConn->getSchema()->getFunctionNames( $schema, $refresh );
             natcasesort( $_names );
-            $_result = array_values( $_names );
 
-            foreach ( $_result as $_name )
-            {
-                $_access = $this->getPermissions( static::RESOURCE_NAME . '/' . $_name );
-                if ( !empty( $_access ) )
-                {
-                    if ( $names_only )
-                    {
-                        $_resources[] = $_name;
-                    }
-                    else
-                    {
-                        $_resources[] = [ 'name' => $_name, 'access' => $_access ];
-                    }
-                }
-            }
-
-            return $_resources;
+            return array_values( $_names );
         }
         catch ( RestException $_ex )
         {
@@ -172,6 +157,44 @@ class StoredFunction extends BaseDbResource
         {
             throw new InternalServerErrorException( "Failed to list database stored functions for this service.\n{$_ex->getMessage()}" );
         }
+    }
+
+    /**
+     * @param null|string|array $fields
+     *
+     * @throws \Exception
+     * @return array
+     */
+    public function listResources( $fields = null )
+    {
+        $refresh = $this->request->getParameterAsBool( 'refresh' );
+        $schema = $this->request->getParameter( 'schema', '' );
+
+        $result = $this->listFunctions( $schema, $refresh );
+
+        $resources = [ ];
+        foreach ( $result as $name )
+        {
+            $access = $this->getPermissions( $name );
+            if ( !empty( $access ) )
+            {
+                $resources[] = [ 'name' => $name, 'access' => VerbsMask::maskToArray( $access ) ];
+            }
+        }
+
+        return $this->makeResourceList( $resources, 'name', $fields, 'resource' );
+    }
+
+    public function listAccessComponents( $schema = null, $refresh = false )
+    {
+        $output = [ ];
+        $result = $this->listFunctions( $schema, $refresh );
+        foreach ( $result as $name )
+        {
+            $output[] = static::RESOURCE_NAME . '/' . $name;
+        }
+
+        return $output;
     }
 
     /**
@@ -193,7 +216,7 @@ class StoredFunction extends BaseDbResource
 
         if ( false === $params = DbUtilities::validateAsArray( $params, ',', true ) )
         {
-            $params = [];
+            $params = [ ];
         }
 
         foreach ( $params as $_key => $_param )
@@ -284,28 +307,49 @@ class StoredFunction extends BaseDbResource
 
     public function getApiDocInfo()
     {
+        $path = '/' . $this->getServiceName() . '/' . $this->getFullPathName();
+        $eventPath = '/' . $this->getServiceName() . '.' . $this->getFullPathName( '.' );
         $_base = parent::getApiDocInfo();
 
         $_apis = [
             [
-                'path'        => '/{api_name}/' . static::RESOURCE_NAME,
+                'path'        => $path,
                 'operations'  => [
                     [
                         'method'           => 'GET',
-                        'summary'          => 'getStoredFuncs() - List callable stored functions.',
-                        'nickname'         => 'getStoredFuncs',
+                        'summary'          => 'getStoredFuncsList() - List callable stored functions.',
+                        'nickname'         => 'getStoredFuncsList',
                         'notes'            => 'List the names of the available stored functions on this database. ',
-                        'type'             => 'Resources',
-                        'event_name'       => [ '{api_name}.' . static::RESOURCE_NAME . '.list' ],
+                        'type'             => 'ComponentList',
+                        'event_name'       => [ $eventPath . '.list' ],
                         'parameters'       => [
                             [
-                                'name'          => 'names_only',
-                                'description'   => 'Return only the names of the functions in an array.',
+                                'name'          => 'refresh',
+                                'description'   => 'Refresh any cached copy of the resource list.',
                                 'allowMultiple' => false,
                                 'type'          => 'boolean',
                                 'paramType'     => 'query',
                                 'required'      => false,
-                                'default'       => false,
+                            ],
+                        ],
+                        'responseMessages' => ApiDocUtilities::getCommonResponses( [ 400, 401, 500 ] ),
+                    ],
+                    [
+                        'method'           => 'GET',
+                        'summary'          => 'getStoredFuncs() - List callable stored functions.',
+                        'nickname'         => 'getStoredFuncs',
+                        'notes'            => 'List the available stored functions on this database. ',
+                        'type'             => 'Resources',
+                        'event_name'       => [ $eventPath . '.list' ],
+                        'parameters'       => [
+                            [
+                                'name'          => 'fields',
+                                'description'   => 'Return all or specified properties available for each resource.',
+                                'allowMultiple' => true,
+                                'type'          => 'string',
+                                'paramType'     => 'query',
+                                'required'      => true,
+                                'default'       => '*',
                             ],
                             [
                                 'name'          => 'refresh',
@@ -322,7 +366,7 @@ class StoredFunction extends BaseDbResource
                 'description' => 'Operations for retrieving callable stored functions.',
             ],
             [
-                'path'        => '/{api_name}/' . static::RESOURCE_NAME . '/{function_name}',
+                'path'        => $path . '/{function_name}',
                 'operations'  => [
                     [
                         'method'           => 'GET',
@@ -330,10 +374,7 @@ class StoredFunction extends BaseDbResource
                         'nickname'         => 'callStoredFunc',
                         'notes'            => 'Call a stored function with no parameters. ' . 'Set an optional wrapper for the returned data set. ',
                         'type'             => 'StoredProcResponse',
-                        'event_name'       => [
-                            '{api_name}.' . static::RESOURCE_NAME . '.{function_name}.call',
-                            '{api_name}.' . static::RESOURCE_NAME . '.function_called',
-                        ],
+                        'event_name'       => [ $eventPath . '.{function_name}.call', $eventPath . '.function_called', ],
                         'parameters'       => [
                             [
                                 'name'          => 'function_name',
@@ -368,10 +409,7 @@ class StoredFunction extends BaseDbResource
                         'nickname'         => 'callStoredFuncWithParams',
                         'notes'            => 'Call a stored function with parameters. ' . 'Set an optional wrapper and schema for the returned data set. ',
                         'type'             => 'StoredProcResponse',
-                        'event_name'       => [
-                            '{api_name}.' . static::RESOURCE_NAME . '.{function_name}.call',
-                            '{api_name}.' . static::RESOURCE_NAME . '.function_called',
-                        ],
+                        'event_name'       => [ $eventPath . '.{function_name}.call', $eventPath . '.function_called', ],
                         'parameters'       => [
                             [
                                 'name'          => 'function_name',

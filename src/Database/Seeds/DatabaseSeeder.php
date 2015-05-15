@@ -1,39 +1,39 @@
 <?php
+/**
+ * This file is part of the DreamFactory Services Platform(tm) SDK For PHP
+ *
+ * DreamFactory Services Platform(tm) <http://github.com/dreamfactorysoftware/dsp-core>
+ * Copyright 2012-2014 DreamFactory Software, Inc. <support@dreamfactory.com>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 namespace DreamFactory\Rave\SqlDb\Database\Seeds;
 
-use Illuminate\Database\Seeder;
-use DreamFactory\Rave\Models\ServiceType;
+use DreamFactory\Rave\Database\Seeds\BaseModelSeeder;
 
-class DatabaseSeeder extends Seeder
+class DatabaseSeeder extends BaseModelSeeder
 {
-    /**
-     * Run the database seeds.
-     *
-     * @return void
-     */
-    public function run()
-    {
-        if (!ServiceType::whereName( 'sql_db' )->exists())
-        {
-            // Add the service type
-            ServiceType::create(
-                [
-                    'name'           => 'sql_db',
-                    'class_name'     => 'DreamFactory\\Rave\\SqlDb\\Services\\SqlDb',
-                    'config_handler' => 'DreamFactory\\Rave\\SqlDb\\Models\\SqlDbConfig',
-                    'label'          => 'SQL DB',
-                    'description'    => 'Database service supporting SQL connections.',
-                    'group'          => 'Databases',
-                    'singleton'      => false,
-                ]
-            );
+    protected $modelClass = 'DreamFactory\\Rave\\Models\\ServiceType';
 
-            $this->command->info( 'SqlDb service type seeded!' );
-        }
-        else
-        {
-            $this->command->info( 'SqlDb service type already present!' );
-        }
-    }
-
+    protected $records = [
+        [
+            'name'           => 'sql_db',
+            'class_name'     => 'DreamFactory\\Rave\\SqlDb\\Services\\SqlDb',
+            'config_handler' => 'DreamFactory\\Rave\\SqlDb\\Models\\SqlDbConfig',
+            'label'          => 'SQL DB',
+            'description'    => 'Database service supporting SQL connections.',
+            'group'          => 'Databases',
+            'singleton'      => false,
+        ]
+    ];
 }

@@ -24,6 +24,7 @@ use Config;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Inflector;
+use DreamFactory\Rave\Enums\VerbsMask;
 use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\NotFoundException;
@@ -33,12 +34,10 @@ use DreamFactory\Rave\Resources\BaseDbTableResource;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
 use DreamFactory\Rave\SqlDb\Components\TableDescriber;
 use DreamFactory\Rave\SqlDbCore\Command;
-use DreamFactory\Rave\SqlDbCore\Connection;
 use DreamFactory\Rave\SqlDbCore\RelationSchema;
 use DreamFactory\Rave\SqlDbCore\Transaction;
 use DreamFactory\Rave\SqlDbCore\Expression;
 use DreamFactory\Rave\SqlDbCore\ColumnSchema;
-use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\DbUtilities;
 
 class Table extends BaseDbTableResource
@@ -79,7 +78,7 @@ class Table extends BaseDbTableResource
                     $_related = ArrayUtils::get( $this->options, 'related' );
                     if ( !empty( $_related ) && is_string( $_related ) && ( '*' !== $_related ) )
                     {
-                        $_relations = [];
+                        $_relations = [ ];
                         if ( !is_array( $_related ) )
                         {
                             $_related = array_map( 'trim', explode( ',', $_related ) );
@@ -120,53 +119,77 @@ class Table extends BaseDbTableResource
     /**
      * {@inheritdoc}
      */
-    public function listResources( $include_properties = null )
+    public function listTables( $schema = null, $refresh = false )
+    {
+        return $this->dbConn->getSchema()->getTableNames( $schema, true, $refresh );
+    }
+
+    /**
+     * @param null|string|array $fields
+     *
+     * @throws \Exception
+     * @return array
+     */
+    public function listResources( $fields = null )
     {
         $refresh = $this->request->getParameterAsBool( 'refresh' );
-        $_names = $this->dbConn->getSchema()->getTableNames( null, true, $refresh );
+        $schema = $this->request->getParameter( 'schema', '' );
 
-        if ( empty( $include_properties ) )
+        $result = $this->listTables( $schema, $refresh );
+
+        $extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $result, false, 'table,label,plural' );
+
+        $resources = [ ];
+        foreach ( $result as $name )
         {
-            return [ 'resource' => $_names ];
-        }
-
-        $_extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $_names, false, 'table,label,plural' );
-
-        $_tables = [];
-        foreach ( $_names as $name )
-        {
-            $label = '';
-            $plural = '';
-            foreach ( $_extras as $each )
+            $access = $this->getPermissions( $name );
+            if ( !empty( $access ) )
             {
-                if ( 0 == strcasecmp( $name, ArrayUtils::get( $each, 'table', '' ) ) )
+                $label = '';
+                $plural = '';
+                foreach ( $extras as $each )
                 {
-                    $label = ArrayUtils::get( $each, 'label' );
-                    $plural = ArrayUtils::get( $each, 'plural' );
-                    break;
+                    if ( 0 == strcasecmp( $name, ArrayUtils::get( $each, 'table', '' ) ) )
+                    {
+                        $label = ArrayUtils::get( $each, 'label' );
+                        $plural = ArrayUtils::get( $each, 'plural' );
+                        break;
+                    }
                 }
-            }
 
-            if ( empty( $label ) )
-            {
-                $label = Inflector::camelize( $name, [ '_', '.' ], true );
-            }
+                if ( empty( $label ) )
+                {
+                    $label = Inflector::camelize( $name, [ '_', '.' ], true );
+                }
 
-            if ( empty( $plural ) )
-            {
-                $plural = Inflector::pluralize( $label );
-            }
+                if ( empty( $plural ) )
+                {
+                    $plural = Inflector::pluralize( $label );
+                }
 
-            $_tables[] = [ 'name' => $name, 'label' => $label, 'plural' => $plural ];
+                $resources[] = [ 'name' => $name, 'label' => $label, 'plural' => $plural, 'access' => VerbsMask::maskToArray( $access ) ];
+            }
         }
 
-        return $this->makeResourceList( $_tables, $include_properties, true );
+        return $this->makeResourceList( $resources, 'name', $fields, 'resource' );
+    }
+
+    public function listAccessComponents( $schema = null, $refresh = false )
+    {
+        $output = [ ];
+        $result = $this->listTables( $schema, $refresh );
+        foreach ( $result as $name )
+        {
+            $output[] = static::RESOURCE_NAME . '/' . $name;
+        }
+
+        return $output;
     }
 
     /**
      * {@inheritdoc}
      */
-    public function updateRecordsByFilter( $table, $record, $filter = null, $params = [], $extras = [] )
+    public function updateRecordsByFilter( $table, $record, $filter = null, $params = [ ], $extras = [ ] )
     {
         $record = DbUtilities::validateAsArray( $record, null, false, 'There are no fields in the record.' );
 
@@ -193,7 +216,7 @@ class Table extends BaseDbTableResource
             // build filter string if necessary, add server-side filters if necessary
             $_criteria = $this->_convertFilterToNative( $filter, $params, $_ssFilters, $_fieldsInfo );
             $_where = ArrayUtils::get( $_criteria, 'where' );
-            $_params = ArrayUtils::get( $_criteria, 'params', [] );
+            $_params = ArrayUtils::get( $_criteria, 'params', [ ] );
 
             if ( !empty( $_parsed ) )
             {
@@ -234,7 +257,7 @@ class Table extends BaseDbTableResource
     /**
      * {@inheritdoc}
      */
-    public function patchRecordsByFilter( $table, $record, $filter = null, $params = [], $extras = [] )
+    public function patchRecordsByFilter( $table, $record, $filter = null, $params = [ ], $extras = [ ] )
     {
         // currently the same as update here
         return $this->updateRecordsByFilter( $table, $record, $filter, $params, $extras );
@@ -243,7 +266,7 @@ class Table extends BaseDbTableResource
     /**
      * {@inheritdoc}
      */
-    public function truncateTable( $table, $extras = [] )
+    public function truncateTable( $table, $extras = [ ] )
     {
         // truncate the table, return success
         try
@@ -278,7 +301,7 @@ class Table extends BaseDbTableResource
     /**
      * {@inheritdoc}
      */
-    public function deleteRecordsByFilter( $table, $filter, $params = [], $extras = [] )
+    public function deleteRecordsByFilter( $table, $filter, $params = [ ], $extras = [ ] )
     {
         if ( empty( $filter ) )
         {
@@ -304,7 +327,7 @@ class Table extends BaseDbTableResource
             // build filter string if necessary, add server-side filters if necessary
             $_criteria = $this->_convertFilterToNative( $filter, $params, $_ssFilters, $_fieldsInfo );
             $_where = ArrayUtils::get( $_criteria, 'where' );
-            $_params = ArrayUtils::get( $_criteria, 'params', [] );
+            $_params = ArrayUtils::get( $_criteria, 'params', [ ] );
 
             $_results = $this->_recordQuery( $table, $_fields, $_where, $_params, $_bindings, $extras );
 
@@ -327,7 +350,7 @@ class Table extends BaseDbTableResource
     /**
      * {@inheritdoc}
      */
-    public function retrieveRecordsByFilter( $table, $filter = null, $params = [], $extras = [] )
+    public function retrieveRecordsByFilter( $table, $filter = null, $params = [ ], $extras = [ ] )
     {
         $_fields = ArrayUtils::get( $extras, 'fields' );
         $_ssFilters = ArrayUtils::get( $extras, 'ss_filters' );
@@ -343,7 +366,7 @@ class Table extends BaseDbTableResource
             // build filter string if necessary, add server-side filters if necessary
             $_criteria = $this->_convertFilterToNative( $filter, $params, $_ssFilters, $_fieldsInfo );
             $_where = ArrayUtils::get( $_criteria, 'where' );
-            $_params = ArrayUtils::get( $_criteria, 'params', [] );
+            $_params = ArrayUtils::get( $_criteria, 'params', [ ] );
 
             return $this->_recordQuery( $table, $_fields, $_where, $_params, $_bindings, $extras );
         }
@@ -403,8 +426,8 @@ class Table extends BaseDbTableResource
         }
 
         $_reader = $_command->query();
-        $_data = [];
-        $_dummy = [];
+        $_data = [ ];
+        $_dummy = [ ];
         foreach ( $bind_columns as $_binding )
         {
             $_name = ArrayUtils::get( $_binding, 'name' );
@@ -415,7 +438,7 @@ class Table extends BaseDbTableResource
         $_row = 0;
         while ( false !== $_read = $_reader->read() )
         {
-            $_temp = [];
+            $_temp = [ ];
             foreach ( $bind_columns as $_binding )
             {
                 $_name = ArrayUtils::get( $_binding, 'name' );
@@ -439,7 +462,7 @@ class Table extends BaseDbTableResource
             $_data[$_row++] = $_temp;
         }
 
-        $_meta = [];
+        $_meta = [ ];
         $_includeCount = ArrayUtils::getBool( $extras, 'include_count', false );
         // count total records
         if ( $_includeCount || $_needLimit )
@@ -524,7 +547,7 @@ class Table extends BaseDbTableResource
     protected function describeTableRelated( $name )
     {
         $schema = $this->dbConn->getSchema()->getTable( $name );
-        $relatives = [];
+        $relatives = [ ];
         /** @var RelationSchema $relation */
         foreach ( $schema->relations as $relation )
         {
@@ -550,7 +573,7 @@ class Table extends BaseDbTableResource
      * @throws BadRequestException
      * @return mixed
      */
-    protected function _convertFilterToNative( $filter, $params = [], $ss_filters = [], $avail_fields = [] )
+    protected function _convertFilterToNative( $filter, $params = [ ], $ss_filters = [ ], $avail_fields = [ ] )
     {
         // interpret any parameter values as lookups
         $params = static::interpretRecordValues( $params );
@@ -613,7 +636,7 @@ class Table extends BaseDbTableResource
         $_ops = array_map( 'trim', explode( ' OR ', $filter ) );
         if ( count( $_ops ) > 1 )
         {
-            $_parts = [];
+            $_parts = [ ];
             foreach ( $_ops as $_op )
             {
                 $_parts[] = static::parseFilterString( $_op, $field_list );
@@ -625,7 +648,7 @@ class Table extends BaseDbTableResource
         $_ops = array_map( 'trim', explode( ' NOR ', $filter ) );
         if ( count( $_ops ) > 1 )
         {
-            $_parts = [];
+            $_parts = [ ];
             foreach ( $_ops as $_op )
             {
                 $_parts[] = static::parseFilterString( $_op, $field_list );
@@ -637,7 +660,7 @@ class Table extends BaseDbTableResource
         $_ops = array_map( 'trim', explode( ' AND ', $filter ) );
         if ( count( $_ops ) > 1 )
         {
-            $_parts = [];
+            $_parts = [ ];
             foreach ( $_ops as $_op )
             {
                 $_parts[] = static::parseFilterString( $_op, $field_list );
@@ -691,7 +714,7 @@ class Table extends BaseDbTableResource
     {
         $record = $this->interpretRecordValues( $record );
 
-        $_parsed = [];
+        $_parsed = [ ];
 //        $record = DataFormat::arrayKeyLower( $record );
         $_keys = array_keys( $record );
         $_values = array_values( $record );
@@ -782,7 +805,7 @@ class Table extends BaseDbTableResource
 
                         if ( !is_null( $_fieldVal ) && !( $_fieldVal instanceof Expression ) )
                         {
-                            $_fieldVal = $this->dbConn->getSchema()->parseValueForSet($_fieldVal, $_fieldInfo);
+                            $_fieldVal = $this->dbConn->getSchema()->parseValueForSet( $_fieldVal, $_fieldInfo );
 
                             switch ( $_cnvType = DbUtilities::determinePhpConversionType( $_type ) )
                             {
@@ -881,10 +904,10 @@ class Table extends BaseDbTableResource
         if ( is_array( $value ) && isset( $value['expression'] ) )
         {
             $_expression = $value['expression'];
-            $_params = [];
+            $_params = [ ];
             if ( is_array( $_expression ) && isset( $_expression['value'] ) )
             {
-                $_params = isset( $_expression['params'] ) ? $_expression['params'] : [];
+                $_params = isset( $_expression['params'] ) ? $_expression['params'] : [ ];
                 $_expression = $_expression['value'];
             }
 
@@ -1040,8 +1063,8 @@ class Table extends BaseDbTableResource
 
         $field_arr = ( !is_array( $fields ) ) ? array_map( 'trim', explode( ',', $fields ) ) : $fields;
         $as_arr = ( !is_array( $fields_as ) ) ? array_map( 'trim', explode( ',', $fields_as ) ) : $fields_as;
-        $outArray = [];
-        $bindArray = [];
+        $outArray = [ ];
+        $bindArray = [ ];
         for ( $i = 0, $size = sizeof( $field_arr ); $i < $size; $i++ )
         {
             $field = $field_arr[$i];
@@ -1055,7 +1078,7 @@ class Table extends BaseDbTableResource
             $phpType = ( is_null( $pdoType ) ) ? ArrayUtils::get( $field_info, 'php_type' ) : null;
 
             $bindArray[] = [ 'name' => $field, 'pdo_type' => $pdoType, 'php_type' => $phpType ];
-            $outArray[] = $this->dbConn->getSchema()->parseFieldsForSelect($context, $field_info, $as_quoted_string, $out_as);
+            $outArray[] = $this->dbConn->getSchema()->parseFieldsForSelect( $context, $field_info, $as_quoted_string, $out_as );
         }
 
         return [ 'fields' => $outArray, 'bindings' => $bindArray ];
@@ -1113,7 +1136,7 @@ class Table extends BaseDbTableResource
             return $data;
         }
 
-        $_relatedData = [];
+        $_relatedData = [ ];
         $_relatedExtras = [ 'limit' => static::MAX_RECORDS_RETURNED, 'fields' => '*' ];
         if ( '*' == $requests )
         {
@@ -1178,9 +1201,9 @@ class Table extends BaseDbTableResource
                 $_fields = ( empty( $_fields ) ) ? '*' : $_fields;
 
                 // build filter string if necessary, add server-side filters if necessary
-                $_criteria = $this->_convertFilterToNative( "$relatedField = '$fieldVal'", [], $_ssFilters, $_fieldsInfo );
+                $_criteria = $this->_convertFilterToNative( "$relatedField = '$fieldVal'", [ ], $_ssFilters, $_fieldsInfo );
                 $_where = ArrayUtils::get( $_criteria, 'where' );
-                $_params = ArrayUtils::get( $_criteria, 'params', [] );
+                $_params = ArrayUtils::get( $_criteria, 'params', [ ] );
 
                 $relatedRecords = $this->_recordQuery( $relatedTable, $_fields, $_where, $_params, $_bindings, $extras );
                 if ( !empty( $relatedRecords ) )
@@ -1191,7 +1214,7 @@ class Table extends BaseDbTableResource
             case 'has_many':
                 if ( empty( $fieldVal ) )
                 {
-                    return [];
+                    return [ ];
                 }
 
                 $_fields = ArrayUtils::get( $extras, 'fields' );
@@ -1203,16 +1226,16 @@ class Table extends BaseDbTableResource
                 $_fields = ( empty( $_fields ) ) ? '*' : $_fields;
 
                 // build filter string if necessary, add server-side filters if necessary
-                $_criteria = $this->_convertFilterToNative( "$relatedField = '$fieldVal'", [], $_ssFilters, $_fieldsInfo );
+                $_criteria = $this->_convertFilterToNative( "$relatedField = '$fieldVal'", [ ], $_ssFilters, $_fieldsInfo );
                 $_where = ArrayUtils::get( $_criteria, 'where' );
-                $_params = ArrayUtils::get( $_criteria, 'params', [] );
+                $_params = ArrayUtils::get( $_criteria, 'params', [ ] );
 
                 return $this->_recordQuery( $relatedTable, $_fields, $_where, $_params, $_bindings, $extras );
                 break;
             case 'many_many':
                 if ( empty( $fieldVal ) )
                 {
-                    return [];
+                    return [ ];
                 }
 
                 $join = ArrayUtils::get( $relation, 'join', '' );
@@ -1230,17 +1253,17 @@ class Table extends BaseDbTableResource
 
                     // build filter string if necessary, add server-side filters if necessary
                     $_junctionFilter = "( $joinRightField IS NOT NULL ) AND ( $joinLeftField = '$fieldVal' )";
-                    $_criteria = $this->_convertFilterToNative( $_junctionFilter, [], [], $_fieldsInfo );
+                    $_criteria = $this->_convertFilterToNative( $_junctionFilter, [ ], [ ], $_fieldsInfo );
                     $_where = ArrayUtils::get( $_criteria, 'where' );
-                    $_params = ArrayUtils::get( $_criteria, 'params', [] );
+                    $_params = ArrayUtils::get( $_criteria, 'params', [ ] );
 
                     $joinData = $this->_recordQuery( $joinTable, $_fields, $_where, $_params, $_bindings, $extras );
                     if ( empty( $joinData ) )
                     {
-                        return [];
+                        return [ ];
                     }
 
-                    $relatedIds = [];
+                    $relatedIds = [ ];
                     foreach ( $joinData as $record )
                     {
                         if ( null !== $rightValue = ArrayUtils::get( $record, $joinRightField ) )
@@ -1289,7 +1312,7 @@ class Table extends BaseDbTableResource
      * @throws BadRequestException
      * @return void
      */
-    protected function assignManyToOne( $one_table, $one_id, $many_table, $many_field, $many_records = [], $allow_delete = false )
+    protected function assignManyToOne( $one_table, $one_id, $many_table, $many_field, $many_records = [ ], $allow_delete = false )
     {
         if ( empty( $one_id ) )
         {
@@ -1302,12 +1325,12 @@ class Table extends BaseDbTableResource
             $_pksInfo = DbUtilities::getPrimaryKeys( $_manyFields );
             $_fieldInfo = DbUtilities::getFieldFromDescribe( $many_field, $_manyFields );
             $_deleteRelated = ( !ArrayUtils::getBool( $_fieldInfo, 'allow_null' ) && $allow_delete );
-            $_relateMany = [];
-            $_disownMany = [];
-            $_insertMany = [];
-            $_updateMany = [];
-            $_upsertMany = [];
-            $_deleteMany = [];
+            $_relateMany = [ ];
+            $_disownMany = [ ];
+            $_insertMany = [ ];
+            $_updateMany = [ ];
+            $_upsertMany = [ ];
+            $_deleteMany = [ ];
 
             foreach ( $many_records as $_item )
             {
@@ -1386,8 +1409,8 @@ class Table extends BaseDbTableResource
             {
                 $_checkIds = array_keys( $_upsertMany );
                 // disown/un-relate/unlink linked children
-                $_where = [];
-                $_params = [];
+                $_where = [ ];
+                $_params = [ ];
                 if ( 1 === count( $_pksInfo ) )
                 {
                     $_pkField = ArrayUtils::get( $_pksInfo[0], 'name' );
@@ -1456,8 +1479,8 @@ class Table extends BaseDbTableResource
                 // do we have permission to do so?
                 $this->validateTableAccess( $many_table, Verbs::DELETE );
                 $_ssFilters = [ ]; // TODO Session::getServiceFilters( Verbs::DELETE, $this->name, $many_table );
-                $_where = [];
-                $_params = [];
+                $_where = [ ];
+                $_params = [ ];
                 if ( 1 === count( $_pksInfo ) )
                 {
                     $_pkField = ArrayUtils::get( $_pksInfo[0], 'name' );
@@ -1500,8 +1523,8 @@ class Table extends BaseDbTableResource
                 if ( !empty( $_updateMany ) )
                 {
                     // update existing and adopt new children
-                    $_where = [];
-                    $_params = [];
+                    $_where = [ ];
+                    $_params = [ ];
                     if ( 1 === count( $_pksInfo ) )
                     {
                         $_pkField = ArrayUtils::get( $_pksInfo[0], 'name' );
@@ -1557,8 +1580,8 @@ class Table extends BaseDbTableResource
                 if ( !empty( $_relateMany ) )
                 {
                     // adopt/relate/link unlinked children
-                    $_where = [];
-                    $_params = [];
+                    $_where = [ ];
+                    $_params = [ ];
                     if ( 1 === count( $_pksInfo ) )
                     {
                         $_pkField = ArrayUtils::get( $_pksInfo[0], 'name' );
@@ -1600,8 +1623,8 @@ class Table extends BaseDbTableResource
                 if ( !empty( $_disownMany ) )
                 {
                     // disown/un-relate/unlink linked children
-                    $_where = [];
-                    $_params = [];
+                    $_where = [ ];
+                    $_params = [ ];
                     if ( 1 === count( $_pksInfo ) )
                     {
                         $_pkField = ArrayUtils::get( $_pksInfo[0], 'name' );
@@ -1660,7 +1683,7 @@ class Table extends BaseDbTableResource
      * @throws BadRequestException
      * @return void
      */
-    protected function assignManyToOneByMap( $one_table, $one_id, $many_table, $map_table, $one_field, $many_field, $many_records = [] )
+    protected function assignManyToOneByMap( $one_table, $one_id, $many_table, $map_table, $one_field, $many_field, $many_records = [ ] )
     {
         if ( empty( $one_id ) )
         {
@@ -1685,11 +1708,11 @@ class Table extends BaseDbTableResource
             $maps = $this->_recordQuery( $map_table, $_fields, $_where, $_params, $_bindings, null );
             unset( $maps['meta'] );
 
-            $_createMap = []; // map records to create
-            $_deleteMap = []; // ids of 'many' records to delete from maps
-            $_insertMany = [];
-            $_updateMany = [];
-            $_upsertMany = [];
+            $_createMap = [ ]; // map records to create
+            $_deleteMap = [ ]; // ids of 'many' records to delete from maps
+            $_insertMany = [ ];
+            $_updateMany = [ ];
+            $_upsertMany = [ ];
             foreach ( $many_records as $_item )
             {
                 if ( 1 === count( $_pksManyInfo ) )
@@ -1761,8 +1784,8 @@ class Table extends BaseDbTableResource
             {
                 $_checkIds = array_keys( $_upsertMany );
                 // disown/un-relate/unlink linked children
-                $_where = [];
-                $_params = [];
+                $_where = [ ];
+                $_params = [ ];
                 if ( 1 === count( $_pksManyInfo ) )
                 {
                     $_pkField = ArrayUtils::get( $_pksManyInfo[0], 'name' );
@@ -1839,8 +1862,8 @@ class Table extends BaseDbTableResource
                 $this->validateTableAccess( $many_table, Verbs::PUT );
                 $_ssManyFilters = [ ]; // TODO Session::getServiceFilters( Verbs::PUT, $this->_apiName, $many_table );
 
-                $_where = [];
-                $_params = [];
+                $_where = [ ];
+                $_params = [ ];
                 if ( 1 === count( $_pksManyInfo ) )
                 {
                     $_pkField = ArrayUtils::get( $_pksManyInfo[0], 'name' );
@@ -1911,8 +1934,8 @@ class Table extends BaseDbTableResource
                 // do we have permission to do so?
                 $this->validateTableAccess( $map_table, Verbs::DELETE );
                 $_ssMapFilters = [ ]; // TODO Session::getServiceFilters( Verbs::DELETE, $this->_apiName, $map_table );
-                $_where = [];
-                $_params = [];
+                $_where = [ ];
+                $_params = [ ];
                 $_where[] = $this->dbConn->quoteColumnName( $one_field ) . " = '$one_id'";
                 $_where[] = [ 'in', $many_field, $_deleteMap ];
                 $_serverFilter = $this->buildQueryStringFromData( $_ssMapFilters, true );
@@ -1954,7 +1977,7 @@ class Table extends BaseDbTableResource
         }
 
         $_sql = '';
-        $_params = [];
+        $_params = [ ];
         $_combiner = ArrayUtils::get( $filter_info, 'filter_op', 'and' );
         foreach ( $_filters as $_key => $_filter )
         {
@@ -2008,7 +2031,7 @@ class Table extends BaseDbTableResource
     /**
      * Handle raw SQL Azure requests
      */
-    protected function batchSqlQuery( $query, $bindings = [] )
+    protected function batchSqlQuery( $query, $bindings = [ ] )
     {
         if ( empty( $query ) )
         {
@@ -2019,7 +2042,7 @@ class Table extends BaseDbTableResource
             /** @var Command $command */
             $command = $this->dbConn->createCommand( $query );
             $reader = $command->query();
-            $dummy = [];
+            $dummy = [ ];
             foreach ( $bindings as $binding )
             {
                 $_name = ArrayUtils::get( $binding, 'name' );
@@ -2027,8 +2050,8 @@ class Table extends BaseDbTableResource
                 $reader->bindColumn( $_name, $dummy[$_name], $_type );
             }
 
-            $data = [];
-            $rowData = [];
+            $data = [ ];
+            $rowData = [ ];
             while ( $row = $reader->read() )
             {
                 $rowData[] = $row;
@@ -2042,7 +2065,7 @@ class Table extends BaseDbTableResource
             // Move to the next result and get results
             while ( $reader->nextResult() )
             {
-                $rowData = [];
+                $rowData = [ ];
                 while ( $row = $reader->read() )
                 {
                     $rowData[] = $row;
@@ -2130,10 +2153,10 @@ class Table extends BaseDbTableResource
 
     protected function getIdsInfo( $table, $fields_info = null, &$requested_fields = null, $requested_types = null )
     {
-        $_idsInfo = [];
+        $_idsInfo = [ ];
         if ( empty( $requested_fields ) )
         {
-            $requested_fields = [];
+            $requested_fields = [ ];
             $_idsInfo = DbUtilities::getPrimaryKeys( $fields_info );
             foreach ( $_idsInfo as $_info )
             {
@@ -2191,8 +2214,8 @@ class Table extends BaseDbTableResource
         $_allowRelatedDelete = ArrayUtils::getBool( $extras, 'allow_related_delete', false );
         $_relatedInfo = $this->describeTableRelated( $this->_transactionTable );
 
-        $_where = [];
-        $_params = [];
+        $_where = [ ];
+        $_params = [ ];
         if ( is_array( $id ) )
         {
             foreach ( $_idFields as $_name )
@@ -2227,7 +2250,7 @@ class Table extends BaseDbTableResource
         /** @var Command $_command */
         $_command = $this->dbConn->createCommand();
 
-        $_out = [];
+        $_out = [ ];
         switch ( $this->getAction() )
         {
             case Verbs::POST:
@@ -2245,7 +2268,7 @@ class Table extends BaseDbTableResource
 
                 if ( empty( $id ) )
                 {
-                    $id = [];
+                    $id = [ ];
                     foreach ( $_idsInfo as $_info )
                     {
                         $_idName = ArrayUtils::get( $_info, 'name' );
@@ -2463,8 +2486,8 @@ class Table extends BaseDbTableResource
         $_allowRelatedDelete = ArrayUtils::getBool( $extras, 'allow_related_delete', false );
         $_relatedInfo = $this->describeTableRelated( $this->_transactionTable );
 
-        $_where = [];
-        $_params = [];
+        $_where = [ ];
+        $_params = [ ];
 
         $_idName = ( isset( $_idsInfo, $_idsInfo[0], $_idsInfo[0]['name'] ) ) ? $_idsInfo[0]['name'] : null;
         if ( empty( $_idName ) )
@@ -2476,7 +2499,7 @@ class Table extends BaseDbTableResource
         {
             if ( is_array( $this->_batchRecords[0] ) )
             {
-                $_temp = [];
+                $_temp = [ ];
                 foreach ( $this->_batchRecords as $_record )
                 {
                     $_temp[] = ArrayUtils::get( $_record, $_idName );
@@ -2510,7 +2533,7 @@ class Table extends BaseDbTableResource
             $_where = $_where[0];
         }
 
-        $_out = [];
+        $_out = [ ];
         $_action = $this->getAction();
         if ( !empty( $this->_batchRecords ) )
         {
@@ -2537,7 +2560,7 @@ class Table extends BaseDbTableResource
                 $_out = $this->retrieveRecords( $this->_transactionTable, $this->_batchRecords, $extras );
             }
 
-            $this->_batchRecords = [];
+            $this->_batchRecords = [ ];
         }
         elseif ( !empty( $this->_batchIds ) )
         {
@@ -2625,7 +2648,7 @@ class Table extends BaseDbTableResource
                         );
                         if ( count( $this->_batchIds ) !== count( $_result ) )
                         {
-                            $_errors = [];
+                            $_errors = [ ];
                             foreach ( $this->_batchIds as $_index => $_id )
                             {
                                 $_found = false;
@@ -2683,7 +2706,7 @@ class Table extends BaseDbTableResource
 
                     if ( count( $this->_batchIds ) !== count( $_result ) )
                     {
-                        $_errors = [];
+                        $_errors = [ ];
                         foreach ( $this->_batchIds as $_index => $_id )
                         {
                             $_found = false;
@@ -2719,14 +2742,14 @@ class Table extends BaseDbTableResource
 
             if ( empty( $_out ) )
             {
-                $_out = [];
+                $_out = [ ];
                 foreach ( $this->_batchIds as $_id )
                 {
                     $_out[] = [ $_idName => $_id ];
                 }
             }
 
-            $this->_batchIds = [];
+            $this->_batchIds = [ ];
         }
 
         if ( isset( $this->_transaction ) )
@@ -2751,8 +2774,8 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param string        $name       The name of the table to check
-     * @param bool          $returnName If true, the table name is returned instead of TRUE
+     * @param string $name       The name of the table to check
+     * @param bool   $returnName If true, the table name is returned instead of TRUE
      *
      * @throws \InvalidArgumentException
      * @return bool
@@ -2782,9 +2805,9 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param string        $name
-     * @param string        $remove_prefix
-     * @param bool          $refresh
+     * @param string $name
+     * @param string $remove_prefix
+     * @param bool   $refresh
      *
      * @throws InternalServerErrorException
      * @throws RestException
@@ -2804,7 +2827,8 @@ class Table extends BaseDbTableResource
 
             $extras = DbUtilities::getSchemaExtrasForTables( $this->serviceId, $name );
             $extras = DbUtilities::reformatFieldLabelArray( $extras );
-            return static::mergeTableExtras($table->toArray(), $extras);
+
+            return static::mergeTableExtras( $table->toArray(), $extras );
         }
         catch ( RestException $ex )
         {
@@ -2846,7 +2870,7 @@ class Table extends BaseDbTableResource
 
         $extras = DbUtilities::reformatFieldLabelArray( $extras );
 
-        $_out = [];
+        $_out = [ ];
         try
         {
             /** @var ColumnSchema $column */
@@ -2854,7 +2878,7 @@ class Table extends BaseDbTableResource
             {
                 if ( empty( $field_names ) || ( false !== array_search( $column->name, $field_names ) ) )
                 {
-                    $_info = ArrayUtils::get( $extras, $column->name, [] );
+                    $_info = ArrayUtils::get( $extras, $column->name, [ ] );
                     $_out[] = static::mergeFieldExtras( $column->toArray(), $_info );
                 }
             }
@@ -2899,6 +2923,7 @@ class Table extends BaseDbTableResource
 
         return null;
     }
+
     public function getApiDocInfo()
     {
         $_base = parent::getApiDocInfo();

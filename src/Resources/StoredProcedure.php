@@ -21,12 +21,12 @@
 namespace DreamFactory\Rave\SqlDb\Resources;
 
 use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Rave\Enums\VerbsMask;
 use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Exceptions\InternalServerErrorException;
 use DreamFactory\Rave\Exceptions\RestException;
 use DreamFactory\Rave\Resources\BaseDbResource;
 use DreamFactory\Rave\SqlDb\Components\SqlDbResource;
-use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\Utility\ApiDocUtilities;
 use DreamFactory\Rave\Utility\DbUtilities;
 
@@ -63,9 +63,14 @@ class StoredProcedure extends BaseDbResource
      */
     protected function validateStoredProcedureAccess( &$procedure, $action = null )
     {
-        // finally check that the current user has privileges to access this procedure
-        $_resource = static::RESOURCE_NAME;
-        $this->service->validateResourceAccess( $_resource, $procedure, $action );
+        // check that the current user has privileges to access this function
+        $resource = $procedure;
+        if ( !empty( $procedure ) )
+        {
+            $resource .= rtrim( ( false !== strpos( $procedure, '(' ) ) ? strstr( $procedure, '(', true ) : $procedure );
+        }
+
+        $this->checkPermission( $action, $resource );
     }
 
     /**
@@ -76,11 +81,7 @@ class StoredProcedure extends BaseDbResource
     {
         if ( empty( $this->resource ) )
         {
-            $_namesOnly = $this->request->getParameterAsBool( 'names_only' );
-            $_refresh = $this->request->getParameterAsBool( 'refresh' );
-            $_result = $this->listProcedures( $_namesOnly, $_refresh );
-
-            return [ 'resource' => $_result ];
+            return parent::handleGET();
         }
 
         $payload = $this->request->getPayloadData();
@@ -93,7 +94,7 @@ class StoredProcedure extends BaseDbResource
         else
         {
             $_name = $this->resource;
-            $_params = ArrayUtils::get( $payload, 'params', [] );
+            $_params = ArrayUtils::get( $payload, 'params', [ ] );
         }
 
         $_returns = ArrayUtils::get( $payload, 'returns' );
@@ -120,7 +121,7 @@ class StoredProcedure extends BaseDbResource
         else
         {
             $_name = $this->resource;
-            $_params = ArrayUtils::get( $payload, 'params', [] );
+            $_params = ArrayUtils::get( $payload, 'params', [ ] );
         }
 
         $_returns = ArrayUtils::get( $payload, 'returns' );
@@ -131,36 +132,22 @@ class StoredProcedure extends BaseDbResource
     }
 
     /**
-     * @throws \Exception
+     * @param null $schema
+     * @param bool $refresh
+     *
      * @return array
+     * @throws InternalServerErrorException
+     * @throws RestException
+     * @throws \Exception
      */
-    public function listProcedures( $names_only = false, $refresh = false )
+    public function listProcedures( $schema = null, $refresh = false )
     {
-        $_resources = [];
-
         try
         {
-            $_names = $this->dbConn->getSchema()->getProcedureNames( '', $refresh );
+            $_names = $this->dbConn->getSchema()->getProcedureNames( $schema, $refresh );
             natcasesort( $_names );
-            $_result = array_values( $_names );
 
-            foreach ( $_result as $_name )
-            {
-                $_access = $this->getPermissions( static::RESOURCE_NAME . '/' . $_name );
-                if ( !empty( $_access ) )
-                {
-                    if ( $names_only )
-                    {
-                        $_resources[] = $_name;
-                    }
-                    else
-                    {
-                        $_resources[] = [ 'name' => $_name, 'access' => $_access ];
-                    }
-                }
-            }
-
-            return $_resources;
+            return array_values( $_names );
         }
         catch ( RestException $_ex )
         {
@@ -168,8 +155,45 @@ class StoredProcedure extends BaseDbResource
         }
         catch ( \Exception $_ex )
         {
-            throw new InternalServerErrorException( "Failed to list resources for this service.\n{$_ex->getMessage()}" );
+            throw new InternalServerErrorException( "Failed to list database stored procedures for this service.\n{$_ex->getMessage()}" );
         }
+    }
+
+    /**
+     * @param null|string|array $fields
+     *
+     * @throws \Exception
+     * @return array
+     */
+    public function listResources( $fields = null )
+    {
+        $refresh = $this->request->getParameterAsBool( 'refresh' );
+        $schema = $this->request->getParameter( 'schema', '' );
+
+        $result = $this->listProcedures( $schema, $refresh );
+        $resources = [ ];
+        foreach ( $result as $name )
+        {
+            $access = $this->getPermissions( $name );
+            if ( !empty( $access ) )
+            {
+                $resources[] = [ 'name' => $name, 'access' => VerbsMask::maskToArray( $access ) ];
+            }
+        }
+
+        return $this->makeResourceList( $resources, 'name', $fields, 'resource' );
+    }
+
+    public function listAccessComponents( $schema = null, $refresh = false )
+    {
+        $output = [ ];
+        $result = $this->listProcedures( $schema, $refresh );
+        foreach ( $result as $name )
+        {
+            $output[] = static::RESOURCE_NAME . '/' . $name;
+        }
+
+        return $output;
     }
 
     /**
@@ -191,7 +215,7 @@ class StoredProcedure extends BaseDbResource
 
         if ( false === $params = DbUtilities::validateAsArray( $params, ',', true ) )
         {
-            $params = [];
+            $params = [ ];
         }
 
         foreach ( $params as $_key => $_param )
@@ -323,30 +347,52 @@ class StoredProcedure extends BaseDbResource
             throw new InternalServerErrorException( "Failed to call database stored procedure.\n{$ex->getMessage()}" );
         }
     }
+
     public function getApiDocInfo()
     {
+        $path = '/' . $this->getServiceName() . '/' . $this->getFullPathName();
+        $eventPath = '/' . $this->getServiceName() . '.' . $this->getFullPathName( '.' );
         $_base = parent::getApiDocInfo();
 
         $_apis = [
             [
-                'path'        => '/{api_name}/' . static::RESOURCE_NAME,
+                'path'        => $path,
                 'operations'  => [
                     [
                         'method'           => 'GET',
-                        'summary'          => 'getStoredProcs() - List callable stored procedures.',
-                        'nickname'         => 'getStoredProcs',
+                        'summary'          => 'getStoredProcsList() - List callable stored procedures.',
+                        'nickname'         => 'getStoredProcsList',
                         'notes'            => 'List the names of the available stored procedures on this database. ',
-                        'type'             => 'Resources',
-                        'event_name'       => [ '{api_name}.' . static::RESOURCE_NAME . '.list' ],
+                        'type'             => 'ComponentList',
+                        'event_name'       => [ $eventPath . '.list' ],
                         'parameters'       => [
                             [
-                                'name'          => 'names_only',
-                                'description'   => 'Return only the names of the procedures in an array.',
+                                'name'          => 'refresh',
+                                'description'   => 'Refresh any cached copy of the resource list.',
                                 'allowMultiple' => false,
                                 'type'          => 'boolean',
                                 'paramType'     => 'query',
                                 'required'      => false,
-                                'default'       => false,
+                            ],
+                        ],
+                        'responseMessages' => ApiDocUtilities::getCommonResponses( [ 400, 401, 500 ] ),
+                    ],
+                    [
+                        'method'           => 'GET',
+                        'summary'          => 'getStoredProcs() - List callable stored procedures.',
+                        'nickname'         => 'getStoredProcs',
+                        'notes'            => 'List the available stored procedures on this database. ',
+                        'type'             => 'Resources',
+                        'event_name'       => [ $eventPath . '.list' ],
+                        'parameters'       => [
+                            [
+                                'name'          => 'fields',
+                                'description'   => 'Return all or specified properties available for each resource.',
+                                'allowMultiple' => true,
+                                'type'          => 'string',
+                                'paramType'     => 'query',
+                                'required'      => true,
+                                'default'       => '*',
                             ],
                             [
                                 'name'          => 'refresh',
@@ -363,7 +409,7 @@ class StoredProcedure extends BaseDbResource
                 'description' => 'Operations for retrieving callable stored procedures.',
             ],
             [
-                'path'        => '/{api_name}/' . static::RESOURCE_NAME . '/{procedure_name}',
+                'path'        => $path . '/{procedure_name}',
                 'operations'  => [
                     [
                         'method'           => 'GET',
@@ -371,10 +417,7 @@ class StoredProcedure extends BaseDbResource
                         'nickname'         => 'callStoredProc',
                         'notes'            => 'Call a stored procedure with no parameters. ' . 'Set an optional wrapper for the returned data set. ',
                         'type'             => 'StoredProcResponse',
-                        'event_name'       => [
-                            '{api_name}.' . static::RESOURCE_NAME . '.{procedure_name}.call',
-                            '{api_name}.' . static::RESOURCE_NAME . '.procedure_called',
-                        ],
+                        'event_name'       => [ $eventPath . '.{procedure_name}.call', $eventPath . '.procedure_called', ],
                         'parameters'       => [
                             [
                                 'name'          => 'procedure_name',
@@ -409,10 +452,7 @@ class StoredProcedure extends BaseDbResource
                         'nickname'         => 'callStoredProcWithParams',
                         'notes'            => 'Call a stored procedure with parameters. ' . 'Set an optional wrapper and schema for the returned data set. ',
                         'type'             => 'StoredProcResponse',
-                        'event_name'       => [
-                            '{api_name}.' . static::RESOURCE_NAME . '.{procedure_name}.call',
-                            '{api_name}.' . static::RESOURCE_NAME . '.procedure_called',
-                        ],
+                        'event_name'       => [ $eventPath . '.{procedure_name}.call', $eventPath . '.procedure_called', ],
                         'parameters'       => [
                             [
                                 'name'          => 'procedure_name',

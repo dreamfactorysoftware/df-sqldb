@@ -31,6 +31,7 @@ use DreamFactory\Rave\SqlDbCore\Connection;
 use DreamFactory\Rave\Enums\SqlDbDriverTypes;
 use DreamFactory\Rave\Services\BaseDbService;
 use DreamFactory\Rave\Resources\BaseRestResource;
+use DreamFactory\Rave\Utility\Session;
 
 /**
  * Class SqlDb
@@ -68,7 +69,7 @@ class SqlDb extends BaseDbService
         Table::RESOURCE_NAME           => [
             'name'       => Table::RESOURCE_NAME,
             'class_name' => 'DreamFactory\\Rave\\SqlDb\\Resources\\Table',
-            'label'      => 'Table',
+            'label'      => 'Tables',
         ],
         StoredProcedure::RESOURCE_NAME => [
             'name'       => StoredProcedure::RESOURCE_NAME,
@@ -189,53 +190,6 @@ class SqlDb extends BaseDbService
     }
 
     /**
-     * @param BaseRestResource $class
-     * @param array            $info
-     *
-     * @return mixed
-     */
-    protected function instantiateResource( $class, $info = [ ] )
-    {
-        return new $class( $this, $info );
-    }
-
-    /**
-     * @param string $main   Main resource or empty for service
-     * @param string $sub    Subtending resources if applicable
-     * @param string $action Action to validate permission
-     */
-    protected function validateResourceAccess( $main, $sub, $action )
-    {
-        if ( !empty( $main ) )
-        {
-            $_resource = rtrim( $main, '/' ) . '/';
-            switch ( $main )
-            {
-                case Schema::RESOURCE_NAME:
-                case Table::RESOURCE_NAME:
-                    if ( !empty( $sub ) )
-                    {
-                        $_resource .= $sub;
-                    }
-                    break;
-                case StoredProcedure::RESOURCE_NAME:
-                case StoredFunction::RESOURCE_NAME:
-                    if ( !empty( $sub ) )
-                    {
-                        $_resource .= rtrim( ( false !== strpos( $sub, '(' ) ) ? strstr( $sub, '(', true ) : $sub );
-                    }
-                    break;
-            }
-
-            $this->checkPermission( $action, $_resource );
-
-            return;
-        }
-
-        parent::validateResourceAccess( $main, $sub, $action );
-    }
-
-    /**
      * {@InheritDoc}
      */
     protected function handleResource( array $resources )
@@ -259,62 +213,6 @@ class SqlDb extends BaseDbService
 
             throw $_ex;
         }
-    }
-
-    /**
-     * @return array
-     */
-    protected function getResources()
-    {
-        return $this->resources;
-    }
-
-    // REST service implementation
-
-    /**
-     * {@inheritdoc}
-     */
-    public function listResources( $include_properties = null )
-    {
-        if ( !$this->request->getParameterAsBool( 'as_access_components' ) )
-        {
-            return parent::listResources( $include_properties );
-        }
-
-        $output = [ ];
-        foreach ($this->resources as $resourceInfo)
-        {
-            $className = $resourceInfo['class_name'];
-
-            if ( !class_exists( $className ) )
-            {
-                throw new InternalServerErrorException( 'Service configuration class name lookup failed for resource ' . $this->resourcePath );
-            }
-
-            /** @var BaseRestResource $resource */
-            $resource = $this->instantiateResource( $className, $resourceInfo );
-
-            $name = $className::RESOURCE_NAME . '/';
-            $_access = $this->getPermissions( $name );
-            if ( !empty( $_access ) )
-            {
-                $output[] = $name;
-                $output[] = $name . '*';
-            }
-
-            $results = $resource->listResources(false);
-            foreach ( $results as $name )
-            {
-                $name = $className::RESOURCE_NAME . '/' . $name;
-                $_access = $this->getPermissions( $name );
-                if ( !empty( $_access ) )
-                {
-                    $output[] = $name;
-                }
-            }
-        }
-
-        return [ 'resource' => $output ];
     }
 
     /**
@@ -360,8 +258,7 @@ class SqlDb extends BaseDbService
             /** @var BaseRestResource $resource */
             $resource = $this->instantiateResource( $className, $resourceInfo );
 
-            $name = $className::RESOURCE_NAME . '/';
-            $_access = $this->getPermissions( $name );
+            $_access = $this->getPermissions( $resource->name );
             if ( !empty( $_access ) )
             {
                 $results = $resource->getApiDocInfo();
