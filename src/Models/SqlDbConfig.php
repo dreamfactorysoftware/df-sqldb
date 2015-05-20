@@ -21,8 +21,10 @@
 namespace DreamFactory\Rave\SqlDb\Models;
 
 use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Rave\Components\RequireExtensions;
 use DreamFactory\Rave\Exceptions\BadRequestException;
 use DreamFactory\Rave\Models\BaseServiceConfigModel;
+use DreamFactory\Rave\SqlDbCore\Connection;
 
 /**
  * SqlDbConfig
@@ -38,6 +40,8 @@ use DreamFactory\Rave\Models\BaseServiceConfigModel;
  */
 class SqlDbConfig extends BaseServiceConfigModel
 {
+    use RequireExtensions;
+
     protected $table = 'sql_db_config';
 
     protected $fillable = [ 'service_id', 'dsn', 'username', 'password', 'db', 'options', 'attributes' ];
@@ -50,6 +54,9 @@ class SqlDbConfig extends BaseServiceConfigModel
         {
             throw new BadRequestException( 'Database connection string (DSN) can not be empty.' );
         }
+
+        $driver = Connection::getDriverFromDSN($dsn);
+        Connection::requireDriver($driver);
 
         return true;
     }
