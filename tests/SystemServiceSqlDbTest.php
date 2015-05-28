@@ -22,25 +22,18 @@ use DreamFactory\Library\Utility\Enums\Verbs;
 
 class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
 {
-    protected static $staged = false;
+    const RESOURCE = 'service';
 
-    public function stage()
-    {
-        parent::stage();
-
-        Artisan::call( 'migrate', [ '--path' => 'vendor/dreamfactory/rave-sqldb/database/migrations/']);
-        Artisan::call( 'db:seed', [ '--class' => 'DreamFactory\\Rave\\SqlDb\\Database\\Seeds\\DatabaseSeeder' ] );
-    }
+    protected $serviceId = 'system';
 
     public function tearDown()
     {
-        $this->deleteDbService(1);
-        $this->deleteDbService(2);
-        $this->deleteDbService(3);
+        $this->deleteDbService( 1 );
+        $this->deleteDbService( 2 );
+        $this->deleteDbService( 3 );
 
         parent::tearDown();
     }
-
 
     /************************************************
      * Testing GET
@@ -48,32 +41,35 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
 
     public function testGET()
     {
-        $rs = $this->call( Verbs::GET, $this->prefix . "/system" );
-        $this->assertContains( '"resource":', $rs->getContent() );
+        $rs = $this->makeRequest( Verbs::GET );
+        $content = json_encode( $rs->getContent(), JSON_UNESCAPED_SLASHES );
+
+        $this->assertContains( '"resource":', $content );
     }
 
     public function testGETService()
     {
-        $rs = $this->call( Verbs::GET, $this->prefix . "/system/service" );
-        $this->assertContains( '"record":', $rs->getContent() );
+        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE );
+
+        $this->assertContains( '"record":', json_encode( $rs->getContent(), JSON_UNESCAPED_SLASHES ) );
     }
 
     public function testGETServiceById()
     {
-        $id = $this->createDbService(1);
-        $rs = $this->call( Verbs::GET, $this->prefix . "/system/service/".$id );
-        $data = json_decode( $rs->getContent(), true );
+        $id = $this->createDbService( 1 );
+        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE . '/' . $id );
+        $data = $rs->getContent();
         $this->assertTrue( $data['id'] == $id );
     }
 
     public function testGETServiceByIds()
     {
-        $id1 = $this->createDbService(1);
-        $id2 = $this->createDbService(2);
-        $id3 = $this->createDbService(3);
+        $id1 = $this->createDbService( 1 );
+        $id2 = $this->createDbService( 2 );
+        $id3 = $this->createDbService( 3 );
 
-        $rs = $this->call( Verbs::GET, $this->prefix . "/system/service?ids=$id1,$id2,$id3" );
-        $data = json_decode( $rs->getContent(), true );
+        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE, [ 'ids' => "$id1,$id2,$id3" ] );
+        $data = $rs->getContent();
         $ids = implode( ",", array_column( $data['record'], 'id' ) );
 
         $this->assertTrue( $ids == "$id1,$id2,$id3" );
@@ -81,14 +77,16 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
 
     public function testGETOverPOSTTunnel()
     {
-        $id1 = $this->createDbService(1);
-        $id2 = $this->createDbService(2);
+        $id1 = $this->createDbService( 1 );
+        $id2 = $this->createDbService( 2 );
 
-        $payload = '[{"id":'.$id1.'},{"id":'.$id2.'}]';
+        $payload = '[{"id":' . $id1 . '},{"id":' . $id2 . '}]';
 
-        $rs = $this->call( Verbs::POST, $this->prefix . "/system/service", [ ], [ ], [ ], [ "HTTP_X_HTTP_METHOD" => Verbs::GET ], $payload );
+        // Using GET here as payload is set manually and also X-HTTP-METHOD is used inside the RestController
+        // but this test is not using RestController.
+        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE, [ ], $payload );
 
-        $data = json_decode( $rs->getContent(), true );
+        $data = $rs->getContent();
         $label = implode( ",", array_column( $data['record'], 'label' ) );
 
         $this->assertEquals( "Database1,Database2", $label );
@@ -96,8 +94,8 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
 
     public function testResourceNotFound()
     {
-        $this->call( Verbs::GET, $this->prefix . "/system/foo" );
-        $this->assertResponseStatus( 404 );
+        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\NotFoundException', 'Record not found.' );
+        $this->makeRequest( Verbs::GET, static::RESOURCE . '/foo' );
     }
 
     /************************************************
@@ -106,21 +104,23 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
 
     public function testPOSTService()
     {
-        $payload = '{"record":[{"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db", "config":{"dsn":"foo","username":"user","password":"pass"}}]}';
+        $payload =
+            '{"record":[{"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db", "config":{"dsn":"foo","username":"user","password":"pass"}}]}';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->prefix . "/system/service", $payload );
-        $data = json_decode( $rs->getContent(), true );
-        $this->deleteDbService(9);
+        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ ], $payload );
+        $data = $rs->getContent();
+        $this->deleteDbService( 9 );
         $this->assertTrue( $data['id'] > 0 );
     }
 
     public function testPOSTServiceWithFields()
     {
-        $payload = '{"record":[{"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db", "config":{"dsn":"foo","username":"user","password":"pass"}}]}';
+        $payload =
+            '{"record":[{"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db", "config":{"dsn":"foo","username":"user","password":"pass"}}]}';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->prefix . "/system/service?fields=name,label,is_active", $payload );
-        $this->deleteDbService(9);
-        $this->assertTrue( $rs->getContent() == '{"name":"db9","label":"Database","is_active":1}' );
+        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ 'fields' => 'name,label,is_active' ], $payload );
+        $this->deleteDbService( 9 );
+        $this->assertTrue( json_encode( $rs->getContent(), JSON_UNESCAPED_SLASHES ) == '{"name":"db9","label":"Database","is_active":1}' );
     }
 
     public function testPOSTServiceMultiple()
@@ -132,21 +132,21 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
             ]
         }';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->prefix . "/system/service", $payload );
-        $data = json_decode( $rs->getContent(), true );
-        $this->deleteDbService(9);
-        $this->deleteDbService(10);
-        $this->assertTrue(is_array($data['record']));
+        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ ], $payload );
+        $data = $rs->getContent();
+        $this->deleteDbService( 9 );
+        $this->deleteDbService( 10 );
+        $this->assertTrue( is_array( $data['record'] ) );
 
-        foreach($data['record'] as $r)
+        foreach ( $data['record'] as $r )
         {
-            $this->assertTrue($r['id']>0);
+            $this->assertTrue( $r['id'] > 0 );
         }
     }
 
     public function testPOSTServiceMultipleWithContinue()
     {
-        $id1 = $this->createDbService(1);
+        $id1 = $this->createDbService( 1 );
         $id1++;
         $payload = '{
             "record":[
@@ -155,18 +155,16 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
             ]
         }';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->prefix . "/system/service?continue=true", $payload );
-        $this->deleteDbService(9);
+        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\NotFoundException', 'Record not found.' );
+        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\BadRequestException', 'Batch Error: Not all parts of the request were successful.' );
 
-        $this->assertContains('{"error":{"context":{"errors":[1],"record":[{"id":'.$id1.'},"SQLSTATE[23000]: ', $rs->getContent());
-        $this->assertContains("1062 Duplicate entry 'db1' for key 'service_name_unique'", $rs->getContent());
-        $this->assertContains('"code":400', $rs->getContent());
-        $this->assertResponseStatus(400);
+        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ 'continue' => 'true' ], $payload );
     }
 
     public function testPOSTServiceMultipleWithRollback()
     {
-        $this->createDbService(1);
+        $this->deleteDbService( 9 );
+        $this->createDbService( 1 );
         $payload = '{
             "record":[
                 {"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db"},
@@ -174,16 +172,14 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
             ]
         }';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->prefix . "/system/service?rollback=1", $payload );
-        $this->deleteDbService(9);
+        $this->setExpectedException( '\Illuminate\Database\QueryException' );
 
-        $this->assertContains('{"error":{"context":null,"message":"SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry \'db1\'', $rs->getContent());
-        $this->assertContains('"code":"23000', $rs->getContent());
-        $this->assertResponseStatus(500);
+        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ 'rollback' => '1' ], $payload );
     }
 
     public function testPOSTServiceMultipleNoWrap()
     {
+        $this->deleteDbService( 9 );
         $payload = '
             [
                 {"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db"},
@@ -191,15 +187,15 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
             ]
         ';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->prefix . "/system/service", $payload );
-        $data = json_decode( $rs->getContent(), true );
-        $this->deleteDbService(9);
-        $this->deleteDbService(10);
-        $this->assertTrue(is_array($data['record']));
+        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [], $payload );
+        $data = $rs->getContent();
+        $this->deleteDbService( 9 );
+        $this->deleteDbService( 10 );
+        $this->assertTrue( is_array( $data['record'] ) );
 
-        foreach($data['record'] as $r)
+        foreach ( $data['record'] as $r )
         {
-            $this->assertTrue($r['id']>0);
+            $this->assertTrue( $r['id'] > 0 );
         }
     }
 
@@ -213,9 +209,8 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
                         "type":"sql_db"
                     }';
 
-        $this->callWithPayload( Verbs::POST, $this->prefix . "/system/service", $payload );
-
-        $this->assertResponseStatus( 400 );
+        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\BadRequestException');
+        $this->makeRequest( Verbs::POST, static::RESOURCE, [], $payload );
     }
 
     public function testPOSTServiceMissingNotNullField()
@@ -227,10 +222,8 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
                         "type":"sql_db"
                     }]';
 
-        $rs = $this->callWithPayload( Verbs::POST, $this->prefix . "/system/service", $payload );
-
-        $this->assertResponseStatus( 500 );
-        $this->assertContains( '"code":"HY000"', $rs->getContent() );
+        $this->setExpectedException('\PDOException');
+        $this->makeRequest( Verbs::POST, static::RESOURCE, [], $payload );
     }
 
     /************************************************
@@ -263,11 +256,13 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
                         "description":"unit-test-string"
                     }';
 
-        $rs = $this->callWithPayload( $verb, $this->prefix . "/system/service/".$id1, $payload );
-        $this->assertContains( '{"id":'.$id1.'}', $rs->getContent() );
+        $rs = $this->makeRequest( $verb, static::RESOURCE.'/'.$id1, [], $payload );
+        $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
-        $result = $this->call( Verbs::GET, $this->prefix . "/system/service/".$id1 );
-        $resultArray = json_decode( $result->getContent(), true );
+        $this->assertContains( '{"id":'.$id1.'}', $content );
+
+        $result = $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id1 );
+        $resultArray = $result->getContent();
 
         $this->assertEquals( "unit-test-string", $resultArray['description'] );
     }
@@ -283,11 +278,14 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
                         "label":"unit-test-label"
                     }]';
 
-        $rs = $this->callWithPayload( $verb, $this->prefix . "/system/service?ids=$id1,$id2,$id3", $payload );
-        $this->assertContains( '{"record":[{"id":'.$id1.'},{"id":'.$id2.'},{"id":'.$id3.'}]}', $rs->getContent() );
+        $rs = $this->makeRequest( $verb, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"], $payload );
+        $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
-        $result = $this->call( Verbs::GET, $this->prefix . "/system/service?ids=$id1,$id2,$id3" );
-        $ra = json_decode( $result->getContent(), true );
+        $this->assertContains( '{"record":[{"id":'.$id1.'},{"id":'.$id2.'},{"id":'.$id3.'}]}', $content );
+
+        $result = $this->makeRequest( Verbs::GET, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"] );
+        $ra = $result->getContent();
+
         $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
         $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
 
@@ -317,11 +315,13 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
                         "label":"unit-test-l3"
                     }]';
 
-        $rs = $this->callWithPayload( $verb, $this->prefix . "/system/service", $payload );
-        $this->assertContains( '{"record":[{"id":'.$id1.'},{"id":'.$id2.'},{"id":'.$id3.'}]}', $rs->getContent() );
+        $rs = $this->makeRequest( $verb, static::RESOURCE, [], $payload );
+        $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
-        $result = $this->call( Verbs::GET, $this->prefix . "/system/service?ids=$id1,$id2,$id3" );
-        $ra = json_decode( $result->getContent(), true );
+        $this->assertContains( '{"record":[{"id":'.$id1.'},{"id":'.$id2.'},{"id":'.$id3.'}]}', $content );
+
+        $result = $this->makeRequest( Verbs::GET, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"] );
+        $ra = $result->getContent();
         $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
         $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
 
@@ -352,8 +352,10 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
                     }]';
 
 
-        $rs = $this->callWithPayload( $verb, $this->prefix . "/system/service?fields=label", $payload );
-        $this->assertContains( '{"record":[{"label":"unit-test-l1"},{"label":"unit-test-l2"},{"label":"unit-test-l3"}]}', $rs->getContent() );
+        $rs = $this->makeRequest( $verb, static::RESOURCE, ['fields'=>'label'], $payload );
+        $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
+
+        $this->assertContains( '{"record":[{"label":"unit-test-l1"},{"label":"unit-test-l2"},{"label":"unit-test-l3"}]}', $content );
     }
 
     public function testPATCHServiceBulkWithContinue( $verb = Verbs::PATCH )
@@ -379,19 +381,27 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
                         "label":"unit-test-l3"
                     }]';
 
-        $rs = $this->callWithPayload( $verb, $this->prefix . "/system/service?continue=1", $payload );
-        $this->assertContains( '{"error":{"context":{"errors":[1],"record":[{"id":'.$id1.'},', $rs->getContent() );
-        $this->assertContains(',{"id":'.$id3.'}]}', $rs->getContent());
-        $this->assertResponseStatus(400);
 
-        $result = $this->call( Verbs::GET, $this->prefix . "/system/service?ids=$id1,$id2,$id3" );
-        $ra = json_decode( $result->getContent(), true );
-        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+        try
+        {
+            $this->makeRequest( $verb, static::RESOURCE, [ 'continue' => '1' ], $payload );
+        }
+        catch(\DreamFactory\Rave\Exceptions\BadRequestException $e)
+        {
 
-        $this->assertEquals( "unit-test-d1,Local Database2,unit-test-d3", $dColumn );
-        $this->assertEquals( "unit-test-l1,Database2,unit-test-l3", $lColumn );
+            $this->assertEquals(400, $e->getStatusCode());
+            $this->assertContains( 'Batch Error: Not all parts of the request were successful.', $e->getMessage() );
+
+            $result = $this->makeRequest( Verbs::GET, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"] );
+            $ra = $result->getContent();
+            $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
+            $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+
+            $this->assertEquals( "unit-test-d1,Local Database2,unit-test-d3", $dColumn );
+            $this->assertEquals( "unit-test-l1,Database2,unit-test-l3", $lColumn );
+        }
     }
+
 
     public function testPATCHServiceBulkWithRollback( $verb = Verbs::PATCH )
     {
@@ -416,17 +426,22 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
                         "label":"unit-test-l3"
                     }]';
 
-        $rs = $this->callWithPayload( $verb, $this->prefix . "/system/service?rollback=true", $payload );
-        $this->assertContains( '{"error":{"context":null,"message":"Failed to update resource: SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry \'db1\' ', $rs->getContent() );
-        $this->assertResponseStatus(500);
+        try
+        {
+            $this->makeRequest( $verb, static::RESOURCE, [ 'rollback' => 'true' ], $payload );
+        }
+        catch(\DreamFactory\Rave\Exceptions\InternalServerErrorException $e)
+        {
+            $this->assertEquals(500, $e->getStatusCode());
+            $this->assertContains("Integrity constraint violation: 1062 Duplicate entry 'db1' for key 'service_name_unique'", $e->getMessage());
+            $result = $this->makeRequest( Verbs::GET, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"] );
+            $ra = $result->getContent();
+            $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
+            $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
 
-        $result = $this->call( Verbs::GET, $this->prefix . "/system/service?ids=$id1,$id2,$id3" );
-        $ra = json_decode( $result->getContent(), true );
-        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
-
-        $this->assertEquals( "Local Database1,Local Database2,Local Database3", $dColumn );
-        $this->assertEquals( "Database1,Database2,Database3", $lColumn );
+            $this->assertEquals( "Local Database1,Local Database2,Local Database3", $dColumn );
+            $this->assertEquals( "Database1,Database2,Database3", $lColumn );
+        }
     }
 
     /************************************************
@@ -436,11 +451,11 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
     public function testDELETEServiceById()
     {
         $id1 = $this->createDbService(1);
-        $rs = $this->call( Verbs::DELETE, $this->prefix . "/system/service/".$id1 );
-        $this->assertEquals( '{"id":'.$id1.'}', $rs->getContent() );
+        $rs = $this->makeRequest( Verbs::DELETE, static::RESOURCE.'/'.$id1 );
+        $this->assertEquals( '{"id":'.$id1.'}', json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES) );
 
-        $this->call( Verbs::GET, $this->prefix . "/system/service/".$id1 );
-        $this->assertResponseStatus( 404 );
+        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\NotFoundException', 'Record not found.' );
+        $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id1 );
     }
 
     public function testDELETEServiceByIds()
@@ -449,15 +464,21 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
-        $rs = $this->call( Verbs::DELETE, $this->prefix . "/system/service?ids=$id1,$id3" );
-        $this->assertEquals( '{"record":[{"id":'.$id1.'},{"id":'.$id3.'}]}', $rs->getContent() );
+        $rs = $this->makeRequest( Verbs::DELETE, static::RESOURCE, ['ids'=>"$id1,$id3"] );
+        $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
+        $this->assertEquals( '{"record":[{"id":'.$id1.'},{"id":'.$id3.'}]}', $content );
 
-        $this->call( Verbs::GET, $this->prefix . "/system/service/".$id1 );
-        $this->assertResponseStatus( 404 );
-
-        $rs = $this->call( Verbs::GET, $this->prefix . "/system/service/".$id2 );
-        $data = json_decode( $rs->getContent(), true );
-        $this->assertEquals( "Database2", $data['label'] );
+        try
+        {
+            $this->makeRequest( Verbs::GET, static::RESOURCE . '/' . $id1 );
+        }
+        catch(\DreamFactory\Rave\Exceptions\NotFoundException $e)
+        {
+            $this->assertEquals(404, $e->getStatusCode());
+            $rs = $this->makeRequest( Verbs::GET, static::RESOURCE.'/'. $id2 );
+            $data = $rs->getContent();
+            $this->assertEquals( "Database2", $data['label'] );
+        }
     }
 
     public function testDELETEServiceBulk()
@@ -468,15 +489,17 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
 
         $payload = '[{"id":'.$id2.'},{"id":'.$id3.'}]';
 
-        $rs = $this->callWithPayload( Verbs::DELETE, $this->prefix . "/system/service", $payload );
-        $this->assertEquals( '{"record":[{"id":'.$id2.'},{"id":'.$id3.'}]}', $rs->getContent() );
+        $rs = $this->makeRequest( Verbs::DELETE, static::RESOURCE, [], $payload );
+        $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
+        $this->assertEquals( '{"record":[{"id":'.$id2.'},{"id":'.$id3.'}]}', $content );
 
-        $rs = $this->call( Verbs::GET, $this->prefix . "/system/service/".$id1 );
-        $data = json_decode( $rs->getContent(), true );
+        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id1 );
+        $data = $rs->getContent();
         $this->assertEquals( "Database1", $data['label'] );
 
-        $this->call( Verbs::GET, $this->prefix . "/system/service/".$id3 );
-        $this->assertResponseStatus( 404 );
+
+        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\NotFoundException', 'Record not found.' );
+        $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id3 );
     }
 
     public function testDELETEServiceBulkWithFields()
@@ -487,33 +510,36 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
 
         $payload = '[{"id":'.$id2.'},{"id":'.$id3.'}]';
 
-        $rs = $this->callWithPayload( Verbs::DELETE, $this->prefix . "/system/service?fields=name,type", $payload );
-        $this->assertEquals( '{"record":[{"name":"db2","type":"sql_db"},{"name":"db3","type":"sql_db"}]}', $rs->getContent() );
+        $rs = $this->makeRequest( Verbs::DELETE, static::RESOURCE, ['fields'=>'name,type'], $payload );
+        $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
+        $this->assertEquals( '{"record":[{"name":"db2","type":"sql_db"},{"name":"db3","type":"sql_db"}]}', $content );
     }
 
     /************************************************
      * Internal functions
      ************************************************/
 
-    protected function deleteDbService($num)
+    protected function deleteDbService( $num )
     {
-        $serviceName = 'db'.$num;
-        $service = \DreamFactory\Rave\Models\Service::whereName($serviceName);
+        $serviceName = 'db' . $num;
+        $service = \DreamFactory\Rave\Models\Service::whereName( $serviceName );
         $service->delete();
+
         return true;
     }
 
-    protected function createDbService($num){
-        $serviceName = 'db'.$num;
-        $service = \DreamFactory\Rave\Models\Service::whereName($serviceName)->first();
+    protected function createDbService( $num )
+    {
+        $serviceName = 'db' . $num;
+        $service = \DreamFactory\Rave\Models\Service::whereName( $serviceName )->first();
 
-        if(empty($service))
+        if ( empty( $service ) )
         {
             $service = \DreamFactory\Rave\Models\Service::create(
                 [
                     "name"        => $serviceName,
-                    "label"       => "Database".$num,
-                    "description" => "Local Database".$num,
+                    "label"       => "Database" . $num,
+                    "description" => "Local Database" . $num,
                     "is_active"   => 1,
                     "type"        => "sql_db",
                     'config'      => [
