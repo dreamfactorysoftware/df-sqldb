@@ -19,7 +19,7 @@
  */
 
 use DreamFactory\Library\Utility\Enums\Verbs;
-use DreamFactory\Rave\Enums\ContentTypes;
+use DreamFactory\Rave\Enums\DataFormats;
 use DreamFactory\Rave\SqlDb\Services\SqlDb;
 use DreamFactory\Rave\SqlDb\Resources\Schema;
 use DreamFactory\Rave\SqlDb\Resources\Table;
@@ -143,7 +143,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 }';
 
         $request = new TestServiceRequest( Verbs::POST );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         $rs = $this->service->handleRequest( $request, Schema::RESOURCE_NAME . '/' . static::TABLE_NAME );
         $data = $rs->getContent();
         $this->assertArrayHasKey( 'name', $data );
@@ -177,7 +177,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 	]
 }';
         $request = new TestServiceRequest( Verbs::POST );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
         $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
@@ -224,7 +224,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
     {
         $payload = '{"record":[{"name":"test4","complete":false}]}';
         $request = new TestServiceRequest( Verbs::POST );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
         $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
@@ -245,7 +245,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 	]';
 
         $request = new TestServiceRequest( Verbs::POST );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
         $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
@@ -257,7 +257,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         $payload = '{"record":[{"name":"test7","complete":true}]}';
 
         $request = new TestServiceRequest( Verbs::POST, [ 'fields' => 'name,complete' ] );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
         $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
@@ -286,7 +286,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 }';
 
         $request = new TestServiceRequest( Verbs::POST, [ 'continue' => true ] );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         try
         {
             $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
@@ -320,7 +320,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 }';
 
         $request = new TestServiceRequest( Verbs::POST, [ 'rollback' => true ] );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         try
         {
             $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
@@ -343,7 +343,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
                     }]}';
 
         $request = new TestServiceRequest( Verbs::POST );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         try
         {
             $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
@@ -365,7 +365,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
                     }]}';
 
         $request = new TestServiceRequest( Verbs::POST );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         try
         {
             $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
@@ -386,7 +386,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
                     }]}';
 
         $request = new TestServiceRequest( Verbs::POST );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         try
         {
             $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
@@ -427,7 +427,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
     {
         $payload = '{"name":"test1Update"}';
         $request = new TestServiceRequest( $verb );
-        $request->setContent($payload, ContentTypes::JSON);
+        $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME . '/1' );
 //        $this->assertEquals( '{"id":1}', $rs->getContent() );
 
@@ -450,7 +450,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 //        $this->assertEquals( "unit-test-label,unit-test-label,unit-test-label", $lColumn );
         $payload = '{"complete":true}';
         $request = new TestServiceRequest( $verb, [ 'ids' => '2,3' ] );
-        $request->setContent($payload, ContentTypes::JSON);
+        $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
 //        $this->assertEquals( '{"record":[{"id":2},{"id":3}]}', $rs->getContent() );
 
@@ -491,7 +491,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 	]
 }';
         $request = new TestServiceRequest( $verb );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
         $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
@@ -503,7 +503,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         $payload = '{"record":[{"id": 4, "name":"test4Update","complete":true}]}';
 
         $request = new TestServiceRequest( $verb, [ 'fields' => 'name,complete' ] );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
         $data = $rs->getContent();
         $this->assertArrayHasKey( 'record', $data );
@@ -536,7 +536,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 }';
 
         $request = new TestServiceRequest( $verb, [ 'continue' => true ] );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         try
         {
             $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
@@ -584,7 +584,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
 }';
 
         $request = new TestServiceRequest( $verb, [ 'rollback' => true ] );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         try
         {
             $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
@@ -666,7 +666,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
     {
         $payload = '[{"id":4},{"id":5}]';
         $request = new TestServiceRequest( Verbs::DELETE );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
 //        $this->assertEquals( '{"record":[{"id":2},{"id":3}]}', $rs->getContent() );
 
@@ -696,7 +696,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
     {
         $payload = '[{"id":6},{"id":7}]';
         $request = new TestServiceRequest( Verbs::DELETE, [ 'fields' => 'name' ] );
-        $request->setContent( $payload, ContentTypes::JSON );
+        $request->setContent( $payload, DataFormats::JSON );
         $rs = $this->service->handleRequest( $request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME );
 //        $this->assertEquals( '{"record":[{"id":2},{"id":3}]}', $rs->getContent() );
 
