@@ -46,6 +46,8 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     protected $fillable = [ 'service_id', 'dsn', 'username', 'password', 'db', 'options', 'attributes' ];
 
+    protected $casts = [ 'options' => 'array', 'attributes' => 'array' ];
+
     protected $encrypted = [ 'username', 'password' ];
 
     public static function validateConfig( $config )
