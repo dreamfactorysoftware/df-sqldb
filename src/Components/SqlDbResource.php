@@ -1,8 +1,8 @@
 <?php
 /**
- * This file is part of the DreamFactory Rave(tm)
+ * This file is part of the DreamFactory(tm)
  *
- * DreamFactory Rave(tm) <http://github.com/dreamfactorysoftware/rave>
+ * DreamFactory(tm) <http://github.com/dreamfactorysoftware/rave>
  * Copyright 2012-2014 DreamFactory Software, Inc. <support@dreamfactory.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,11 +17,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-namespace DreamFactory\Rave\SqlDb\Components;
+namespace DreamFactory\Core\SqlDb\Components;
 
-use DreamFactory\Rave\Contracts\RequestHandlerInterface;
-use DreamFactory\Rave\SqlDbCore\Connection;
-use DreamFactory\Rave\SqlDb\Services\SqlDb;
+use DreamFactory\Core\Contracts\RequestHandlerInterface;
+use DreamFactory\Core\SqlDbCore\Connection;
+use DreamFactory\Core\SqlDb\Services\SqlDb;
 
 trait SqlDbResource
 {

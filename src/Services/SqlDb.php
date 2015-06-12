@@ -1,8 +1,8 @@
 <?php
 /**
- * This file is part of the DreamFactory Rave(tm)
+ * This file is part of the DreamFactory(tm)
  *
- * DreamFactory Rave(tm) <http://github.com/dreamfactorysoftware/rave>
+ * DreamFactory(tm) <http://github.com/dreamfactorysoftware/rave>
  * Copyright 2012-2014 DreamFactory Software, Inc. <support@dreamfactory.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,25 +18,25 @@
  * limitations under the License.
  */
 
-namespace DreamFactory\Rave\SqlDb\Services;
+namespace DreamFactory\Core\SqlDb\Services;
 
 use DreamFactory\Library\Utility\ArrayUtils;
-use DreamFactory\Rave\Exceptions\InternalServerErrorException;
-use DreamFactory\Rave\Exceptions\NotFoundException;
-use DreamFactory\Rave\SqlDb\Resources\Schema;
-use DreamFactory\Rave\SqlDb\Resources\StoredFunction;
-use DreamFactory\Rave\SqlDb\Resources\StoredProcedure;
-use DreamFactory\Rave\SqlDb\Resources\Table;
-use DreamFactory\Rave\SqlDbCore\Connection;
-use DreamFactory\Rave\Enums\SqlDbDriverTypes;
-use DreamFactory\Rave\Services\BaseDbService;
-use DreamFactory\Rave\Resources\BaseRestResource;
-use DreamFactory\Rave\Utility\Session;
+use DreamFactory\Core\Exceptions\InternalServerErrorException;
+use DreamFactory\Core\Exceptions\NotFoundException;
+use DreamFactory\Core\SqlDb\Resources\Schema;
+use DreamFactory\Core\SqlDb\Resources\StoredFunction;
+use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
+use DreamFactory\Core\SqlDb\Resources\Table;
+use DreamFactory\Core\SqlDbCore\Connection;
+use DreamFactory\Core\Enums\SqlDbDriverTypes;
+use DreamFactory\Core\Services\BaseDbService;
+use DreamFactory\Core\Resources\BaseRestResource;
+use DreamFactory\Core\Utility\Session;
 
 /**
  * Class SqlDb
  *
- * @package DreamFactory\Rave\SqlDb\Services
+ * @package DreamFactory\Core\SqlDb\Services
  */
 class SqlDb extends BaseDbService
 {
@@ -63,22 +63,22 @@ class SqlDb extends BaseDbService
     protected $resources = [
         Schema::RESOURCE_NAME          => [
             'name'       => Schema::RESOURCE_NAME,
-            'class_name' => 'DreamFactory\\Rave\\SqlDb\\Resources\\Schema',
+            'class_name' => 'DreamFactory\\Core\\SqlDb\\Resources\\Schema',
             'label'      => 'Schema',
         ],
         Table::RESOURCE_NAME           => [
             'name'       => Table::RESOURCE_NAME,
-            'class_name' => 'DreamFactory\\Rave\\SqlDb\\Resources\\Table',
+            'class_name' => 'DreamFactory\\Core\\SqlDb\\Resources\\Table',
             'label'      => 'Tables',
         ],
         StoredProcedure::RESOURCE_NAME => [
             'name'       => StoredProcedure::RESOURCE_NAME,
-            'class_name' => 'DreamFactory\\Rave\\SqlDb\\Resources\\StoredProcedure',
+            'class_name' => 'DreamFactory\\Core\\SqlDb\\Resources\\StoredProcedure',
             'label'      => 'Stored Procedures',
         ],
         StoredFunction::RESOURCE_NAME  => [
             'name'       => StoredFunction::RESOURCE_NAME,
-            'class_name' => 'DreamFactory\\Rave\\SqlDb\\Resources\\StoredFunction',
+            'class_name' => 'DreamFactory\\Core\\SqlDb\\Resources\\StoredFunction',
             'label'      => 'Stored Functions',
         ],
     ];
@@ -203,7 +203,7 @@ class SqlDb extends BaseDbService
             // If version 1.x, the resource could be a table
 //            if ($this->request->getApiVersion())
 //            {
-//                $resource = $this->instantiateResource( 'DreamFactory\\Rave\\SqlDb\\Resources\\Table', [ 'name' => $this->resource ] );
+//                $resource = $this->instantiateResource( 'DreamFactory\\Core\\SqlDb\\Resources\\Table', [ 'name' => $this->resource ] );
 //                $newPath = $this->resourceArray;
 //                array_shift( $newPath );
 //                $newPath = implode( '/', $newPath );

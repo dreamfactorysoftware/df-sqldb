@@ -17,19 +17,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-namespace DreamFactory\Rave\SqlDb\Database\Seeds;
+namespace DreamFactory\Core\SqlDb\Database\Seeds;
 
-use DreamFactory\Rave\Database\Seeds\BaseModelSeeder;
+use DreamFactory\Core\Database\Seeds\BaseModelSeeder;
 
 class DatabaseSeeder extends BaseModelSeeder
 {
-    protected $modelClass = 'DreamFactory\\Rave\\Models\\ServiceType';
+    protected $modelClass = 'DreamFactory\\Core\\Models\\ServiceType';
 
     protected $records = [
         [
             'name'           => 'sql_db',
-            'class_name'     => 'DreamFactory\\Rave\\SqlDb\\Services\\SqlDb',
-            'config_handler' => 'DreamFactory\\Rave\\SqlDb\\Models\\SqlDbConfig',
+            'class_name'     => 'DreamFactory\\Core\\SqlDb\\Services\\SqlDb',
+            'config_handler' => 'DreamFactory\\Core\\SqlDb\\Models\\SqlDbConfig',
             'label'          => 'SQL DB',
             'description'    => 'Database service supporting SQL connections.',
             'group'          => 'Databases',

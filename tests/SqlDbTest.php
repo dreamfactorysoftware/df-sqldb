@@ -1,8 +1,8 @@
 <?php
 /**
- * This file is part of the DreamFactory Rave(tm)
+ * This file is part of the DreamFactory(tm)
  *
- * DreamFactory Rave(tm) <http://github.com/dreamfactorysoftware/rave>
+ * DreamFactory(tm) <http://github.com/dreamfactorysoftware/rave>
  * Copyright 2012-2014 DreamFactory Software, Inc. <support@dreamfactory.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,15 +19,15 @@
  */
 
 use DreamFactory\Library\Utility\Enums\Verbs;
-use DreamFactory\Rave\Enums\DataFormats;
-use DreamFactory\Rave\SqlDb\Services\SqlDb;
-use DreamFactory\Rave\SqlDb\Resources\Schema;
-use DreamFactory\Rave\SqlDb\Resources\Table;
-use DreamFactory\Rave\SqlDb\Resources\StoredProcedure;
-use DreamFactory\Rave\SqlDb\Resources\StoredFunction;
-use DreamFactory\Rave\Testing\TestServiceRequest;
+use DreamFactory\Core\Enums\DataFormats;
+use DreamFactory\Core\SqlDb\Services\SqlDb;
+use DreamFactory\Core\SqlDb\Resources\Schema;
+use DreamFactory\Core\SqlDb\Resources\Table;
+use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
+use DreamFactory\Core\SqlDb\Resources\StoredFunction;
+use DreamFactory\Core\Testing\TestServiceRequest;
 
-class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
+class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 {
     /**
      * @const string
@@ -211,7 +211,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
             $this->assertEquals( 404, $ex->getCode() );
         }
     }
@@ -294,7 +294,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\BadRequestException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\BadRequestException', $ex );
             $this->assertEquals( 400, $ex->getCode() );
             $this->assertContains( 'Batch Error: Not all records could be created.', $ex->getMessage() );
 //            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
@@ -328,7 +328,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\InternalServerErrorException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\InternalServerErrorException', $ex );
             $this->assertEquals( 500, $ex->getCode() );
             $this->assertContains( 'All changes rolled back.', $ex->getMessage() );
 //            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
@@ -351,7 +351,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\InternalServerErrorException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\InternalServerErrorException', $ex );
             $this->assertEquals( 500, $ex->getCode() );
             $this->assertContains( "duplicate ", $ex->getMessage(), '', true );
         }
@@ -373,7 +373,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\BadRequestException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\BadRequestException', $ex );
             $this->assertEquals( 400, $ex->getCode() );
             $this->assertContains( "Field 'name' can not be NULL.", $ex->getMessage() );
         }
@@ -394,7 +394,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\BadRequestException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\BadRequestException', $ex );
             $this->assertEquals( 400, $ex->getCode() );
             $this->assertContains( "Required field 'name' can not be NULL.", $ex->getMessage() );
         }
@@ -544,7 +544,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\BadRequestException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\BadRequestException', $ex );
             $this->assertEquals( 400, $ex->getCode() );
             $this->assertContains( 'Batch Error: Not all records could be patched.', $ex->getMessage() );
 //            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
@@ -592,7 +592,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
             $this->assertEquals( 404, $ex->getCode() );
             $this->assertContains( 'All changes rolled back.', $ex->getMessage() );
 //            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
@@ -630,7 +630,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
         }
     }
 
@@ -648,7 +648,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
         }
 
         try
@@ -658,7 +658,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
         }
     }
 
@@ -678,7 +678,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
         }
 
         try
@@ -688,7 +688,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
         }
     }
 
@@ -708,7 +708,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
         }
 
         try
@@ -718,7 +718,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
         }
     }
 
@@ -735,7 +735,7 @@ class SqlDbTest extends \DreamFactory\Rave\Testing\DbServiceTestCase
         }
         catch ( \Exception $ex )
         {
-            $this->assertInstanceOf( '\DreamFactory\Rave\Exceptions\NotFoundException', $ex );
+            $this->assertInstanceOf( '\DreamFactory\Core\Exceptions\NotFoundException', $ex );
         }
     }
 }

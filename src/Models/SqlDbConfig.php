@@ -1,8 +1,8 @@
 <?php
 /**
- * This file is part of the DreamFactory Rave(tm)
+ * This file is part of the DreamFactory(tm)
  *
- * DreamFactory Rave(tm) <http://github.com/dreamfactorysoftware/rave>
+ * DreamFactory(tm) <http://github.com/dreamfactorysoftware/rave>
  * Copyright 2012-2014 DreamFactory Software, Inc. <support@dreamfactory.com>
  *
  * Licensed under the Apache License, Version 2.0 (the 'License');
@@ -18,13 +18,13 @@
  * limitations under the License.
  */
 
-namespace DreamFactory\Rave\SqlDb\Models;
+namespace DreamFactory\Core\SqlDb\Models;
 
 use DreamFactory\Library\Utility\ArrayUtils;
-use DreamFactory\Rave\Components\RequireExtensions;
-use DreamFactory\Rave\Exceptions\BadRequestException;
-use DreamFactory\Rave\Models\BaseServiceConfigModel;
-use DreamFactory\Rave\SqlDbCore\Connection;
+use DreamFactory\Core\Components\RequireExtensions;
+use DreamFactory\Core\Exceptions\BadRequestException;
+use DreamFactory\Core\Models\BaseServiceConfigModel;
+use DreamFactory\Core\SqlDbCore\Connection;
 
 /**
  * SqlDbConfig

@@ -1,8 +1,8 @@
 <?php
 /**
- * This file is part of the DreamFactory Rave(tm)
+ * This file is part of the DreamFactory(tm)
  *
- * DreamFactory Rave(tm) <http://github.com/dreamfactorysoftware/rave>
+ * DreamFactory(tm) <http://github.com/dreamfactorysoftware/rave>
  * Copyright 2012-2014 DreamFactory Software, Inc. <support@dreamfactory.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,7 @@
 
 use DreamFactory\Library\Utility\Enums\Verbs;
 
-class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
+class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 {
     const RESOURCE = 'service';
 
@@ -94,7 +94,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
 
     public function testResourceNotFound()
     {
-        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\NotFoundException', 'Record not found.' );
+        $this->setExpectedException( '\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.' );
         $this->makeRequest( Verbs::GET, static::RESOURCE . '/foo' );
     }
 
@@ -155,8 +155,8 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
             ]
         }';
 
-        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\NotFoundException', 'Record not found.' );
-        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\BadRequestException', 'Batch Error: Not all parts of the request were successful.' );
+        $this->setExpectedException( '\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.' );
+        $this->setExpectedException( '\DreamFactory\Core\Exceptions\BadRequestException', 'Batch Error: Not all parts of the request were successful.' );
 
         $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ 'continue' => 'true' ], $payload );
     }
@@ -209,7 +209,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
                         "type":"sql_db"
                     }';
 
-        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\BadRequestException');
+        $this->setExpectedException( '\DreamFactory\Core\Exceptions\BadRequestException');
         $this->makeRequest( Verbs::POST, static::RESOURCE, [], $payload );
     }
 
@@ -386,7 +386,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
         {
             $this->makeRequest( $verb, static::RESOURCE, [ 'continue' => '1' ], $payload );
         }
-        catch(\DreamFactory\Rave\Exceptions\BadRequestException $e)
+        catch(\DreamFactory\Core\Exceptions\BadRequestException $e)
         {
 
             $this->assertEquals(400, $e->getStatusCode());
@@ -430,7 +430,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
         {
             $this->makeRequest( $verb, static::RESOURCE, [ 'rollback' => 'true' ], $payload );
         }
-        catch(\DreamFactory\Rave\Exceptions\InternalServerErrorException $e)
+        catch(\DreamFactory\Core\Exceptions\InternalServerErrorException $e)
         {
             $this->assertEquals(500, $e->getStatusCode());
             $this->assertContains("Integrity constraint violation: 1062 Duplicate entry 'db1' for key 'service_name_unique'", $e->getMessage());
@@ -454,7 +454,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
         $rs = $this->makeRequest( Verbs::DELETE, static::RESOURCE.'/'.$id1 );
         $this->assertEquals( '{"id":'.$id1.'}', json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES) );
 
-        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\NotFoundException', 'Record not found.' );
+        $this->setExpectedException( '\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.' );
         $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id1 );
     }
 
@@ -472,7 +472,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
         {
             $this->makeRequest( Verbs::GET, static::RESOURCE . '/' . $id1 );
         }
-        catch(\DreamFactory\Rave\Exceptions\NotFoundException $e)
+        catch(\DreamFactory\Core\Exceptions\NotFoundException $e)
         {
             $this->assertEquals(404, $e->getStatusCode());
             $rs = $this->makeRequest( Verbs::GET, static::RESOURCE.'/'. $id2 );
@@ -498,7 +498,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
         $this->assertEquals( "Database1", $data['label'] );
 
 
-        $this->setExpectedException( '\DreamFactory\Rave\Exceptions\NotFoundException', 'Record not found.' );
+        $this->setExpectedException( '\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.' );
         $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id3 );
     }
 
@@ -522,7 +522,7 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
     protected function deleteDbService( $num )
     {
         $serviceName = 'db' . $num;
-        $service = \DreamFactory\Rave\Models\Service::whereName( $serviceName );
+        $service = \DreamFactory\Core\Models\Service::whereName( $serviceName );
         $service->delete();
 
         return true;
@@ -531,11 +531,11 @@ class SystemServiceTest extends \DreamFactory\Rave\Testing\TestCase
     protected function createDbService( $num )
     {
         $serviceName = 'db' . $num;
-        $service = \DreamFactory\Rave\Models\Service::whereName( $serviceName )->first();
+        $service = \DreamFactory\Core\Models\Service::whereName( $serviceName )->first();
 
         if ( empty( $service ) )
         {
-            $service = \DreamFactory\Rave\Models\Service::create(
+            $service = \DreamFactory\Core\Models\Service::create(
                 [
                     "name"        => $serviceName,
                     "label"       => "Database" . $num,
