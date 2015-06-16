@@ -15,15 +15,14 @@ class CreateSqlDbTables extends Migration
         // SQL DB Service Configuration
         Schema::create(
             'sql_db_config',
-            function ( Blueprint $t )
-            {
-                $t->integer( 'service_id' )->unsigned()->primary();
-                $t->foreign( 'service_id' )->references( 'id' )->on( 'service' )->onDelete( 'cascade' );
-                $t->string( 'dsn' )->default( 0 );
-                $t->longText( 'username' )->nullable(); //encrypted
-                $t->longText( 'password' )->nullable(); //encrypted
-                $t->text( 'options' )->nullable();
-                $t->text( 'attributes' )->nullable();
+            function (Blueprint $t){
+                $t->integer('service_id')->unsigned()->primary();
+                $t->foreign('service_id')->references('id')->on('service')->onDelete('cascade');
+                $t->string('dsn')->default(0);
+                $t->longText('username')->nullable(); //encrypted
+                $t->longText('password')->nullable(); //encrypted
+                $t->text('options')->nullable();
+                $t->text('attributes')->nullable();
             }
         );
     }
@@ -36,7 +35,6 @@ class CreateSqlDbTables extends Migration
     public function down()
     {
         // SQL DB Service Configuration
-        Schema::dropIfExists( 'sql_db_config' );
+        Schema::dropIfExists('sql_db_config');
     }
-
 }

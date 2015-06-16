@@ -1,22 +1,4 @@
 <?php
-/**
- * This file is part of the DreamFactory(tm)
- *
- * DreamFactory(tm) <http://github.com/dreamfactorysoftware/rave>
- * Copyright 2012-2014 DreamFactory Software, Inc. <support@dreamfactory.com>
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 
 use DreamFactory\Library\Utility\Enums\Verbs;
 
@@ -28,9 +10,9 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 
     public function tearDown()
     {
-        $this->deleteDbService( 1 );
-        $this->deleteDbService( 2 );
-        $this->deleteDbService( 3 );
+        $this->deleteDbService(1);
+        $this->deleteDbService(2);
+        $this->deleteDbService(3);
 
         parent::tearDown();
     }
@@ -41,61 +23,61 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 
     public function testGET()
     {
-        $rs = $this->makeRequest( Verbs::GET );
-        $content = json_encode( $rs->getContent(), JSON_UNESCAPED_SLASHES );
+        $rs = $this->makeRequest(Verbs::GET);
+        $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
-        $this->assertContains( '"resource":', $content );
+        $this->assertContains('"resource":', $content);
     }
 
     public function testGETService()
     {
-        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE );
+        $rs = $this->makeRequest(Verbs::GET, static::RESOURCE);
 
-        $this->assertContains( '"record":', json_encode( $rs->getContent(), JSON_UNESCAPED_SLASHES ) );
+        $this->assertContains('"record":', json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES));
     }
 
     public function testGETServiceById()
     {
-        $id = $this->createDbService( 1 );
-        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE . '/' . $id );
+        $id = $this->createDbService(1);
+        $rs = $this->makeRequest(Verbs::GET, static::RESOURCE . '/' . $id);
         $data = $rs->getContent();
-        $this->assertTrue( $data['id'] == $id );
+        $this->assertTrue($data['id'] == $id);
     }
 
     public function testGETServiceByIds()
     {
-        $id1 = $this->createDbService( 1 );
-        $id2 = $this->createDbService( 2 );
-        $id3 = $this->createDbService( 3 );
+        $id1 = $this->createDbService(1);
+        $id2 = $this->createDbService(2);
+        $id3 = $this->createDbService(3);
 
-        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE, [ 'ids' => "$id1,$id2,$id3" ] );
+        $rs = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
         $data = $rs->getContent();
-        $ids = implode( ",", array_column( $data['record'], 'id' ) );
+        $ids = implode(",", array_column($data['record'], 'id'));
 
-        $this->assertTrue( $ids == "$id1,$id2,$id3" );
+        $this->assertTrue($ids == "$id1,$id2,$id3");
     }
 
     public function testGETOverPOSTTunnel()
     {
-        $id1 = $this->createDbService( 1 );
-        $id2 = $this->createDbService( 2 );
+        $id1 = $this->createDbService(1);
+        $id2 = $this->createDbService(2);
 
         $payload = '[{"id":' . $id1 . '},{"id":' . $id2 . '}]';
 
         // Using GET here as payload is set manually and also X-HTTP-METHOD is used inside the RestController
         // but this test is not using RestController.
-        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE, [ ], $payload );
+        $rs = $this->makeRequest(Verbs::GET, static::RESOURCE, [], $payload);
 
         $data = $rs->getContent();
-        $label = implode( ",", array_column( $data['record'], 'label' ) );
+        $label = implode(",", array_column($data['record'], 'label'));
 
-        $this->assertEquals( "Database1,Database2", $label );
+        $this->assertEquals("Database1,Database2", $label);
     }
 
     public function testResourceNotFound()
     {
-        $this->setExpectedException( '\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.' );
-        $this->makeRequest( Verbs::GET, static::RESOURCE . '/foo' );
+        $this->setExpectedException('\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.');
+        $this->makeRequest(Verbs::GET, static::RESOURCE . '/foo');
     }
 
     /************************************************
@@ -107,10 +89,10 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $payload =
             '{"record":[{"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db", "config":{"dsn":"foo","username":"user","password":"pass"}}]}';
 
-        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ ], $payload );
+        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [], $payload);
         $data = $rs->getContent();
-        $this->deleteDbService( 9 );
-        $this->assertTrue( $data['id'] > 0 );
+        $this->deleteDbService(9);
+        $this->assertTrue($data['id'] > 0);
     }
 
     public function testPOSTServiceWithFields()
@@ -118,9 +100,10 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $payload =
             '{"record":[{"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db", "config":{"dsn":"foo","username":"user","password":"pass"}}]}';
 
-        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ 'fields' => 'name,label,is_active' ], $payload );
-        $this->deleteDbService( 9 );
-        $this->assertTrue( json_encode( $rs->getContent(), JSON_UNESCAPED_SLASHES ) == '{"name":"db9","label":"Database","is_active":1}' );
+        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, ['fields' => 'name,label,is_active'], $payload);
+        $this->deleteDbService(9);
+        $this->assertTrue(json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES) ==
+            '{"name":"db9","label":"Database","is_active":1}');
     }
 
     public function testPOSTServiceMultiple()
@@ -132,21 +115,20 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
             ]
         }';
 
-        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ ], $payload );
+        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [], $payload);
         $data = $rs->getContent();
-        $this->deleteDbService( 9 );
-        $this->deleteDbService( 10 );
-        $this->assertTrue( is_array( $data['record'] ) );
+        $this->deleteDbService(9);
+        $this->deleteDbService(10);
+        $this->assertTrue(is_array($data['record']));
 
-        foreach ( $data['record'] as $r )
-        {
-            $this->assertTrue( $r['id'] > 0 );
+        foreach ($data['record'] as $r) {
+            $this->assertTrue($r['id'] > 0);
         }
     }
 
     public function testPOSTServiceMultipleWithContinue()
     {
-        $id1 = $this->createDbService( 1 );
+        $id1 = $this->createDbService(1);
         $id1++;
         $payload = '{
             "record":[
@@ -155,16 +137,17 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
             ]
         }';
 
-        $this->setExpectedException( '\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.' );
-        $this->setExpectedException( '\DreamFactory\Core\Exceptions\BadRequestException', 'Batch Error: Not all parts of the request were successful.' );
+        $this->setExpectedException('\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.');
+        $this->setExpectedException('\DreamFactory\Core\Exceptions\BadRequestException',
+            'Batch Error: Not all parts of the request were successful.');
 
-        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ 'continue' => 'true' ], $payload );
+        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, ['continue' => 'true'], $payload);
     }
 
     public function testPOSTServiceMultipleWithRollback()
     {
-        $this->deleteDbService( 9 );
-        $this->createDbService( 1 );
+        $this->deleteDbService(9);
+        $this->createDbService(1);
         $payload = '{
             "record":[
                 {"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db"},
@@ -172,14 +155,14 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
             ]
         }';
 
-        $this->setExpectedException( '\Illuminate\Database\QueryException' );
+        $this->setExpectedException('\Illuminate\Database\QueryException');
 
-        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [ 'rollback' => '1' ], $payload );
+        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, ['rollback' => '1'], $payload);
     }
 
     public function testPOSTServiceMultipleNoWrap()
     {
-        $this->deleteDbService( 9 );
+        $this->deleteDbService(9);
         $payload = '
             [
                 {"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db"},
@@ -187,15 +170,14 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
             ]
         ';
 
-        $rs = $this->makeRequest( Verbs::POST, static::RESOURCE, [], $payload );
+        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [], $payload);
         $data = $rs->getContent();
-        $this->deleteDbService( 9 );
-        $this->deleteDbService( 10 );
-        $this->assertTrue( is_array( $data['record'] ) );
+        $this->deleteDbService(9);
+        $this->deleteDbService(10);
+        $this->assertTrue(is_array($data['record']));
 
-        foreach ( $data['record'] as $r )
-        {
-            $this->assertTrue( $r['id'] > 0 );
+        foreach ($data['record'] as $r) {
+            $this->assertTrue($r['id'] > 0);
         }
     }
 
@@ -209,8 +191,8 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                         "type":"sql_db"
                     }';
 
-        $this->setExpectedException( '\DreamFactory\Core\Exceptions\BadRequestException');
-        $this->makeRequest( Verbs::POST, static::RESOURCE, [], $payload );
+        $this->setExpectedException('\DreamFactory\Core\Exceptions\BadRequestException');
+        $this->makeRequest(Verbs::POST, static::RESOURCE, [], $payload);
     }
 
     public function testPOSTServiceMissingNotNullField()
@@ -223,7 +205,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                     }]';
 
         $this->setExpectedException('\PDOException');
-        $this->makeRequest( Verbs::POST, static::RESOURCE, [], $payload );
+        $this->makeRequest(Verbs::POST, static::RESOURCE, [], $payload);
     }
 
     /************************************************
@@ -232,42 +214,42 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 
     public function testPUTServiceById()
     {
-        $this->testPATCHServiceById( Verbs::PUT );
+        $this->testPATCHServiceById(Verbs::PUT);
     }
 
     public function testPUTServiceByIds()
     {
-        $this->testPATCHServiceByIds( Verbs::PUT );
+        $this->testPATCHServiceByIds(Verbs::PUT);
     }
 
     public function testPUTServiceBulk()
     {
-        $this->testPATCHServiceBulk( Verbs::PUT );
+        $this->testPATCHServiceBulk(Verbs::PUT);
     }
 
     /************************************************
      * Testing PATCH
      ************************************************/
 
-    public function testPATCHServiceById( $verb = Verbs::PATCH )
+    public function testPATCHServiceById($verb = Verbs::PATCH)
     {
         $id1 = $this->createDbService(1);
         $payload = '{
                         "description":"unit-test-string"
                     }';
 
-        $rs = $this->makeRequest( $verb, static::RESOURCE.'/'.$id1, [], $payload );
+        $rs = $this->makeRequest($verb, static::RESOURCE . '/' . $id1, [], $payload);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
-        $this->assertContains( '{"id":'.$id1.'}', $content );
+        $this->assertContains('{"id":' . $id1 . '}', $content);
 
-        $result = $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id1 );
+        $result = $this->makeRequest(Verbs::GET, static::RESOURCE . '/' . $id1);
         $resultArray = $result->getContent();
 
-        $this->assertEquals( "unit-test-string", $resultArray['description'] );
+        $this->assertEquals("unit-test-string", $resultArray['description']);
     }
 
-    public function testPATCHServiceByIds( $verb = Verbs::PATCH )
+    public function testPATCHServiceByIds($verb = Verbs::PATCH)
     {
         $id1 = $this->createDbService(1);
         $id2 = $this->createDbService(2);
@@ -278,169 +260,162 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                         "label":"unit-test-label"
                     }]';
 
-        $rs = $this->makeRequest( $verb, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"], $payload );
+        $rs = $this->makeRequest($verb, static::RESOURCE, ['ids' => "$id1,$id2,$id3"], $payload);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
-        $this->assertContains( '{"record":[{"id":'.$id1.'},{"id":'.$id2.'},{"id":'.$id3.'}]}', $content );
+        $this->assertContains('{"record":[{"id":' . $id1 . '},{"id":' . $id2 . '},{"id":' . $id3 . '}]}', $content);
 
-        $result = $this->makeRequest( Verbs::GET, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"] );
+        $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
         $ra = $result->getContent();
 
-        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+        $dColumn = implode(",", array_column($ra['record'], 'description'));
+        $lColumn = implode(",", array_column($ra['record'], 'label'));
 
-        $this->assertEquals( "unit-test-description,unit-test-description,unit-test-description", $dColumn );
-        $this->assertEquals( "unit-test-label,unit-test-label,unit-test-label", $lColumn );
+        $this->assertEquals("unit-test-description,unit-test-description,unit-test-description", $dColumn);
+        $this->assertEquals("unit-test-label,unit-test-label,unit-test-label", $lColumn);
     }
 
-    public function testPATCHServiceBulk( $verb = Verbs::PATCH )
+    public function testPATCHServiceBulk($verb = Verbs::PATCH)
     {
         $id1 = $this->createDbService(1);
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
         $payload = '[{
-                        "id":'.$id1.',
+                        "id":' . $id1 . ',
                         "description":"unit-test-d1",
                         "label":"unit-test-l1"
                     },
                     {
-                        "id":'.$id2.',
+                        "id":' . $id2 . ',
                         "description":"unit-test-d2",
                         "label":"unit-test-l2"
                     },
                     {
-                        "id":'.$id3.',
+                        "id":' . $id3 . ',
                         "description":"unit-test-d3",
                         "label":"unit-test-l3"
                     }]';
 
-        $rs = $this->makeRequest( $verb, static::RESOURCE, [], $payload );
+        $rs = $this->makeRequest($verb, static::RESOURCE, [], $payload);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
-        $this->assertContains( '{"record":[{"id":'.$id1.'},{"id":'.$id2.'},{"id":'.$id3.'}]}', $content );
+        $this->assertContains('{"record":[{"id":' . $id1 . '},{"id":' . $id2 . '},{"id":' . $id3 . '}]}', $content);
 
-        $result = $this->makeRequest( Verbs::GET, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"] );
+        $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
         $ra = $result->getContent();
-        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+        $dColumn = implode(",", array_column($ra['record'], 'description'));
+        $lColumn = implode(",", array_column($ra['record'], 'label'));
 
-        $this->assertEquals( "unit-test-d1,unit-test-d2,unit-test-d3", $dColumn );
-        $this->assertEquals( "unit-test-l1,unit-test-l2,unit-test-l3", $lColumn );
+        $this->assertEquals("unit-test-d1,unit-test-d2,unit-test-d3", $dColumn);
+        $this->assertEquals("unit-test-l1,unit-test-l2,unit-test-l3", $lColumn);
     }
 
-    public function testPATCHServiceBulkWithFields( $verb = Verbs::PATCH )
+    public function testPATCHServiceBulkWithFields($verb = Verbs::PATCH)
     {
         $id1 = $this->createDbService(1);
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
         $payload = '[{
-                        "id":'.$id1.',
+                        "id":' . $id1 . ',
                         "description":"unit-test-d1",
                         "label":"unit-test-l1"
                     },
                     {
-                        "id":'.$id2.',
+                        "id":' . $id2 . ',
                         "description":"unit-test-d2",
                         "label":"unit-test-l2"
                     },
                     {
-                        "id":'.$id3.',
+                        "id":' . $id3 . ',
                         "description":"unit-test-d3",
                         "label":"unit-test-l3"
                     }]';
 
-
-        $rs = $this->makeRequest( $verb, static::RESOURCE, ['fields'=>'label'], $payload );
+        $rs = $this->makeRequest($verb, static::RESOURCE, ['fields' => 'label'], $payload);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
-        $this->assertContains( '{"record":[{"label":"unit-test-l1"},{"label":"unit-test-l2"},{"label":"unit-test-l3"}]}', $content );
+        $this->assertContains('{"record":[{"label":"unit-test-l1"},{"label":"unit-test-l2"},{"label":"unit-test-l3"}]}',
+            $content);
     }
 
-    public function testPATCHServiceBulkWithContinue( $verb = Verbs::PATCH )
+    public function testPATCHServiceBulkWithContinue($verb = Verbs::PATCH)
     {
         $id1 = $this->createDbService(1);
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
         $payload = '[{
-                        "id":'.$id1.',
+                        "id":' . $id1 . ',
                         "description":"unit-test-d1",
                         "label":"unit-test-l1"
                     },
                     {
-                        "id":'.$id2.',
+                        "id":' . $id2 . ',
                         "name":"db1",
                         "description":"unit-test-d2",
                         "label":"unit-test-l2"
                     },
                     {
-                        "id":'.$id3.',
+                        "id":' . $id3 . ',
                         "description":"unit-test-d3",
                         "label":"unit-test-l3"
                     }]';
 
-
-        try
-        {
-            $this->makeRequest( $verb, static::RESOURCE, [ 'continue' => '1' ], $payload );
-        }
-        catch(\DreamFactory\Core\Exceptions\BadRequestException $e)
-        {
+        try {
+            $this->makeRequest($verb, static::RESOURCE, ['continue' => '1'], $payload);
+        } catch (\DreamFactory\Core\Exceptions\BadRequestException $e) {
 
             $this->assertEquals(400, $e->getStatusCode());
-            $this->assertContains( 'Batch Error: Not all parts of the request were successful.', $e->getMessage() );
+            $this->assertContains('Batch Error: Not all parts of the request were successful.', $e->getMessage());
 
-            $result = $this->makeRequest( Verbs::GET, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"] );
+            $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
             $ra = $result->getContent();
-            $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-            $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+            $dColumn = implode(",", array_column($ra['record'], 'description'));
+            $lColumn = implode(",", array_column($ra['record'], 'label'));
 
-            $this->assertEquals( "unit-test-d1,Local Database2,unit-test-d3", $dColumn );
-            $this->assertEquals( "unit-test-l1,Database2,unit-test-l3", $lColumn );
+            $this->assertEquals("unit-test-d1,Local Database2,unit-test-d3", $dColumn);
+            $this->assertEquals("unit-test-l1,Database2,unit-test-l3", $lColumn);
         }
     }
 
-
-    public function testPATCHServiceBulkWithRollback( $verb = Verbs::PATCH )
+    public function testPATCHServiceBulkWithRollback($verb = Verbs::PATCH)
     {
         $id1 = $this->createDbService(1);
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
         $payload = '[{
-                        "id":'.$id1.',
+                        "id":' . $id1 . ',
                         "description":"unit-test-d1",
                         "label":"unit-test-l1"
                     },
                     {
-                        "id":'.$id2.',
+                        "id":' . $id2 . ',
                         "name":"db1",
                         "description":"unit-test-d2",
                         "label":"unit-test-l2"
                     },
                     {
-                        "id":'.$id3.',
+                        "id":' . $id3 . ',
                         "description":"unit-test-d3",
                         "label":"unit-test-l3"
                     }]';
 
-        try
-        {
-            $this->makeRequest( $verb, static::RESOURCE, [ 'rollback' => 'true' ], $payload );
-        }
-        catch(\DreamFactory\Core\Exceptions\InternalServerErrorException $e)
-        {
+        try {
+            $this->makeRequest($verb, static::RESOURCE, ['rollback' => 'true'], $payload);
+        } catch (\DreamFactory\Core\Exceptions\InternalServerErrorException $e) {
             $this->assertEquals(500, $e->getStatusCode());
-            $this->assertContains("Integrity constraint violation: 1062 Duplicate entry 'db1' for key 'service_name_unique'", $e->getMessage());
-            $result = $this->makeRequest( Verbs::GET, static::RESOURCE, ['ids'=>"$id1,$id2,$id3"] );
+            $this->assertContains("Integrity constraint violation: 1062 Duplicate entry 'db1' for key 'service_name_unique'",
+                $e->getMessage());
+            $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
             $ra = $result->getContent();
-            $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-            $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+            $dColumn = implode(",", array_column($ra['record'], 'description'));
+            $lColumn = implode(",", array_column($ra['record'], 'label'));
 
-            $this->assertEquals( "Local Database1,Local Database2,Local Database3", $dColumn );
-            $this->assertEquals( "Database1,Database2,Database3", $lColumn );
+            $this->assertEquals("Local Database1,Local Database2,Local Database3", $dColumn);
+            $this->assertEquals("Database1,Database2,Database3", $lColumn);
         }
     }
 
@@ -451,11 +426,11 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
     public function testDELETEServiceById()
     {
         $id1 = $this->createDbService(1);
-        $rs = $this->makeRequest( Verbs::DELETE, static::RESOURCE.'/'.$id1 );
-        $this->assertEquals( '{"id":'.$id1.'}', json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES) );
+        $rs = $this->makeRequest(Verbs::DELETE, static::RESOURCE . '/' . $id1);
+        $this->assertEquals('{"id":' . $id1 . '}', json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES));
 
-        $this->setExpectedException( '\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.' );
-        $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id1 );
+        $this->setExpectedException('\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.');
+        $this->makeRequest(Verbs::GET, static::RESOURCE . '/' . $id1);
     }
 
     public function testDELETEServiceByIds()
@@ -464,20 +439,17 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
-        $rs = $this->makeRequest( Verbs::DELETE, static::RESOURCE, ['ids'=>"$id1,$id3"] );
+        $rs = $this->makeRequest(Verbs::DELETE, static::RESOURCE, ['ids' => "$id1,$id3"]);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
-        $this->assertEquals( '{"record":[{"id":'.$id1.'},{"id":'.$id3.'}]}', $content );
+        $this->assertEquals('{"record":[{"id":' . $id1 . '},{"id":' . $id3 . '}]}', $content);
 
-        try
-        {
-            $this->makeRequest( Verbs::GET, static::RESOURCE . '/' . $id1 );
-        }
-        catch(\DreamFactory\Core\Exceptions\NotFoundException $e)
-        {
+        try {
+            $this->makeRequest(Verbs::GET, static::RESOURCE . '/' . $id1);
+        } catch (\DreamFactory\Core\Exceptions\NotFoundException $e) {
             $this->assertEquals(404, $e->getStatusCode());
-            $rs = $this->makeRequest( Verbs::GET, static::RESOURCE.'/'. $id2 );
+            $rs = $this->makeRequest(Verbs::GET, static::RESOURCE . '/' . $id2);
             $data = $rs->getContent();
-            $this->assertEquals( "Database2", $data['label'] );
+            $this->assertEquals("Database2", $data['label']);
         }
     }
 
@@ -487,19 +459,18 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
-        $payload = '[{"id":'.$id2.'},{"id":'.$id3.'}]';
+        $payload = '[{"id":' . $id2 . '},{"id":' . $id3 . '}]';
 
-        $rs = $this->makeRequest( Verbs::DELETE, static::RESOURCE, [], $payload );
+        $rs = $this->makeRequest(Verbs::DELETE, static::RESOURCE, [], $payload);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
-        $this->assertEquals( '{"record":[{"id":'.$id2.'},{"id":'.$id3.'}]}', $content );
+        $this->assertEquals('{"record":[{"id":' . $id2 . '},{"id":' . $id3 . '}]}', $content);
 
-        $rs = $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id1 );
+        $rs = $this->makeRequest(Verbs::GET, static::RESOURCE . '/' . $id1);
         $data = $rs->getContent();
-        $this->assertEquals( "Database1", $data['label'] );
+        $this->assertEquals("Database1", $data['label']);
 
-
-        $this->setExpectedException( '\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.' );
-        $this->makeRequest( Verbs::GET, static::RESOURCE.'/'.$id3 );
+        $this->setExpectedException('\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.');
+        $this->makeRequest(Verbs::GET, static::RESOURCE . '/' . $id3);
     }
 
     public function testDELETEServiceBulkWithFields()
@@ -508,33 +479,32 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
-        $payload = '[{"id":'.$id2.'},{"id":'.$id3.'}]';
+        $payload = '[{"id":' . $id2 . '},{"id":' . $id3 . '}]';
 
-        $rs = $this->makeRequest( Verbs::DELETE, static::RESOURCE, ['fields'=>'name,type'], $payload );
+        $rs = $this->makeRequest(Verbs::DELETE, static::RESOURCE, ['fields' => 'name,type'], $payload);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
-        $this->assertEquals( '{"record":[{"name":"db2","type":"sql_db"},{"name":"db3","type":"sql_db"}]}', $content );
+        $this->assertEquals('{"record":[{"name":"db2","type":"sql_db"},{"name":"db3","type":"sql_db"}]}', $content);
     }
 
     /************************************************
      * Internal functions
      ************************************************/
 
-    protected function deleteDbService( $num )
+    protected function deleteDbService($num)
     {
         $serviceName = 'db' . $num;
-        $service = \DreamFactory\Core\Models\Service::whereName( $serviceName );
+        $service = \DreamFactory\Core\Models\Service::whereName($serviceName);
         $service->delete();
 
         return true;
     }
 
-    protected function createDbService( $num )
+    protected function createDbService($num)
     {
         $serviceName = 'db' . $num;
-        $service = \DreamFactory\Core\Models\Service::whereName( $serviceName )->first();
+        $service = \DreamFactory\Core\Models\Service::whereName($serviceName)->first();
 
-        if ( empty( $service ) )
-        {
+        if (empty($service)) {
             $service = \DreamFactory\Core\Models\Service::create(
                 [
                     "name"        => $serviceName,

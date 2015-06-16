@@ -1,22 +1,4 @@
 <?php
-/**
- * This file is part of the DreamFactory(tm)
- *
- * DreamFactory(tm) <http://github.com/dreamfactorysoftware/rave>
- * Copyright 2012-2014 DreamFactory Software, Inc. <support@dreamfactory.com>
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 
 namespace DreamFactory\Core\SqlDb\Services;
 
@@ -95,40 +77,37 @@ class SqlDb extends BaseDbService
      * @throws \InvalidArgumentException
      * @throws \Exception
      */
-    public function __construct( $settings = [ ] )
+    public function __construct($settings = [])
     {
-        parent::__construct( $settings );
+        parent::__construct($settings);
 
-        $config = ArrayUtils::clean( ArrayUtils::get( $settings, 'config' ) );
+        $config = ArrayUtils::clean(ArrayUtils::get($settings, 'config'));
 //        Session::replaceLookups( $config, true );
 
-        if ( null === ( $dsn = ArrayUtils::get( $config, 'dsn', null, true ) ) )
-        {
-            throw new \InvalidArgumentException( 'Database connection string (DSN) can not be empty.' );
+        if (null === ($dsn = ArrayUtils::get($config, 'dsn', null, true))) {
+            throw new \InvalidArgumentException('Database connection string (DSN) can not be empty.');
         }
 
-        $user = ArrayUtils::get( $config, 'username' );
-        $password = ArrayUtils::get( $config, 'password' );
+        $user = ArrayUtils::get($config, 'username');
+        $password = ArrayUtils::get($config, 'password');
 
-        $this->dbConn = new Connection( $dsn, $user, $password );
+        $this->dbConn = new Connection($dsn, $user, $password);
 
-        switch ( $this->dbConn->getDBName() )
-        {
+        switch ($this->dbConn->getDBName()) {
             case SqlDbDriverTypes::MYSQL:
             case SqlDbDriverTypes::MYSQLI:
-                $this->dbConn->setAttribute( \PDO::ATTR_EMULATE_PREPARES, true );
+                $this->dbConn->setAttribute(\PDO::ATTR_EMULATE_PREPARES, true);
                 break;
 
             case SqlDbDriverTypes::DBLIB:
-                $this->dbConn->setAttribute( \PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION );
+                $this->dbConn->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
                 break;
         }
 
-        $attributes = ArrayUtils::clean( ArrayUtils::get( $settings, 'attributes' ) );
+        $attributes = ArrayUtils::clean(ArrayUtils::get($settings, 'attributes'));
 
-        if ( !empty( $attributes ) )
-        {
-            $this->dbConn->setAttributes( $attributes );
+        if (!empty($attributes)) {
+            $this->dbConn->setAttributes($attributes);
         }
     }
 
@@ -137,20 +116,14 @@ class SqlDb extends BaseDbService
      */
     public function __destruct()
     {
-        if ( isset( $this->dbConn ) )
-        {
-            try
-            {
+        if (isset($this->dbConn)) {
+            try {
                 $this->dbConn->active = false;
                 $this->dbConn = null;
-            }
-            catch ( \PDOException $_ex )
-            {
-                error_log( "Failed to disconnect from database.\n{$_ex->getMessage()}" );
-            }
-            catch ( \Exception $_ex )
-            {
-                error_log( "Failed to disconnect from database.\n{$_ex->getMessage()}" );
+            } catch (\PDOException $_ex) {
+                error_log("Failed to disconnect from database.\n{$_ex->getMessage()}");
+            } catch (\Exception $_ex) {
+                error_log("Failed to disconnect from database.\n{$_ex->getMessage()}");
             }
         }
     }
@@ -170,36 +143,27 @@ class SqlDb extends BaseDbService
      */
     protected function checkConnection()
     {
-        if ( !isset( $this->dbConn ) )
-        {
-            throw new InternalServerErrorException( 'Database connection has not been initialized.' );
+        if (!isset($this->dbConn)) {
+            throw new InternalServerErrorException('Database connection has not been initialized.');
         }
 
-        try
-        {
-            $this->dbConn->setActive( true );
-        }
-        catch ( \PDOException $_ex )
-        {
-            throw new InternalServerErrorException( "Failed to connect to database.\n{$_ex->getMessage()}" );
-        }
-        catch ( \Exception $_ex )
-        {
-            throw new InternalServerErrorException( "Failed to connect to database.\n{$_ex->getMessage()}" );
+        try {
+            $this->dbConn->setActive(true);
+        } catch (\PDOException $_ex) {
+            throw new InternalServerErrorException("Failed to connect to database.\n{$_ex->getMessage()}");
+        } catch (\Exception $_ex) {
+            throw new InternalServerErrorException("Failed to connect to database.\n{$_ex->getMessage()}");
         }
     }
 
     /**
      * {@InheritDoc}
      */
-    protected function handleResource( array $resources )
+    protected function handleResource(array $resources)
     {
-        try
-        {
-            return parent::handleResource( $resources );
-        }
-        catch ( NotFoundException $_ex )
-        {
+        try {
+            return parent::handleResource($resources);
+        } catch (NotFoundException $_ex) {
             // If version 1.x, the resource could be a table
 //            if ($this->request->getApiVersion())
 //            {
@@ -244,37 +208,33 @@ class SqlDb extends BaseDbService
     {
         $base = parent::getApiDocInfo();
 
-        $apis = [ ];
-        $models = [ ];
-        foreach ($this->resources as $resourceInfo)
-        {
+        $apis = [];
+        $models = [];
+        foreach ($this->resources as $resourceInfo) {
             $className = $resourceInfo['class_name'];
 
-            if ( !class_exists( $className ) )
-            {
-                throw new InternalServerErrorException( 'Service configuration class name lookup failed for resource ' . $this->resourcePath );
+            if (!class_exists($className)) {
+                throw new InternalServerErrorException('Service configuration class name lookup failed for resource ' .
+                    $this->resourcePath);
             }
 
             /** @var BaseRestResource $resource */
-            $resource = $this->instantiateResource( $className, $resourceInfo );
+            $resource = $this->instantiateResource($className, $resourceInfo);
 
-            $_access = $this->getPermissions( $resource->name );
-            if ( !empty( $_access ) )
-            {
+            $_access = $this->getPermissions($resource->name);
+            if (!empty($_access)) {
                 $results = $resource->getApiDocInfo();
-                if (isset($results, $results['apis']))
-                {
-                    $apis = array_merge( $apis, $results['apis'] );
+                if (isset($results, $results['apis'])) {
+                    $apis = array_merge($apis, $results['apis']);
                 }
-                if (isset($results, $results['models']))
-                {
-                    $models = array_merge( $models, $results['models'] );
+                if (isset($results, $results['models'])) {
+                    $models = array_merge($models, $results['models']);
                 }
             }
         }
 
-        $base['apis'] = array_merge( $base['apis'], $apis );
-        $base['models'] = array_merge( $base['models'], $models );
+        $base['apis'] = array_merge($base['apis'], $apis);
+        $base['models'] = array_merge($base['models'], $models);
 
         return $base;
     }
