@@ -13,7 +13,6 @@ use DreamFactory\Core\SqlDbCore\Connection;
 use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Services\BaseDbService;
 use DreamFactory\Core\Resources\BaseRestResource;
-use DreamFactory\Core\Utility\Session;
 
 /**
  * Class SqlDb
@@ -45,22 +44,22 @@ class SqlDb extends BaseDbService
     protected $resources = [
         Schema::RESOURCE_NAME          => [
             'name'       => Schema::RESOURCE_NAME,
-            'class_name' => 'DreamFactory\\Core\\SqlDb\\Resources\\Schema',
+            'class_name' => Schema::class,
             'label'      => 'Schema',
         ],
         Table::RESOURCE_NAME           => [
             'name'       => Table::RESOURCE_NAME,
-            'class_name' => 'DreamFactory\\Core\\SqlDb\\Resources\\Table',
+            'class_name' => Table::class,
             'label'      => 'Tables',
         ],
         StoredProcedure::RESOURCE_NAME => [
             'name'       => StoredProcedure::RESOURCE_NAME,
-            'class_name' => 'DreamFactory\\Core\\SqlDb\\Resources\\StoredProcedure',
+            'class_name' => StoredProcedure::class,
             'label'      => 'Stored Procedures',
         ],
         StoredFunction::RESOURCE_NAME  => [
             'name'       => StoredFunction::RESOURCE_NAME,
-            'class_name' => 'DreamFactory\\Core\\SqlDb\\Resources\\StoredFunction',
+            'class_name' => StoredFunction::class,
             'label'      => 'Stored Functions',
         ],
     ];
@@ -167,7 +166,7 @@ class SqlDb extends BaseDbService
             // If version 1.x, the resource could be a table
 //            if ($this->request->getApiVersion())
 //            {
-//                $resource = $this->instantiateResource( 'DreamFactory\\Core\\SqlDb\\Resources\\Table', [ 'name' => $this->resource ] );
+//                $resource = $this->instantiateResource( Table::class, [ 'name' => $this->resource ] );
 //                $newPath = $this->resourceArray;
 //                array_shift( $newPath );
 //                $newPath = implode( '/', $newPath );

@@ -25,7 +25,7 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     protected $table = 'sql_db_config';
 
-    protected $fillable = ['service_id', 'dsn', 'username', 'password', 'db', 'options', 'attributes'];
+    protected $fillable = ['service_id', 'dsn', 'username', 'password', 'options', 'attributes'];
 
     protected $casts = ['options' => 'array', 'attributes' => 'array'];
 
@@ -41,5 +41,23 @@ class SqlDbConfig extends BaseServiceConfigModel
         Connection::requireDriver($driver);
 
         return true;
+    }
+
+    /**
+     * @param array $schema
+     */
+    protected static function prepareConfigSchemaField(array &$schema)
+    {
+        parent::prepareConfigSchemaField($schema);
+
+        switch ($schema['name'])
+        {
+            case 'options':
+                $schema['type'] = 'object(string,string)';
+                break;
+            case 'attributes':
+                $schema['type'] = 'object(string,string)';
+                break;
+        }
     }
 }

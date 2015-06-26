@@ -1,21 +1,22 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Database\Seeds;
 
-use DreamFactory\Core\Database\Seeds\BaseModelSeeder;
+use Illuminate\Database\Seeder;
+use Illuminate\Database\Eloquent\Model;
 
-class DatabaseSeeder extends BaseModelSeeder
+class DatabaseSeeder extends Seeder
 {
-    protected $modelClass = 'DreamFactory\\Core\\Models\\ServiceType';
+    /**
+     * Run the database seeds.
+     *
+     * @return void
+     */
+    public function run()
+    {
+        Model::unguard();
 
-    protected $records = [
-        [
-            'name'           => 'sql_db',
-            'class_name'     => 'DreamFactory\\Core\\SqlDb\\Services\\SqlDb',
-            'config_handler' => 'DreamFactory\\Core\\SqlDb\\Models\\SqlDbConfig',
-            'label'          => 'SQL DB',
-            'description'    => 'Database service supporting SQL connections.',
-            'group'          => 'Databases',
-            'singleton'      => false,
-        ]
-    ];
+        $this->call(ServiceTypeSeeder::class);
+        $this->call(DbTableExtrasSeeder::class);
+        $this->call(DbFieldExtrasSeeder::class);
+    }
 }
