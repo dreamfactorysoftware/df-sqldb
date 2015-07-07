@@ -39,7 +39,7 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
                 'name'        => static::SERVICE_NAME,
                 'label'       => 'SQL Database',
                 'description' => 'SQL database for testing',
-                'is_active'   => 1,
+                'is_active'   => true,
                 'type'        => 'sql_db',
                 'config'      => ['dsn'      => env('SQLDB_DSN'),
                                   'username' => env('SQLDB_USER'),

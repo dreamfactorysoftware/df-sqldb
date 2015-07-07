@@ -510,7 +510,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                     "name"        => $serviceName,
                     "label"       => "Database" . $num,
                     "description" => "Local Database" . $num,
-                    "is_active"   => 1,
+                    "is_active"   => true,
                     "type"        => "sql_db",
                     'config'      => [
                         'dsn'        => 'foo',

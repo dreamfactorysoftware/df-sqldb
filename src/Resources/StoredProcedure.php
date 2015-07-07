@@ -280,7 +280,7 @@ class StoredProcedure extends BaseDbResource
     public function getApiDocInfo()
     {
         $path = '/' . $this->getServiceName() . '/' . $this->getFullPathName();
-        $eventPath = '/' . $this->getServiceName() . '.' . $this->getFullPathName('.');
+        $eventPath = $this->getServiceName() . '.' . $this->getFullPathName('.');
         $_base = parent::getApiDocInfo();
 
         $_apis = [

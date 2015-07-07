@@ -52,6 +52,15 @@ class SqlDbConfig extends BaseServiceConfigModel
 
         switch ($schema['name'])
         {
+            case 'dsn':
+                $schema['label'] = 'DSN';
+                break;
+            case 'username':
+                $schema['type'] = 'string';
+                break;
+            case 'password':
+                $schema['type'] = 'password';
+                break;
             case 'options':
                 $schema['type'] = 'object(string,string)';
                 break;
