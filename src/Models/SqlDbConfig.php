@@ -53,7 +53,16 @@ class SqlDbConfig extends BaseServiceConfigModel
         switch ($schema['name'])
         {
             case 'driver':
-                $schema['options'] = Connection::getAvailableDrivers();
+                $values = [];
+                $supported = Connection::getAvailableDrivers();
+                foreach (Connection::$driverLabelMap as $driver => $label){
+                    $disable = !in_array($driver, $supported);
+                    $dsn = ArrayUtils::get(Connection::$driverDsnMap, $driver, '');
+                    $values[] = ['name' => $driver, 'label' => $label, 'disable' => $disable, 'dsn' => $dsn];
+                }
+                $schema['type'] = 'picklist';
+                $schema['values'] = $values;
+                $schema['affects'] = 'dsn';
                 break;
             case 'dsn':
                 $schema['label'] = 'Connection String (DSN)';
