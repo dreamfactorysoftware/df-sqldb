@@ -17,7 +17,7 @@ class ServiceTypeSeeder extends BaseModelSeeder
             'config_handler' => SqlDbConfig::class,
             'label'          => 'SQL DB',
             'description'    => 'Database service supporting SQL connections.',
-            'group'          => 'Databases',
+            'group'          => 'Database',
             'singleton'      => false,
         ]
     ];

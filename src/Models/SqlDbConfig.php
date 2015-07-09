@@ -25,7 +25,7 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     protected $table = 'sql_db_config';
 
-    protected $fillable = ['service_id', 'dsn', 'username', 'password', 'options', 'attributes'];
+    protected $fillable = ['service_id', 'driver', 'dsn', 'username', 'password', 'options', 'attributes'];
 
     protected $casts = ['options' => 'array', 'attributes' => 'array'];
 
@@ -52,8 +52,11 @@ class SqlDbConfig extends BaseServiceConfigModel
 
         switch ($schema['name'])
         {
+            case 'driver':
+                $schema['options'] = Connection::getAvailableDrivers();
+                break;
             case 'dsn':
-                $schema['label'] = 'DSN';
+                $schema['label'] = 'Connection String (DSN)';
                 break;
             case 'username':
                 $schema['type'] = 'string';
