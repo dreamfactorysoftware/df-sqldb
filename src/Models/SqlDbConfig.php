@@ -50,12 +50,11 @@ class SqlDbConfig extends BaseServiceConfigModel
     {
         parent::prepareConfigSchemaField($schema);
 
-        switch ($schema['name'])
-        {
+        switch ($schema['name']) {
             case 'driver':
                 $values = [];
                 $supported = Connection::getAvailableDrivers();
-                foreach (Connection::$driverLabelMap as $driver => $label){
+                foreach (Connection::$driverLabelMap as $driver => $label) {
                     $disable = !in_array($driver, $supported);
                     $dsn = ArrayUtils::get(Connection::$driverDsnMap, $driver, '');
                     $values[] = ['name' => $driver, 'label' => $label, 'disable' => $disable, 'dsn' => $dsn];
@@ -63,9 +62,15 @@ class SqlDbConfig extends BaseServiceConfigModel
                 $schema['type'] = 'picklist';
                 $schema['values'] = $values;
                 $schema['affects'] = 'dsn';
+                $schema['description'] =
+                    'Select the driver that matches the database type for which you want to connect.' .
+                    ' For further information, see http://php.net/manual/en/pdo.drivers.php.';
                 break;
             case 'dsn':
                 $schema['label'] = 'Connection String (DSN)';
+                $schema['description'] =
+                    'The Data Source Name, or DSN, contains the information required to connect to the database.' .
+                    ' For further information, see http://php.net/manual/en/pdo.construct.php.';
                 break;
             case 'username':
                 $schema['type'] = 'string';
@@ -75,9 +80,13 @@ class SqlDbConfig extends BaseServiceConfigModel
                 break;
             case 'options':
                 $schema['type'] = 'object(string,string)';
+                $schema['description'] = 'A key=>value array of connection options.';
                 break;
             case 'attributes':
                 $schema['type'] = 'object(string,string)';
+                $schema['description'] =
+                    'A key=>value array of attributes to be set after connection.' .
+                    ' For further information, see http://php.net/manual/en/pdo.setattribute.php';
                 break;
         }
     }
