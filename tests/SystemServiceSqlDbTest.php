@@ -52,7 +52,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 
         $rs = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
         $data = $rs->getContent();
-        $ids = implode(",", array_column($data['record'], 'id'));
+        $ids = implode(",", array_column($data[static::$wrapper], 'id'));
 
         $this->assertTrue($ids == "$id1,$id2,$id3");
     }
@@ -69,7 +69,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $rs = $this->makeRequest(Verbs::GET, static::RESOURCE, [], $payload);
 
         $data = $rs->getContent();
-        $label = implode(",", array_column($data['record'], 'label'));
+        $label = implode(",", array_column($data[static::$wrapper], 'label'));
 
         $this->assertEquals("Database1,Database2", $label);
     }
@@ -119,9 +119,9 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $data = $rs->getContent();
         $this->deleteDbService(9);
         $this->deleteDbService(10);
-        $this->assertTrue(is_array($data['record']));
+        $this->assertTrue(is_array($data[static::$wrapper]));
 
-        foreach ($data['record'] as $r) {
+        foreach ($data[static::$wrapper] as $r) {
             $this->assertTrue($r['id'] > 0);
         }
     }
@@ -174,9 +174,9 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $data = $rs->getContent();
         $this->deleteDbService(9);
         $this->deleteDbService(10);
-        $this->assertTrue(is_array($data['record']));
+        $this->assertTrue(is_array($data[static::$wrapper]));
 
-        foreach ($data['record'] as $r) {
+        foreach ($data[static::$wrapper] as $r) {
             $this->assertTrue($r['id'] > 0);
         }
     }
@@ -268,8 +268,8 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
         $ra = $result->getContent();
 
-        $dColumn = implode(",", array_column($ra['record'], 'description'));
-        $lColumn = implode(",", array_column($ra['record'], 'label'));
+        $dColumn = implode(",", array_column($ra[static::$wrapper], 'description'));
+        $lColumn = implode(",", array_column($ra[static::$wrapper], 'label'));
 
         $this->assertEquals("unit-test-description,unit-test-description,unit-test-description", $dColumn);
         $this->assertEquals("unit-test-label,unit-test-label,unit-test-label", $lColumn);
@@ -304,8 +304,8 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 
         $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
         $ra = $result->getContent();
-        $dColumn = implode(",", array_column($ra['record'], 'description'));
-        $lColumn = implode(",", array_column($ra['record'], 'label'));
+        $dColumn = implode(",", array_column($ra[static::$wrapper], 'description'));
+        $lColumn = implode(",", array_column($ra[static::$wrapper], 'label'));
 
         $this->assertEquals("unit-test-d1,unit-test-d2,unit-test-d3", $dColumn);
         $this->assertEquals("unit-test-l1,unit-test-l2,unit-test-l3", $lColumn);
@@ -372,8 +372,8 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 
             $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
             $ra = $result->getContent();
-            $dColumn = implode(",", array_column($ra['record'], 'description'));
-            $lColumn = implode(",", array_column($ra['record'], 'label'));
+            $dColumn = implode(",", array_column($ra[static::$wrapper], 'description'));
+            $lColumn = implode(",", array_column($ra[static::$wrapper], 'label'));
 
             $this->assertEquals("unit-test-d1,Local Database2,unit-test-d3", $dColumn);
             $this->assertEquals("unit-test-l1,Database2,unit-test-l3", $lColumn);
@@ -411,8 +411,8 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                 $e->getMessage());
             $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
             $ra = $result->getContent();
-            $dColumn = implode(",", array_column($ra['record'], 'description'));
-            $lColumn = implode(",", array_column($ra['record'], 'label'));
+            $dColumn = implode(",", array_column($ra[static::$wrapper], 'description'));
+            $lColumn = implode(",", array_column($ra[static::$wrapper], 'label'));
 
             $this->assertEquals("Local Database1,Local Database2,Local Database3", $dColumn);
             $this->assertEquals("Database1,Database2,Database3", $lColumn);

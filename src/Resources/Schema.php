@@ -84,7 +84,7 @@ class Schema extends BaseDbSchemaResource
             }
         }
 
-        return $this->makeResourceList($resources, 'name', $fields, 'resource');
+        return $this->cleanResources($resources, 'name', $fields);
     }
 
     public function listAccessComponents($schema = null, $refresh = false)

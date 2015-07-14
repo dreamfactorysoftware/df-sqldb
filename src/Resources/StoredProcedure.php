@@ -146,7 +146,7 @@ class StoredProcedure extends BaseDbResource
             }
         }
 
-        return $this->makeResourceList($resources, 'name', $fields, 'resource');
+        return $this->cleanResources($resources, 'name', $fields);
     }
 
     public function listAccessComponents($schema = null, $refresh = false)

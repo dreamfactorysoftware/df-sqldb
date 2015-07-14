@@ -68,14 +68,14 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request = new TestServiceRequest();
         $rs = $this->service->handleRequest($request);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('resource', $data);
-        $this->assertCount(4, $data['resource']);
-//        $this->assert( '_schema', $data['resource'] );
-//        $this->assertCount( 3, $data['resource'] );
-//        $this->assertArrayHasKey( '_proc', $data['resource'] );
-//        $this->assertCount( 3, $data['resource'] );
-//        $this->assertArrayHasKey( '_func', $data['resource'] );
-//        $this->assertCount( 3, $data['resource'] );
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertCount(4, $data[static::$wrapper]);
+//        $this->assert( '_schema', $data[static::$wrapper] );
+//        $this->assertCount( 3, $data[static::$wrapper] );
+//        $this->assertArrayHasKey( '_proc', $data[static::$wrapper] );
+//        $this->assertCount( 3, $data[static::$wrapper] );
+//        $this->assertArrayHasKey( '_func', $data[static::$wrapper] );
+//        $this->assertCount( 3, $data[static::$wrapper] );
     }
 
     public function testSchemaEmpty()
@@ -83,8 +83,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request = new TestServiceRequest();
         $rs = $this->service->handleRequest($request, Schema::RESOURCE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('resource', $data);
-        $this->assertEmpty($data['resource']);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertEmpty($data[static::$wrapper]);
     }
 
     public function testProceduresEmpty()
@@ -92,8 +92,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request = new TestServiceRequest();
         $rs = $this->service->handleRequest($request, StoredProcedure::RESOURCE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('resource', $data);
-        $this->assertEmpty($data['resource']);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertEmpty($data[static::$wrapper]);
     }
 
     public function testFunctionsEmpty()
@@ -101,8 +101,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request = new TestServiceRequest();
         $rs = $this->service->handleRequest($request, StoredFunction::RESOURCE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('resource', $data);
-        $this->assertEmpty($data['resource']);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertEmpty($data[static::$wrapper]);
     }
 
     public function testCreateTable()
@@ -140,8 +140,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request = new TestServiceRequest();
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('record', $data);
-        $this->assertEmpty($data['record']);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertEmpty($data[static::$wrapper]);
     }
 
     public function testCreateRecords()
@@ -165,8 +165,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('record', $data);
-        $this->assertCount(3, $data['record']);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertCount(3, $data[static::$wrapper]);
     }
 
     public function testGetRecordById()
@@ -182,7 +182,7 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request = new TestServiceRequest(Verbs::GET, ['ids' => '2,3']);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
         $data = $rs->getContent();
-        $ids = implode(",", array_column($data['record'], static::TABLE_ID));
+        $ids = implode(",", array_column($data[static::$wrapper], static::TABLE_ID));
         $this->assertTrue($ids == "2,3");
     }
 
@@ -209,8 +209,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('record', $data);
-        $this->assertCount(1, $data['record']);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertCount(1, $data[static::$wrapper]);
     }
 
     public function testCreateRecordsNoWrap()
@@ -230,8 +230,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('record', $data);
-        $this->assertCount(2, $data['record']);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertCount(2, $data[static::$wrapper]);
     }
 
     public function testCreateRecordReturnFields()
@@ -242,10 +242,10 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('record', $data);
-        $this->assertCount(1, $data['record']);
-        $this->assertArrayHasKey('name', $data['record'][0]);
-        $this->assertArrayHasKey('complete', $data['record'][0]);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertCount(1, $data[static::$wrapper]);
+        $this->assertArrayHasKey('name', $data[static::$wrapper][0]);
+        $this->assertArrayHasKey('complete', $data[static::$wrapper][0]);
     }
 
     public function testCreateRecordsWithContinue()
@@ -408,8 +408,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testUpdateRecordByIds($verb = Verbs::PATCH)
     {
-//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+//        $dColumn = implode( ",", array_column( $ra[static::$wrapper], 'description' ) );
+//        $lColumn = implode( ",", array_column( $ra[static::$wrapper], 'label' ) );
 //        $this->assertEquals( "unit-test-description,unit-test-description,unit-test-description", $dColumn );
 //        $this->assertEquals( "unit-test-label,unit-test-label,unit-test-label", $lColumn );
         $payload = '{"complete":true}';
@@ -429,8 +429,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
     public function testUpdateRecords($verb = Verbs::PATCH)
     {
 //        $this->assertContains( '{"record":[{"id":1},{"id":2},{"id":3}]}', $rs->getContent() );
-//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+//        $dColumn = implode( ",", array_column( $ra[static::$wrapper], 'description' ) );
+//        $lColumn = implode( ",", array_column( $ra[static::$wrapper], 'label' ) );
 //        $this->assertEquals( "unit-test-d1,unit-test-d2,unit-test-d3", $dColumn );
 //        $this->assertEquals( "unit-test-l1,unit-test-l2,unit-test-l3", $lColumn );
         $payload = '{
@@ -455,8 +455,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('record', $data);
-        $this->assertCount(3, $data['record']);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertCount(3, $data[static::$wrapper]);
     }
 
     public function testUpdateRecordsWithFields($verb = Verbs::PATCH)
@@ -467,10 +467,10 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
         $data = $rs->getContent();
-        $this->assertArrayHasKey('record', $data);
-        $this->assertCount(1, $data['record']);
-        $this->assertArrayHasKey('name', $data['record'][0]);
-        $this->assertArrayHasKey('complete', $data['record'][0]);
+        $this->assertArrayHasKey(static::$wrapper, $data);
+        $this->assertCount(1, $data[static::$wrapper]);
+        $this->assertArrayHasKey('name', $data[static::$wrapper][0]);
+        $this->assertArrayHasKey('complete', $data[static::$wrapper][0]);
 //        $this->assertContains( '{"record":[{"label":"unit-test-l1"},{"label":"unit-test-l2"},{"label":"unit-test-l3"}]}', $rs->getContent() );
     }
 
@@ -513,8 +513,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 //
 //        $result = $this->call( Verbs::GET, $this->buildPath( '_table/todo?ids=1,2,3') );
 //        $ra = json_decode( $result->getContent(), true );
-//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+//        $dColumn = implode( ",", array_column( $ra[static::$wrapper], 'description' ) );
+//        $lColumn = implode( ",", array_column( $ra[static::$wrapper], 'label' ) );
 //
 //        $this->assertEquals( "unit-test-d1,Local Database 2,unit-test-d3", $dColumn );
 //        $this->assertEquals( "unit-test-l1,Database 2,unit-test-l3", $lColumn );
@@ -560,8 +560,8 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 //
 //        $result = $this->call( Verbs::GET, $this->buildPath( '_table/todo?ids=1,2,3') );
 //        $ra = json_decode( $result->getContent(), true );
-//        $dColumn = implode( ",", array_column( $ra['record'], 'description' ) );
-//        $lColumn = implode( ",", array_column( $ra['record'], 'label' ) );
+//        $dColumn = implode( ",", array_column( $ra[static::$wrapper], 'description' ) );
+//        $lColumn = implode( ",", array_column( $ra[static::$wrapper], 'label' ) );
 //
 //        $this->assertEquals( "Local Database,Local Database 2,Local Database 3", $dColumn );
 //        $this->assertEquals( "Database,Database 2,Database 3", $lColumn );

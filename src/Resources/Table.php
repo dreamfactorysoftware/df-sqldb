@@ -145,7 +145,7 @@ class Table extends BaseDbTableResource
             }
         }
 
-        return $this->makeResourceList($resources, 'name', $fields, 'resource');
+        return $this->cleanResources($resources, 'name', $fields);
     }
 
     public function listAccessComponents($schema = null, $refresh = false)
@@ -2342,7 +2342,8 @@ class Table extends BaseDbTableResource
                         }
 
                         if (!empty($_errors)) {
-                            $_context = ['error' => $_errors, 'record' => $_out];
+                            $wrapper = \Config::get('df.resources_wrapper', 'resource');
+                            $_context = ['error' => $_errors, $wrapper => $_out];
                             throw new NotFoundException('Batch Error: Not all records could be retrieved.', null, null,
                                 $_context);
                         }
