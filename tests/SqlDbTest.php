@@ -146,21 +146,23 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testCreateRecords()
     {
-        $payload = '{
-	"record": [
-		{
-			"name": "test1",
-			"complete": false
-		},
-		{
-			"name": "test2",
-			"complete": true
-		},
-		{
-			"name": "test3"
-		}
-	]
-}';
+        $payload = '[
+            {
+                "name": "test1",
+                "complete": false
+            },
+            {
+                "name": "test2",
+                "complete": true
+            },
+            {
+                "name": "test3"
+            }
+	    ]';
+
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
         $request = new TestServiceRequest(Verbs::POST);
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
@@ -204,7 +206,10 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testCreateRecord()
     {
-        $payload = '{"record":[{"name":"test4","complete":false}]}';
+        $payload = '[{"name":"test4","complete":false}]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
         $request = new TestServiceRequest(Verbs::POST);
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
@@ -236,7 +241,10 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testCreateRecordReturnFields()
     {
-        $payload = '{"record":[{"name":"test7","complete":true}]}';
+        $payload = '[{"name":"test7","complete":true}]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
 
         $request = new TestServiceRequest(Verbs::POST, ['fields' => 'name,complete']);
         $request->setContent($payload, DataFormats::JSON);
@@ -250,23 +258,24 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testCreateRecordsWithContinue()
     {
-        $payload = '{
-	"record": [
-		{
-			"name": "test8",
-			"complete": false
-		},
-		{
-			"name": "test5",
-			"complete": true
-		},
-		{
-			"name": "test9",
-			"complete": null
-		}
-	]
-}';
+        $payload = '[
+            {
+                "name": "test8",
+                "complete": false
+            },
+            {
+                "name": "test5",
+                "complete": true
+            },
+            {
+                "name": "test9",
+                "complete": null
+            }
+        ]';
 
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
         $request = new TestServiceRequest(Verbs::POST, ['continue' => true]);
         $request->setContent($payload, DataFormats::JSON);
         try {
@@ -282,21 +291,22 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testCreateRecordsWithRollback()
     {
-        $payload = '{
-	"record": [
-		{
-			"name": "testRollback",
-			"complete": false
-		},
-		{
-			"name": "test5",
-			"complete": true
-		},
-		{
-			"name": "testAfter"
-		}
-	]
-}';
+        $payload = '[
+            {
+                "name": "testRollback",
+                "complete": false
+            },
+            {
+                "name": "test5",
+                "complete": true
+            },
+            {
+                "name": "testAfter"
+            }
+        ]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
 
         $request = new TestServiceRequest(Verbs::POST, ['rollback' => true]);
         $request->setContent($payload, DataFormats::JSON);
@@ -313,10 +323,10 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testCreateRecordBadRequest()
     {
-        $payload = '{"record":[{
-                        "name":"test1",
-                        "complete":true
-                    }]}';
+        $payload = '[{"name":"test1", "complete":true}]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
 
         $request = new TestServiceRequest(Verbs::POST);
         $request->setContent($payload, DataFormats::JSON);
@@ -332,10 +342,10 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testCreateRecordFailNotNullField()
     {
-        $payload = '{"record":[{
-                        "name":null,
-                        "complete":true
-                    }]}';
+        $payload = '[{"name":null, "complete":true}]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
 
         $request = new TestServiceRequest(Verbs::POST);
         $request->setContent($payload, DataFormats::JSON);
@@ -351,9 +361,10 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testCreateRecordFailMissingRequiredField()
     {
-        $payload = '{"record":[{
-                        "complete":true
-                    }]}';
+        $payload = '[{"complete":true}]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
 
         $request = new TestServiceRequest(Verbs::POST);
         $request->setContent($payload, DataFormats::JSON);
@@ -433,24 +444,26 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 //        $lColumn = implode( ",", array_column( $ra[static::$wrapper], 'label' ) );
 //        $this->assertEquals( "unit-test-d1,unit-test-d2,unit-test-d3", $dColumn );
 //        $this->assertEquals( "unit-test-l1,unit-test-l2,unit-test-l3", $lColumn );
-        $payload = '{
-	"record": [
-		{
-		    "id": 1,
-			"name": "test1Update",
-			"complete": false
-		},
-		{
-		    "id": 2,
-			"name": "test2Update",
-			"complete": true
-		},
-		{
-		    "id": 3,
-			"name": "test3Update"
-		}
-	]
-}';
+        $payload = '[
+            {
+                "id": 1,
+                "name": "test1Update",
+                "complete": false
+            },
+            {
+                "id": 2,
+                "name": "test2Update",
+                "complete": true
+            },
+            {
+                "id": 3,
+                "name": "test3Update"
+            }
+        ]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
+
         $request = new TestServiceRequest($verb);
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
@@ -461,7 +474,10 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testUpdateRecordsWithFields($verb = Verbs::PATCH)
     {
-        $payload = '{"record":[{"id": 4, "name":"test4Update","complete":true}]}';
+        $payload = '[{"id": 4, "name":"test4Update","complete":true}]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
 
         $request = new TestServiceRequest($verb, ['fields' => 'name,complete']);
         $request->setContent($payload, DataFormats::JSON);
@@ -476,25 +492,26 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testUpdateRecordsWithContinue($verb = Verbs::PATCH)
     {
-        $payload = '{
-	"record": [
-		{
-		    "id": 8,
-			"name": "test8",
-			"complete": false
-		},
-		{
-		    "id": 5,
-			"name": "test5",
-			"complete": true
-		},
-		{
-		    "id": 9,
-			"name": "test9",
-			"complete": null
-		}
-	]
-}';
+        $payload = '[
+            {
+                "id": 8,
+                "name": "test8",
+                "complete": false
+            },
+            {
+                "id": 5,
+                "name": "test5",
+                "complete": true
+            },
+            {
+                "id": 9,
+                "name": "test9",
+                "complete": null
+            }
+        ]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
 
         $request = new TestServiceRequest($verb, ['continue' => true]);
         $request->setContent($payload, DataFormats::JSON);
@@ -522,24 +539,25 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
 
     public function testUpdateRecordsWithRollback($verb = Verbs::PATCH)
     {
-        $payload = '{
-	"record": [
-		{
-		    "id": 4,
-			"name": "testRollback",
-			"complete": false
-		},
-		{
-		    "id": 19,
-			"name": "test5",
-			"complete": true
-		},
-		{
-		    "id": 6,
-			"name": "testAfter"
-		}
-	]
-}';
+        $payload = '[
+            {
+                "id": 4,
+                "name": "testRollback",
+                "complete": false
+            },
+            {
+                "id": 19,
+                "name": "test5",
+                "complete": true
+            },
+            {
+                "id": 6,
+                "name": "testAfter"
+            }
+        ]';
+        if (static::$wrapper) {
+            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+        }
 
         $request = new TestServiceRequest($verb, ['rollback' => true]);
         $request->setContent($payload, DataFormats::JSON);
