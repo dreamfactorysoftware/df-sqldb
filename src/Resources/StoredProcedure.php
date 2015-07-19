@@ -126,14 +126,12 @@ class StoredProcedure extends BaseDbResource
         }
     }
 
-    /**
-     * @param null|string|array $fields
-     *
-     * @throws \Exception
-     * @return array
-     */
-    public function listResources($fields = null)
+    public function getResources($only_handlers = false)
     {
+        if ($only_handlers) {
+            return [];
+        }
+
         $refresh = $this->request->getParameterAsBool('refresh');
         $schema = $this->request->getParameter('schema', '');
 
@@ -146,7 +144,7 @@ class StoredProcedure extends BaseDbResource
             }
         }
 
-        return $this->cleanResources($resources, 'name', $fields);
+        return $resources;
     }
 
     public function listAccessComponents($schema = null, $refresh = false)
@@ -183,10 +181,10 @@ class StoredProcedure extends BaseDbResource
         foreach ($params as $_key => $_param) {
             // overcome shortcomings of passed in data
             if (is_array($_param)) {
-                if (null === $_pName = ArrayUtils::get($_param, 'name', null, false, true)) {
+                if (null === $_pName = ArrayUtils::get($_param, 'name', null, false)) {
                     $params[$_key]['name'] = "p$_key";
                 }
-                if (null === $_pType = ArrayUtils::get($_param, 'param_type', null, false, true)) {
+                if (null === $_pType = ArrayUtils::get($_param, 'param_type', null, false)) {
                     $params[$_key]['param_type'] = 'IN';
                 }
                 if (null === $_pValue = ArrayUtils::get($_param, 'value', null)) {
@@ -194,11 +192,11 @@ class StoredProcedure extends BaseDbResource
                     $params[$_key]['value'] = null;
                 }
                 if (false !== stripos(strval($_pType), 'OUT')) {
-                    if (null === $_rType = ArrayUtils::get($_param, 'type', null, false, true)) {
+                    if (null === $_rType = ArrayUtils::get($_param, 'type', null, false)) {
                         $_rType = (isset($_pValue)) ? gettype($_pValue) : 'string';
                         $params[$_key]['type'] = $_rType;
                     }
-                    if (null === $_rLength = ArrayUtils::get($_param, 'length', null, false, true)) {
+                    if (null === $_rLength = ArrayUtils::get($_param, 'length', null, false)) {
                         $_rLength = 256;
                         switch ($_rType) {
                             case 'int':
@@ -237,7 +235,7 @@ class StoredProcedure extends BaseDbResource
                             foreach ($_row as &$_sub) {
                                 if (is_array($_sub)) {
                                     foreach ($_sub as $_key => $_value) {
-                                        if (null !== $_type = ArrayUtils::get($schema, $_key, null, false, true)) {
+                                        if (null !== $_type = ArrayUtils::get($schema, $_key, null, false)) {
                                             $_sub[$_key] = DbUtilities::formatValue($_value, $_type);
                                         }
                                     }
@@ -245,7 +243,7 @@ class StoredProcedure extends BaseDbResource
                             }
                         } else {
                             foreach ($_row as $_key => $_value) {
-                                if (null !== $_type = ArrayUtils::get($schema, $_key, null, false, true)) {
+                                if (null !== $_type = ArrayUtils::get($schema, $_key, null, false)) {
                                     $_row[$_key] = DbUtilities::formatValue($_value, $_type);
                                 }
                             }
@@ -292,7 +290,7 @@ class StoredProcedure extends BaseDbResource
                         'summary'          => 'getStoredProcsList() - List callable stored procedures.',
                         'nickname'         => 'getStoredProcsList',
                         'notes'            => 'List the names of the available stored procedures on this database. ',
-                        'type'             => 'ComponentList',
+                        'type'             => 'ResourceList',
                         'event_name'       => [$eventPath . '.list'],
                         'parameters'       => [
                             [

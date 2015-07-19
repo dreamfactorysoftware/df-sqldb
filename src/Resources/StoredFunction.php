@@ -127,14 +127,12 @@ class StoredFunction extends BaseDbResource
         }
     }
 
-    /**
-     * @param null|string|array $fields
-     *
-     * @throws \Exception
-     * @return array
-     */
-    public function listResources($fields = null)
+    public function getResources($only_handlers = false)
     {
+        if ($only_handlers) {
+            return [];
+        }
+
         $refresh = $this->request->getParameterAsBool('refresh');
         $schema = $this->request->getParameter('schema', '');
 
@@ -148,7 +146,7 @@ class StoredFunction extends BaseDbResource
             }
         }
 
-        return $this->cleanResources($resources, 'name', $fields);
+        return $resources;
     }
 
     public function listAccessComponents($schema = null, $refresh = false)
@@ -185,7 +183,7 @@ class StoredFunction extends BaseDbResource
         foreach ($params as $_key => $_param) {
             // overcome shortcomings of passed in data
             if (is_array($_param)) {
-                if (null === $_pName = ArrayUtils::get($_param, 'name', null, false, true)) {
+                if (null === $_pName = ArrayUtils::get($_param, 'name', null, false)) {
                     $params[$_key]['name'] = "p$_key";
                 }
             } else {
@@ -216,7 +214,7 @@ class StoredFunction extends BaseDbResource
                             foreach ($_row as &$_sub) {
                                 if (is_array($_sub)) {
                                     foreach ($_sub as $_key => $_value) {
-                                        if (null !== $_type = ArrayUtils::get($schema, $_key, null, false, true)) {
+                                        if (null !== $_type = ArrayUtils::get($schema, $_key, null, false)) {
                                             $_sub[$_key] = DbUtilities::formatValue($_value, $_type);
                                         }
                                     }
@@ -224,7 +222,7 @@ class StoredFunction extends BaseDbResource
                             }
                         } else {
                             foreach ($_row as $_key => $_value) {
-                                if (null !== $_type = ArrayUtils::get($schema, $_key, null, false, true)) {
+                                if (null !== $_type = ArrayUtils::get($schema, $_key, null, false)) {
                                     $_row[$_key] = DbUtilities::formatValue($_value, $_type);
                                 }
                             }
@@ -259,7 +257,7 @@ class StoredFunction extends BaseDbResource
                         'summary'          => 'getStoredFuncsList() - List callable stored functions.',
                         'nickname'         => 'getStoredFuncsList',
                         'notes'            => 'List the names of the available stored functions on this database. ',
-                        'type'             => 'ComponentList',
+                        'type'             => 'ResourceList',
                         'event_name'       => [$eventPath . '.list'],
                         'parameters'       => [
                             [

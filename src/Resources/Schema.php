@@ -1,6 +1,7 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
+use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Inflector;
 use DreamFactory\Core\Enums\VerbsMask;
@@ -38,15 +39,16 @@ class Schema extends BaseDbSchemaResource
     }
 
     /**
-     * @param null|string|array $fields
-     *
-     * @throws \Exception
-     * @return array
+     * {@inheritdoc}
      */
-    public function listResources($fields = null)
+    public function getResources($only_handlers = false)
     {
-        $refresh = $this->request->getParameterAsBool('refresh');
-        $schema = $this->request->getParameter('schema', '');
+        if ($only_handlers) {
+            return [];
+        }
+
+        $refresh = $this->request->getParameterAsBool(ApiOptions::REFRESH);
+        $schema = $this->request->getParameter(ApiOptions::SCHEMA, '');
 
         $result = $this->listTables($schema, $refresh);
 
@@ -84,7 +86,7 @@ class Schema extends BaseDbSchemaResource
             }
         }
 
-        return $this->cleanResources($resources, 'name', $fields);
+        return $resources;
     }
 
     public function listAccessComponents($schema = null, $refresh = false)

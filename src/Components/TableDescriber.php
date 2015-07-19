@@ -1,6 +1,7 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Components;
 
+use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Library\Utility\ArrayUtils;
 
 trait TableDescriber
@@ -100,11 +101,13 @@ trait TableDescriber
 
     public static function getApiDocCommonModels()
     {
+        $wrapper = ResourcesWrapper::getWrapper();
+
         return [
             'TableSchemas'  => [
                 'id'         => 'TableSchemas',
                 'properties' => [
-                    'table' => [
+                    $wrapper => [
                         'type'        => 'Array',
                         'description' => 'An array of table definitions.',
                         'items'       => [

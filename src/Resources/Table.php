@@ -3,6 +3,8 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use Config;
+use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Inflector;
@@ -99,15 +101,16 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param null|string|array $fields
-     *
-     * @throws \Exception
-     * @return array
+     * {@inheritdoc}
      */
-    public function listResources($fields = null)
+    public function getResources($only_handlers = false)
     {
-        $refresh = $this->request->getParameterAsBool('refresh');
-        $schema = $this->request->getParameter('schema', '');
+        if ($only_handlers) {
+            return [];
+        }
+
+        $refresh = $this->request->getParameterAsBool(ApiOptions::REFRESH);
+        $schema = $this->request->getParameter(ApiOptions::SCHEMA, '');
 
         $result = $this->listTables($schema, $refresh);
 
@@ -145,7 +148,7 @@ class Table extends BaseDbTableResource
             }
         }
 
-        return $this->cleanResources($resources, 'name', $fields);
+        return $resources;
     }
 
     public function listAccessComponents($schema = null, $refresh = false)
@@ -2342,8 +2345,7 @@ class Table extends BaseDbTableResource
                         }
 
                         if (!empty($_errors)) {
-                            $wrapper = \Config::get('df.resources_wrapper', 'resource');
-                            $_context = ['error' => $_errors, $wrapper => $_out];
+                            $_context = ['error' => $_errors, ResourcesWrapper::getWrapper() => $_out];
                             throw new NotFoundException('Batch Error: Not all records could be retrieved.', null, null,
                                 $_context);
                         }
