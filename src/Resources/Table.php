@@ -151,6 +151,9 @@ class Table extends BaseDbTableResource
         return $resources;
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function listAccessComponents($schema = null, $refresh = false)
     {
         $output = [];

@@ -181,28 +181,6 @@ class SqlDb extends BaseDbService
     /**
      * {@inheritdoc}
      */
-//    protected function respond()
-//    {
-//        if ( Verbs::POST === $this->getRequestedAction() )
-//        {
-//            switch ( $this->resource )
-//            {
-//                case Table::RESOURCE_NAME:
-//                case Schema::RESOURCE_NAME:
-//                    if ( !( $this->response instanceof ServiceResponseInterface ) )
-//                    {
-//                        $this->response = ResponseFactory::create( $this->response, $this->outputFormat, ServiceResponseInterface::HTTP_CREATED );
-//                    }
-//                    break;
-//            }
-//        }
-//
-//        parent::respond();
-//    }
-
-    /**
-     * {@inheritdoc}
-     */
     public function getApiDocInfo()
     {
         $base = parent::getApiDocInfo();
