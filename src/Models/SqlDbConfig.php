@@ -31,7 +31,7 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     protected $encrypted = ['username', 'password'];
 
-    public static function validateConfig($config)
+    public static function validateConfig($config, $create=true)
     {
         if (null === ($dsn = ArrayUtils::get($config, 'dsn', null, true))) {
             throw new BadRequestException('Database connection string (DSN) can not be empty.');
