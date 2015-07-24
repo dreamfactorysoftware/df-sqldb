@@ -117,12 +117,12 @@ class SqlDb extends BaseDbService
     {
         if (isset($this->dbConn)) {
             try {
-                $this->dbConn->active = false;
+                $this->dbConn->setActive(false);
                 $this->dbConn = null;
-            } catch (\PDOException $_ex) {
-                error_log("Failed to disconnect from database.\n{$_ex->getMessage()}");
-            } catch (\Exception $_ex) {
-                error_log("Failed to disconnect from database.\n{$_ex->getMessage()}");
+            } catch (\PDOException $ex) {
+                error_log("Failed to disconnect from database.\n{$ex->getMessage()}");
+            } catch (\Exception $ex) {
+                error_log("Failed to disconnect from database.\n{$ex->getMessage()}");
             }
         }
     }
@@ -148,10 +148,10 @@ class SqlDb extends BaseDbService
 
         try {
             $this->dbConn->setActive(true);
-        } catch (\PDOException $_ex) {
-            throw new InternalServerErrorException("Failed to connect to database.\n{$_ex->getMessage()}");
-        } catch (\Exception $_ex) {
-            throw new InternalServerErrorException("Failed to connect to database.\n{$_ex->getMessage()}");
+        } catch (\PDOException $ex) {
+            throw new InternalServerErrorException("Failed to connect to database.\n{$ex->getMessage()}");
+        } catch (\Exception $ex) {
+            throw new InternalServerErrorException("Failed to connect to database.\n{$ex->getMessage()}");
         }
     }
 
@@ -162,7 +162,7 @@ class SqlDb extends BaseDbService
     {
         try {
             return parent::handleResource($resources);
-        } catch (NotFoundException $_ex) {
+        } catch (NotFoundException $ex) {
             // If version 1.x, the resource could be a table
 //            if ($this->request->getApiVersion())
 //            {
@@ -174,7 +174,7 @@ class SqlDb extends BaseDbService
 //                return $resource->handleRequest( $this->request, $newPath, $this->outputFormat );
 //            }
 
-            throw $_ex;
+            throw $ex;
         }
     }
 
@@ -198,8 +198,8 @@ class SqlDb extends BaseDbService
             /** @var BaseRestResource $resource */
             $resource = $this->instantiateResource($className, $resourceInfo);
 
-            $_access = $this->getPermissions($resource->name);
-            if (!empty($_access)) {
+            $access = $this->getPermissions($resource->name);
+            if (!empty($access)) {
                 $results = $resource->getApiDocInfo();
                 if (isset($results, $results['apis'])) {
                     $apis = array_merge($apis, $results['apis']);

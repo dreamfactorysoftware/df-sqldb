@@ -37,8 +37,8 @@ trait TableDescriber
         $fields = ArrayUtils::get($table, 'fields', array());
         foreach ($fields as &$field) {
             $name = ArrayUtils::get($field, 'name');
-            $_info = ArrayUtils::get($extras, $name, array());
-            $field = static::mergeFieldExtras($field, $_info);
+            $info = ArrayUtils::get($extras, $name, array());
+            $field = static::mergeFieldExtras($field, $info);
         }
 
         return $out;
