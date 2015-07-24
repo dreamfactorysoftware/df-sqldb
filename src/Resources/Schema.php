@@ -637,23 +637,21 @@ class Schema extends BaseDbSchemaResource
                 $oldFields[ArrayUtils::get($old, 'name')] = $old;
             }
         }
-        $fields = [];
+        $newFields = [];
         foreach ($fields as $field) {
-            $field = array_change_key_case($field, CASE_LOWER);
-
-            $fields[ArrayUtils::get($field, 'name')] = $field;
+            $newFields[ArrayUtils::get($field, 'name')] = array_change_key_case($field, CASE_LOWER);
         }
 
         if ($allow_delete && !empty($oldFields)) {
             // check for columns to drop
             foreach ($oldFields as $oldName => $oldField) {
-                if (!isset($fields[$oldName])) {
+                if (!isset($newFields[$oldName])) {
                     $dropColumns[] = $oldName;
                 }
             }
         }
 
-        foreach ($fields as $name => $field) {
+        foreach ($newFields as $name => $field) {
             if (empty($name)) {
                 throw new BadRequestException("Invalid schema detected - no name element.");
             }
