@@ -5,6 +5,7 @@ namespace DreamFactory\Core\SqlDb\Resources;
 use Config;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Utility\ResourcesWrapper;
+use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Inflector;
@@ -505,7 +506,7 @@ class Table extends BaseDbTableResource
         $fields = DbUtilities::listAllFieldsFromDescribe($avail_fields);
 
         if (!is_array($filter)) {
-//            Session::replaceLookups( $filter );
+            Session::replaceLookups( $filter );
             $filterString = $this->parseFilterString($filter, $fields);
             $serverFilter = $this->buildQueryStringFromData($ss_filters, true);
             if (!empty($serverFilter)) {
@@ -768,7 +769,7 @@ class Table extends BaseDbTableResource
         }
 
         foreach ($record as $field => $value) {
-//            Session::replaceLookups( $value );
+            Session::replaceLookups( $value );
             static::valueToExpression($value);
             $record[$field] = $value;
         }

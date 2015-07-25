@@ -2,6 +2,7 @@
 
 namespace DreamFactory\Core\SqlDb\Services;
 
+use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
@@ -81,7 +82,7 @@ class SqlDb extends BaseDbService
         parent::__construct($settings);
 
         $config = ArrayUtils::clean(ArrayUtils::get($settings, 'config'));
-//        Session::replaceLookups( $config, true );
+        Session::replaceLookups( $config, true );
 
         if (null === ($dsn = ArrayUtils::get($config, 'dsn', null, true))) {
             throw new \InvalidArgumentException('Database connection string (DSN) can not be empty.');
