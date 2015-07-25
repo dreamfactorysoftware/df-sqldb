@@ -27,11 +27,11 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     protected $fillable = ['service_id', 'driver', 'dsn', 'username', 'password', 'options', 'attributes'];
 
-    protected $casts = ['options' => 'array', 'attributes' => 'array'];
+    protected $casts = ['options' => 'array', 'attributes' => 'array', 'service_id' => 'integer'];
 
     protected $encrypted = ['username', 'password'];
 
-    public static function validateConfig($config, $create=true)
+    public static function validateConfig($config, $create = true)
     {
         if (null === ($dsn = ArrayUtils::get($config, 'dsn', null, true))) {
             throw new BadRequestException('Database connection string (DSN) can not be empty.');
