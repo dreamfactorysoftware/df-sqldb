@@ -178,42 +178,4 @@ class SqlDb extends BaseDbService
             throw $ex;
         }
     }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function getApiDocInfo()
-    {
-        $base = parent::getApiDocInfo();
-
-        $apis = [];
-        $models = [];
-        foreach ($this->resources as $resourceInfo) {
-            $className = $resourceInfo['class_name'];
-
-            if (!class_exists($className)) {
-                throw new InternalServerErrorException('Service configuration class name lookup failed for resource ' .
-                    $this->resourcePath);
-            }
-
-            /** @var BaseRestResource $resource */
-            $resource = $this->instantiateResource($className, $resourceInfo);
-
-            $access = $this->getPermissions($resource->name);
-            if (!empty($access)) {
-                $results = $resource->getApiDocInfo();
-                if (isset($results, $results['apis'])) {
-                    $apis = array_merge($apis, $results['apis']);
-                }
-                if (isset($results, $results['models'])) {
-                    $models = array_merge($models, $results['models']);
-                }
-            }
-        }
-
-        $base['apis'] = array_merge($base['apis'], $apis);
-        $base['models'] = array_merge($base['models'], $models);
-
-        return $base;
-    }
 }
