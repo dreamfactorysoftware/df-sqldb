@@ -1,6 +1,7 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
+use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
@@ -260,14 +261,7 @@ class StoredFunction extends BaseDbResource
                         'type'             => 'ResourceList',
                         'event_name'       => [$eventPath . '.list'],
                         'parameters'       => [
-                            [
-                                'name'          => 'refresh',
-                                'description'   => 'Refresh any cached copy of the resource list.',
-                                'allowMultiple' => false,
-                                'type'          => 'boolean',
-                                'paramType'     => 'query',
-                                'required'      => false,
-                            ],
+                            ApiOptions::documentOption(ApiOptions::REFRESH),
                         ],
                         'responseMessages' => ApiDocUtilities::getCommonResponses([400, 401, 500]),
                     ],
@@ -279,23 +273,8 @@ class StoredFunction extends BaseDbResource
                         'type'             => 'Resources',
                         'event_name'       => [$eventPath . '.list'],
                         'parameters'       => [
-                            [
-                                'name'          => 'fields',
-                                'description'   => 'Return all or specified properties available for each resource.',
-                                'allowMultiple' => true,
-                                'type'          => 'string',
-                                'paramType'     => 'query',
-                                'required'      => true,
-                                'default'       => '*',
-                            ],
-                            [
-                                'name'          => 'refresh',
-                                'description'   => 'Refresh any cached copy of the resource list.',
-                                'allowMultiple' => false,
-                                'type'          => 'boolean',
-                                'paramType'     => 'query',
-                                'required'      => false,
-                            ],
+                            ApiOptions::documentOption(ApiOptions::FIELDS),
+                            ApiOptions::documentOption(ApiOptions::REFRESH),
                         ],
                         'responseMessages' => ApiDocUtilities::getCommonResponses([400, 401, 500]),
                     ],

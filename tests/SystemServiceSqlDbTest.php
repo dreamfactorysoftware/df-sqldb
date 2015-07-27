@@ -1,5 +1,6 @@
 <?php
 
+use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Library\Utility\Enums\Verbs;
 
 class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
@@ -50,7 +51,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
-        $rs = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
+        $rs = $this->makeRequest(Verbs::GET, static::RESOURCE, [ApiOptions::IDS => "$id1,$id2,$id3"]);
         $data = $rs->getContent();
         $ids = implode(",", array_column($data[static::$wrapper], 'id'));
 
@@ -106,7 +107,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
             $payload = '{' . static::$wrapper . ': ' . $payload . '}';
         }
 
-        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, ['fields' => 'name,label,is_active'], $payload);
+        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [ApiOptions::FIELDS => 'name,label,is_active'], $payload);
         $this->deleteDbService(9);
         $this->assertTrue(json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES) ==
             '{"name":"db9","label":"Database","is_active":1}');
@@ -149,7 +150,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $this->setExpectedException('\DreamFactory\Core\Exceptions\BadRequestException',
             'Batch Error: Not all parts of the request were successful.');
 
-        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, ['continue' => 'true'], $payload);
+        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [ApiOptions::CONTINUES => true], $payload);
     }
 
     public function testPOSTServiceMultipleWithRollback()
@@ -166,7 +167,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 
         $this->setExpectedException('\Illuminate\Database\QueryException');
 
-        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, ['rollback' => '1'], $payload);
+        $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [ApiOptions::ROLLBACK => true], $payload);
     }
 
     public function testPOSTServiceMultipleNoWrap()
@@ -271,7 +272,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                         "label":"unit-test-label"
                     }]';
 
-        $rs = $this->makeRequest($verb, static::RESOURCE, ['ids' => "$id1,$id2,$id3"], $payload);
+        $rs = $this->makeRequest($verb, static::RESOURCE, [ApiOptions::IDS => "$id1,$id2,$id3"], $payload);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
         $expected = '[{"id":' . $id1 . '},{"id":' . $id2 . '},{"id":' . $id3 . '}]';
@@ -280,7 +281,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         }
         $this->assertContains($expected, $content);
 
-        $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
+        $result = $this->makeRequest(Verbs::GET, static::RESOURCE, [ApiOptions::IDS => "$id1,$id2,$id3"]);
         $ra = $result->getContent();
 
         $dColumn = implode(",", array_column($ra[static::$wrapper], 'description'));
@@ -321,7 +322,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         }
         $this->assertContains($expected, $content);
 
-        $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
+        $result = $this->makeRequest(Verbs::GET, static::RESOURCE, [ApiOptions::IDS => "$id1,$id2,$id3"]);
         $ra = $result->getContent();
         $dColumn = implode(",", array_column($ra[static::$wrapper], 'description'));
         $lColumn = implode(",", array_column($ra[static::$wrapper], 'label'));
@@ -352,7 +353,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                         "label":"unit-test-l3"
                     }]';
 
-        $rs = $this->makeRequest($verb, static::RESOURCE, ['fields' => 'label'], $payload);
+        $rs = $this->makeRequest($verb, static::RESOURCE, [ApiOptions::FIELDS => 'label'], $payload);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
 
         $expected = '[{"label":"unit-test-l1"},{"label":"unit-test-l2"},{"label":"unit-test-l3"}]';
@@ -386,13 +387,13 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                     }]';
 
         try {
-            $this->makeRequest($verb, static::RESOURCE, ['continue' => '1'], $payload);
+            $this->makeRequest($verb, static::RESOURCE, [ApiOptions::CONTINUES => true], $payload);
         } catch (\DreamFactory\Core\Exceptions\BadRequestException $e) {
 
             $this->assertEquals(400, $e->getStatusCode());
             $this->assertContains('Batch Error: Not all parts of the request were successful.', $e->getMessage());
 
-            $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
+            $result = $this->makeRequest(Verbs::GET, static::RESOURCE, [ApiOptions::IDS => "$id1,$id2,$id3"]);
             $ra = $result->getContent();
             $dColumn = implode(",", array_column($ra[static::$wrapper], 'description'));
             $lColumn = implode(",", array_column($ra[static::$wrapper], 'label'));
@@ -426,12 +427,12 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                     }]';
 
         try {
-            $this->makeRequest($verb, static::RESOURCE, ['rollback' => 'true'], $payload);
+            $this->makeRequest($verb, static::RESOURCE, [ApiOptions::ROLLBACK => true], $payload);
         } catch (\DreamFactory\Core\Exceptions\InternalServerErrorException $e) {
             $this->assertEquals(500, $e->getStatusCode());
             $this->assertContains("Integrity constraint violation: 1062 Duplicate entry 'db1' for key 'service_name_unique'",
                 $e->getMessage());
-            $result = $this->makeRequest(Verbs::GET, static::RESOURCE, ['ids' => "$id1,$id2,$id3"]);
+            $result = $this->makeRequest(Verbs::GET, static::RESOURCE, [ApiOptions::IDS => "$id1,$id2,$id3"]);
             $ra = $result->getContent();
             $dColumn = implode(",", array_column($ra[static::$wrapper], 'description'));
             $lColumn = implode(",", array_column($ra[static::$wrapper], 'label'));
@@ -461,7 +462,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $id2 = $this->createDbService(2);
         $id3 = $this->createDbService(3);
 
-        $rs = $this->makeRequest(Verbs::DELETE, static::RESOURCE, ['ids' => "$id1,$id3"]);
+        $rs = $this->makeRequest(Verbs::DELETE, static::RESOURCE, [ApiOptions::IDS => "$id1,$id3"]);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
         $expected = '[{"id":' . $id1 . '},{"id":' . $id3 . '}]';
         if (static::$wrapper) {
@@ -511,7 +512,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 
         $payload = '[{"id":' . $id2 . '},{"id":' . $id3 . '}]';
 
-        $rs = $this->makeRequest(Verbs::DELETE, static::RESOURCE, ['fields' => 'name,type'], $payload);
+        $rs = $this->makeRequest(Verbs::DELETE, static::RESOURCE, [ApiOptions::FIELDS => 'name,type'], $payload);
         $content = json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES);
         $expected = '[{"name":"db2","type":"sql_db"},{"name":"db3","type":"sql_db"}]';
         if (static::$wrapper) {

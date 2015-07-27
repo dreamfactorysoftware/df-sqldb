@@ -58,7 +58,7 @@ class Table extends BaseDbTableResource
             switch ($this->resource) {
                 default:
                     // All calls can request related data to be returned
-                    $related = ArrayUtils::get($this->options, 'related');
+                    $related = ArrayUtils::get($this->options, ApiOptions::RELATED);
                     if (!empty($related) && is_string($related) && ('*' !== $related)) {
                         $relations = [];
                         if (!is_array($related)) {
@@ -67,7 +67,12 @@ class Table extends BaseDbTableResource
                         foreach ($related as $relative) {
                             $extraFields = ArrayUtils::get($this->options, $relative . '_fields', '*');
                             $extraOrder = ArrayUtils::get($this->options, $relative . '_order', '');
-                            $relations[] = ['name' => $relative, 'fields' => $extraFields, 'order' => $extraOrder];
+                            $relations[] =
+                                [
+                                    'name'             => $relative,
+                                    ApiOptions::FIELDS => $extraFields,
+                                    ApiOptions::ORDER  => $extraOrder
+                                ];
                         }
 
                         $this->options['related'] = $relations;
@@ -173,11 +178,11 @@ class Table extends BaseDbTableResource
     {
         $record = DbUtilities::validateAsArray($record, null, false, 'There are no fields in the record.');
 
-        $idFields = ArrayUtils::get($extras, 'id_field');
-        $idTypes = ArrayUtils::get($extras, 'id_type');
-        $fields = ArrayUtils::get($extras, 'fields');
-        $related = ArrayUtils::get($extras, 'related');
-        $allowRelatedDelete = ArrayUtils::getBool($extras, 'allow_related_delete', false);
+        $idFields = ArrayUtils::get($extras, ApiOptions::ID_FIELD);
+        $idTypes = ArrayUtils::get($extras, ApiOptions::ID_TYPE);
+        $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
+        $related = ArrayUtils::get($extras, ApiOptions::RELATED);
+        $allowRelatedDelete = ArrayUtils::getBool($extras, ApiOptions::ALLOW_RELATED_DELETE, false);
         $ssFilters = ArrayUtils::get($extras, 'ss_filters');
 
         try {
@@ -270,9 +275,9 @@ class Table extends BaseDbTableResource
             throw new BadRequestException("Filter for delete request can not be empty.");
         }
 
-        $idFields = ArrayUtils::get($extras, 'id_field');
-        $idTypes = ArrayUtils::get($extras, 'id_type');
-        $fields = ArrayUtils::get($extras, 'fields');
+        $idFields = ArrayUtils::get($extras, ApiOptions::ID_FIELD);
+        $idTypes = ArrayUtils::get($extras, ApiOptions::ID_TYPE);
+        $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
         $ssFilters = ArrayUtils::get($extras, 'ss_filters');
 
         try {
@@ -309,7 +314,7 @@ class Table extends BaseDbTableResource
      */
     public function retrieveRecordsByFilter($table, $filter = null, $params = [], $extras = [])
     {
-        $fields = ArrayUtils::get($extras, 'fields');
+        $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
         $ssFilters = ArrayUtils::get($extras, 'ss_filters');
 
         try {
@@ -336,9 +341,9 @@ class Table extends BaseDbTableResource
 
     protected function recordQuery($table, $select, $where, $bind_values, $bind_columns, $extras)
     {
-        $order = ArrayUtils::get($extras, 'order');
-        $limit = intval(ArrayUtils::get($extras, 'limit', 0));
-        $offset = intval(ArrayUtils::get($extras, 'offset', 0));
+        $order = ArrayUtils::get($extras, ApiOptions::ORDER);
+        $limit = intval(ArrayUtils::get($extras, ApiOptions::LIMIT, 0));
+        $offset = intval(ArrayUtils::get($extras, ApiOptions::OFFSET, 0));
         $maxAllowed = static::getMaxRecordsReturnedLimit();
         $needLimit = false;
 
@@ -403,7 +408,7 @@ class Table extends BaseDbTableResource
         }
 
         $meta = [];
-        $includeCount = ArrayUtils::getBool($extras, 'include_count', false);
+        $includeCount = ArrayUtils::getBool($extras, ApiOptions::INCLUDE_COUNT, false);
         // count total records
         if ($includeCount || $needLimit) {
             $command->reset();
@@ -426,7 +431,7 @@ class Table extends BaseDbTableResource
             }
         }
 
-        if (ArrayUtils::getBool($extras, 'include_schema', false)) {
+        if (ArrayUtils::getBool($extras, ApiOptions::INCLUDE_SCHEMA, false)) {
             try {
                 $meta['schema'] = $this->describeTable($table);
             } catch (RestException $ex) {
@@ -437,7 +442,7 @@ class Table extends BaseDbTableResource
             }
         }
 
-        $related = ArrayUtils::get($extras, 'related');
+        $related = ArrayUtils::get($extras, ApiOptions::RELATED);
         if (!empty($related)) {
             $relations = $this->describeTableRelated($table);
             foreach ($data as $key => $temp) {
@@ -506,7 +511,7 @@ class Table extends BaseDbTableResource
         $fields = DbUtilities::listAllFieldsFromDescribe($avail_fields);
 
         if (!is_array($filter)) {
-            Session::replaceLookups( $filter );
+            Session::replaceLookups($filter);
             $filterString = $this->parseFilterString($filter, $fields);
             $serverFilter = $this->buildQueryStringFromData($ss_filters, true);
             if (!empty($serverFilter)) {
@@ -769,7 +774,7 @@ class Table extends BaseDbTableResource
         }
 
         foreach ($record as $field => $value) {
-            Session::replaceLookups( $value );
+            Session::replaceLookups($value);
             static::valueToExpression($value);
             $record[$field] = $value;
         }
@@ -837,7 +842,7 @@ class Table extends BaseDbTableResource
                     "field": "id"
                     */
                         $relatedTable = ArrayUtils::get($relationInfo, 'ref_table');
-                        $relatedField = ArrayUtils::get($relationInfo, 'ref_field');
+                        $relatedField = ArrayUtils::get($relationInfo, 'ref_fields');
                         $this->assignManyToOne(
                             $table,
                             $id,
@@ -931,7 +936,7 @@ class Table extends BaseDbTableResource
         $prefix = '',
         $fields_as = ''
     ){
-        if (empty($fields) || ('*' === $fields)) {
+        if (empty($fields) || (ApiOptions::FIELDS_ALL === $fields)) {
             $fields = DbUtilities::listAllFieldsFromDescribe($avail_fields);
         }
 
@@ -1006,7 +1011,7 @@ class Table extends BaseDbTableResource
         }
 
         $relatedData = [];
-        $relatedExtras = ['limit' => static::MAX_RECORDS_RETURNED, 'fields' => '*'];
+        $relatedExtras = [ApiOptions::LIMIT => static::MAX_RECORDS_RETURNED, ApiOptions::FIELDS => '*'];
         if ('*' == $requests) {
             foreach ($relations as $name => $relation) {
                 if (empty($relation)) {
@@ -1038,7 +1043,7 @@ class Table extends BaseDbTableResource
 
         $relationType = ArrayUtils::get($relation, 'type');
         $relatedTable = ArrayUtils::get($relation, 'ref_table');
-        $relatedField = ArrayUtils::get($relation, 'ref_field');
+        $relatedField = ArrayUtils::get($relation, 'ref_fields');
         $field = ArrayUtils::get($relation, 'field');
         $fieldVal = ArrayUtils::get($data, $field);
 
@@ -1051,7 +1056,7 @@ class Table extends BaseDbTableResource
                     return null;
                 }
 
-                $fields = ArrayUtils::get($extras, 'fields');
+                $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
                 $ssFilters = ArrayUtils::get($extras, 'ss_filters');
                 $fieldsInfo = $this->getFieldsInfo($relatedTable);
                 $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
@@ -1075,7 +1080,7 @@ class Table extends BaseDbTableResource
                     return [];
                 }
 
-                $fields = ArrayUtils::get($extras, 'fields');
+                $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
                 $ssFilters = ArrayUtils::get($extras, 'ss_filters');
                 $fieldsInfo = $this->getFieldsInfo($relatedTable);
                 $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
@@ -1126,7 +1131,7 @@ class Table extends BaseDbTableResource
                         }
                     }
                     if (!empty($relatedIds)) {
-                        $fields = ArrayUtils::get($extras, 'fields');
+                        $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
                         $fieldsInfo = $this->getFieldsInfo($relatedTable);
                         $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
                         $bindings = ArrayUtils::get($result, 'bindings');
@@ -1896,7 +1901,7 @@ class Table extends BaseDbTableResource
             }
         }
 
-        $fields = ArrayUtils::get($extras, 'fields');
+        $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
         $fieldsInfo = ArrayUtils::get($extras, 'fields_info');
         $ssFilters = ArrayUtils::get($extras, 'ss_filters');
         $updates = ArrayUtils::get($extras, 'updates');
@@ -2142,8 +2147,8 @@ class Table extends BaseDbTableResource
 
         $updates = ArrayUtils::get($extras, 'updates');
         $ssFilters = ArrayUtils::get($extras, 'ss_filters');
-        $fields = ArrayUtils::get($extras, 'fields');
         $fieldsInfo = ArrayUtils::get($extras, 'fields_info');
+        $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
         $idsInfo = ArrayUtils::get($extras, 'ids_info');
         $idFields = ArrayUtils::get($extras, 'id_fields');
         $related = ArrayUtils::get($extras, 'related');

@@ -18,7 +18,7 @@ trait TableDescriber
         $out = ArrayUtils::clean($table);
         $extras = ArrayUtils::clean($extras);
 
-        $labelInfo = ArrayUtils::get($extras, '', array());
+        $labelInfo = ArrayUtils::get($extras, '', []);
         $label = ArrayUtils::get($labelInfo, 'label');
         if (!empty($label)) {
             $out['label'] = $label;
@@ -34,10 +34,10 @@ trait TableDescriber
             $out['name_field'] = $name_field;
         }
 
-        $fields = ArrayUtils::get($table, 'fields', array());
+        $fields = ArrayUtils::get($table, 'fields', []);
         foreach ($fields as &$field) {
             $name = ArrayUtils::get($field, 'name');
-            $info = ArrayUtils::get($extras, $name, array());
+            $info = ArrayUtils::get($extras, $name, []);
             $field = static::mergeFieldExtras($field, $info);
         }
 
@@ -73,7 +73,7 @@ trait TableDescriber
         }
 
         $picklist = ArrayUtils::get($extras, 'picklist');
-        $picklist = (!empty($picklist)) ? explode("\r", $picklist) : array();
+        $picklist = (!empty($picklist)) ? explode("\r", $picklist) : [];
         $out['value'] = $picklist;
 
         switch (ArrayUtils::get($column, 'type')) {
@@ -260,7 +260,7 @@ trait TableDescriber
                         'type'        => 'string',
                         'description' => 'The table name that is referenced by the relationship.',
                     ],
-                    'ref_field' => [
+                    'ref_fields' => [
                         'type'        => 'string',
                         'description' => 'The field name that is referenced by the relationship.',
                     ],
