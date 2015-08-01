@@ -79,11 +79,21 @@ class SqlDbConfig extends BaseServiceConfigModel
                 $schema['type'] = 'password';
                 break;
             case 'options':
-                $schema['type'] = 'object(string,string)';
+                $schema['type'] = 'object';
+                $schema['object'] =
+                    [
+                        'key'   => ['label' => 'Name', 'type' => 'string'],
+                        'value' => ['label' => 'Value', 'type' => 'string']
+                    ];
                 $schema['description'] = 'A key=>value array of connection options.';
                 break;
             case 'attributes':
-                $schema['type'] = 'object(string,string)';
+                $schema['type'] = 'object';
+                $schema['object'] =
+                    [
+                        'key'   => ['label' => 'Name', 'type' => 'string'],
+                        'value' => ['label' => 'Value', 'type' => 'string']
+                    ];
                 $schema['description'] =
                     'A key=>value array of attributes to be set after connection.' .
                     ' For further information, see http://php.net/manual/en/pdo.setattribute.php';

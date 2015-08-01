@@ -251,9 +251,10 @@ class Table extends BaseDbTableResource
 
             // build filter string if necessary, add server-side filters if necessary
             $ssFilters = ArrayUtils::get($extras, 'ss_filters');
-            $serverFilter = $this->buildQueryStringFromData($ssFilters, true);
+            $params = [];
+            $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
             if (!empty($serverFilter)) {
-                $command->delete($table, $serverFilter['filter'], $serverFilter['params']);
+                $command->delete($table, $serverFilter, $params);
             } else {
                 $command->truncateTable($table);
             }
@@ -507,44 +508,45 @@ class Table extends BaseDbTableResource
     protected function convertFilterToNative($filter, $params = [], $ss_filters = [], $avail_fields = [])
     {
         // interpret any parameter values as lookups
-        $params = static::interpretRecordValues($params);
-        $fields = DbUtilities::listAllFieldsFromDescribe($avail_fields);
+        $params = ArrayUtils::clean(static::interpretRecordValues($params));
 
         if (!is_array($filter)) {
             Session::replaceLookups($filter);
-            $filterString = $this->parseFilterString($filter, $fields);
-            $serverFilter = $this->buildQueryStringFromData($ss_filters, true);
+            $filterString = '';
+            $clientFilter = $this->parseFilterString($filter, $params, $avail_fields);
+            if (!empty($clientFilter)) {
+                $filterString = $clientFilter;
+            }
+            $serverFilter = $this->buildQueryStringFromData($ss_filters, $params);
             if (!empty($serverFilter)) {
-                if (empty($filter)) {
-                    $filterString = $serverFilter['filter'];
+                if (empty($filterString)) {
+                    $filterString = $serverFilter;
                 } else {
-                    $filterString = '(' . $filterString . ') AND (' . $serverFilter['filter'] . ')';
+                    $filterString = '(' . $filterString . ') AND (' . $serverFilter . ')';
                 }
-                $params = array_merge($params, $serverFilter['params']);
             }
 
             return ['where' => $filterString, 'params' => $params];
         } else {
             // todo parse client filter?
             $filterArray = $filter;
-            $serverFilter = $this->buildQueryStringFromData($ss_filters, true);
+            $serverFilter = $this->buildQueryStringFromData($ss_filters, $params);
             if (!empty($serverFilter)) {
                 if (empty($filter)) {
-                    $filterArray = $serverFilter['filter'];
+                    $filterArray = $serverFilter;
                 } else {
-                    $filterArray = ['AND', $filterArray, $serverFilter['filter']];
+                    $filterArray = ['AND', $filterArray, $serverFilter];
                 }
-                $params = array_merge($params, $serverFilter['params']);
             }
 
             return ['where' => $filterArray, 'params' => $params];
         }
     }
 
-    protected function parseFilterString($filter, $field_list = null)
+    protected function parseFilterString($filter, array &$params, $field_list = null)
     {
         if (empty($filter)) {
-            return $filter;
+            return null;
         }
 
         $search = [' or ', ' and ', ' nor '];
@@ -556,7 +558,7 @@ class Table extends BaseDbTableResource
         if (count($ops) > 1) {
             $parts = [];
             foreach ($ops as $op) {
-                $parts[] = static::parseFilterString($op, $field_list);
+                $parts[] = static::parseFilterString($op, $params, $field_list);
             }
 
             return implode(' OR ', $parts);
@@ -566,7 +568,7 @@ class Table extends BaseDbTableResource
         if (count($ops) > 1) {
             $parts = [];
             foreach ($ops as $op) {
-                $parts[] = static::parseFilterString($op, $field_list);
+                $parts[] = static::parseFilterString($op, $params, $field_list);
             }
 
             return implode(' NOR ', $parts);
@@ -576,7 +578,7 @@ class Table extends BaseDbTableResource
         if (count($ops) > 1) {
             $parts = [];
             foreach ($ops as $op) {
-                $parts[] = static::parseFilterString($op, $field_list);
+                $parts[] = static::parseFilterString($op, $params, $field_list);
             }
 
             return implode(' AND ', $parts);
@@ -587,26 +589,105 @@ class Table extends BaseDbTableResource
 //            $parts = trim( substr( $filter, 4 ) );
         }
 
+        if ((0 === strpos($filter, '(')) && ((strlen($filter) - 1) === strpos($filter, ')'))) {
+            $filter = trim(substr($filter, 1, strlen($filter) - 2));
+        }
+
         // the rest should be comparison operators
         $search = [' eq ', ' ne ', ' gte ', ' lte ', ' gt ', ' lt ', ' in ', ' nin ', ' all ', ' like ', ' <> '];
         $replace = ['=', '!=', '>=', '<=', '>', '<', ' IN ', ' NIN ', ' ALL ', ' LIKE ', '!='];
         $filter = trim(str_ireplace($search, $replace, $filter));
 
         // Note: order matters, watch '='
-        $sqlOperators = ['!=', '>=', '<=', '=', '>', '<', ' IN ', ' NIN ', ' ALL ', ' LIKE '];
+        $sqlOperators =
+            ['!=', '>=', '<=', '=', '>', '<', ' NIN ', ' IN ', ' ALL ', ' LIKE '];
         foreach ($sqlOperators as $sqlOp) {
             $ops = explode($sqlOp, $filter);
-            if (count($ops) > 1) {
-                $field = trim($ops[0]);
-                if (false !== array_search($field, $field_list)) {
-                    $ops[0] = $this->dbConn->quoteColumnName($field) . ' ';
-                }
+            switch (count($ops)) {
+                case 2:
+                    $field = trim($ops[0]);
+                    if (null === $info = DbUtilities::getFieldFromDescribe($field, $field_list)) {
+                        // This could be SQL injection attempt or bad field
+                        throw new BadRequestException('Invalid or unparsable field in filter request.');
+                    }
 
-                $filter = implode($sqlOp, $ops);
+                    $value = trim($ops[1]);
+                    if (0 !== strpos($value, ':')) {
+                        // if not already a replacement parameter, evaluate it
+                        $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
+
+                        switch ($cnvType = DbUtilities::determinePhpConversionType($info['type'])) {
+                            case 'int':
+                                if (!is_int($value)) {
+                                    if (!(ctype_digit($value))) {
+                                        throw new BadRequestException("Field '$field' must be a valid integer.");
+                                    } else {
+                                        $value = intval($value);
+                                    }
+                                }
+                                break;
+
+                            case 'time':
+                                $cfgFormat = Config::get('df.db_time_format');
+                                $outFormat = 'H:i:s.u';
+                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                                break;
+                            case 'date':
+                                $cfgFormat = Config::get('df.db_date_format');
+                                $outFormat = 'Y-m-d';
+                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                                break;
+                            case 'datetime':
+                                $cfgFormat = Config::get('df.db_datetime_format');
+                                $outFormat = 'Y-m-d H:i:s';
+                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                                break;
+                            case 'timestamp':
+                                $cfgFormat = Config::get('df.db_timestamp_format');
+                                $outFormat = 'Y-m-d H:i:s';
+                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                                break;
+
+                            default:
+                                break;
+                        }
+
+                        $paramName = ':cf_' . count($params); // positionally unique
+                        $params[$paramName] = $value;
+                        $value = $paramName;
+                    }
+                    $field = $this->dbConn->quoteColumnName($info['name']);
+
+                    return "$field $sqlOp $value";
             }
         }
 
-        return $filter;
+        if (' IS NULL' === substr($filter, -8)) {
+            $field = trim(substr($filter, 0, -8));
+            if (null === $info = DbUtilities::getFieldFromDescribe($field, $field_list)) {
+                // This could be SQL injection attempt or bad field
+                throw new BadRequestException('Invalid or unparsable field in filter request.');
+            }
+
+            $field = $this->dbConn->quoteColumnName($info['name']);
+
+            return "$field IS NULL";
+        }
+
+        if (' IS NOT NULL' === substr($filter, -12)) {
+            $field = trim(substr($filter, 0, -12));
+            if (null === $info = DbUtilities::getFieldFromDescribe($field, $field_list)) {
+                // This could be SQL injection attempt or bad field
+                throw new BadRequestException('Invalid or unparsable field in filter request.');
+            }
+
+            $field = $this->dbConn->quoteColumnName($info['name']);
+
+            return "$field IS NOT NULL";
+        }
+
+        // This could be SQL injection attempt or unsupported filter arrangement
+        throw new BadRequestException('Invalid or unparsable filter request.');
     }
 
     /**
@@ -950,7 +1031,9 @@ class Table extends BaseDbTableResource
             $context = (empty($prefix) ? $field : $prefix . '.' . $field);
             $out_as = (empty($as) ? $field : $as);
             // find the type
-            $field_info = DbUtilities::getFieldFromDescribe($field, $avail_fields);
+            if (null === $field_info = DbUtilities::getFieldFromDescribe($field, $avail_fields)) {
+                throw new BadRequestException('Invalid field requested.');
+            }
             $allowsNull = ArrayUtils::getBool($field_info, 'allow_null');
             $pdoType = ($allowsNull) ? null : ArrayUtils::get($field_info, 'pdo_type');
             $phpType = (is_null($pdoType)) ? ArrayUtils::get($field_info, 'php_type') : null;
@@ -1066,7 +1149,7 @@ class Table extends BaseDbTableResource
 
                 // build filter string if necessary, add server-side filters if necessary
                 $criteria =
-                    $this->convertFilterToNative("$relatedField = '$fieldVal'", [], $ssFilters, $fieldsInfo);
+                    $this->convertFilterToNative("$relatedField = $fieldVal", [], $ssFilters, $fieldsInfo);
                 $where = ArrayUtils::get($criteria, 'where');
                 $params = ArrayUtils::get($criteria, 'params', []);
 
@@ -1090,7 +1173,7 @@ class Table extends BaseDbTableResource
 
                 // build filter string if necessary, add server-side filters if necessary
                 $criteria =
-                    $this->convertFilterToNative("$relatedField = '$fieldVal'", [], $ssFilters, $fieldsInfo);
+                    $this->convertFilterToNative("$relatedField = $fieldVal", [], $ssFilters, $fieldsInfo);
                 $where = ArrayUtils::get($criteria, 'where');
                 $params = ArrayUtils::get($criteria, 'params', []);
 
@@ -1114,7 +1197,7 @@ class Table extends BaseDbTableResource
                     $fields = (empty($fields)) ? '*' : $fields;
 
                     // build filter string if necessary, add server-side filters if necessary
-                    $junctionFilter = "( $joinRightField IS NOT NULL ) AND ( $joinLeftField = '$fieldVal' )";
+                    $junctionFilter = "( $joinRightField IS NOT NULL ) AND ( $joinLeftField = $fieldVal )";
                     $criteria = $this->convertFilterToNative($junctionFilter, [], [], $fieldsInfo);
                     $where = ArrayUtils::get($criteria, 'where');
                     $params = ArrayUtils::get($criteria, 'params', []);
@@ -1313,10 +1396,9 @@ class Table extends BaseDbTableResource
                     // todo How to handle multiple primary keys?
                     throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                 }
-                $serverFilter = $this->buildQueryStringFromData($ssFilters, true);
+                $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
                 if (!empty($serverFilter)) {
-                    $where[] = $serverFilter['filter'];
-                    $params = array_merge($params, $serverFilter['params']);
+                    $where[] = $serverFilter;
                 }
 
                 if (count($where) > 1) {
@@ -1343,15 +1425,14 @@ class Table extends BaseDbTableResource
                     $params = [];
                     if (1 === count($pksInfo)) {
                         $pkField = ArrayUtils::get($pksInfo[0], 'name');
-                        $where[] = $this->dbConn->quoteColumnName($pkField) . " = :f_$pkField";
+                        $where[] = $this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField";
                     } else {
                         // todo How to handle multiple primary keys?
                         throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                     }
-                    $serverFilter = $this->buildQueryStringFromData($ssFilters, true);
+                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
                     if (!empty($serverFilter)) {
-                        $where[] = $serverFilter['filter'];
-                        $params = array_merge($params, $serverFilter['params']);
+                        $where[] = $serverFilter;
                     }
 
                     if (count($where) > 1) {
@@ -1363,7 +1444,7 @@ class Table extends BaseDbTableResource
                     foreach ($updateMany as $record) {
                         if (1 === count($pksInfo)) {
                             $pkField = ArrayUtils::get($pksInfo[0], 'name');
-                            $params[":f_$pkField"] = ArrayUtils::get($record, $pkField);
+                            $params[":pk_$pkField"] = ArrayUtils::get($record, $pkField);
                         } else {
                             // todo How to handle multiple primary keys?
                             throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
@@ -1392,10 +1473,9 @@ class Table extends BaseDbTableResource
                         // todo How to handle multiple primary keys?
                         throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                     }
-                    $serverFilter = $this->buildQueryStringFromData($ssFilters, true);
+                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
                     if (!empty($serverFilter)) {
-                        $where[] = $serverFilter['filter'];
-                        $params = array_merge($params, $serverFilter['params']);
+                        $where[] = $serverFilter;
                     }
 
                     if (count($where) > 1) {
@@ -1426,10 +1506,9 @@ class Table extends BaseDbTableResource
                         // todo How to handle multiple primary keys?
                         throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                     }
-                    $serverFilter = $this->buildQueryStringFromData($ssFilters, true);
+                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
                     if (!empty($serverFilter)) {
-                        $where[] = $serverFilter['filter'];
-                        $params = array_merge($params, $serverFilter['params']);
+                        $where[] = $serverFilter;
                     }
 
                     if (count($where) > 1) {
@@ -1621,16 +1700,15 @@ class Table extends BaseDbTableResource
                 $params = [];
                 if (1 === count($pksManyInfo)) {
                     $pkField = ArrayUtils::get($pksManyInfo[0], 'name');
-                    $where[] = $this->dbConn->quoteColumnName($pkField) . " = :f_$pkField";
+                    $where[] = $this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField";
                 } else {
                     // todo How to handle multiple primary keys?
                     throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                 }
 
-                $serverFilter = $this->buildQueryStringFromData($ssManyFilters, true);
+                $serverFilter = $this->buildQueryStringFromData($ssManyFilters, $params);
                 if (!empty($serverFilter)) {
-                    $where[] = $serverFilter['filter'];
-                    $params = array_merge($params, $serverFilter['params']);
+                    $where[] = $serverFilter;
                 }
 
                 if (count($where) > 1) {
@@ -1640,7 +1718,7 @@ class Table extends BaseDbTableResource
                 }
 
                 foreach ($updateMany as $record) {
-                    $params[":f_$pkField"] = ArrayUtils::get($record, $pkField);
+                    $params[":pk_$pkField"] = ArrayUtils::get($record, $pkField);
                     $parsed = $this->parseRecord($record, $manyFields, $ssManyFilters, true);
                     if (empty($parsed)) {
                         throw new BadRequestException('No valid fields were found in record.');
@@ -1679,10 +1757,9 @@ class Table extends BaseDbTableResource
                 $params = [];
                 $where[] = $this->dbConn->quoteColumnName($one_field) . " = '$one_id'";
                 $where[] = ['in', $many_field, $deleteMap];
-                $serverFilter = $this->buildQueryStringFromData($ssMapFilters, true);
+                $serverFilter = $this->buildQueryStringFromData($ssMapFilters, $params);
                 if (!empty($serverFilter)) {
-                    $where[] = $serverFilter['filter'];
-                    $params = array_merge($params, $serverFilter['params']);
+                    $where[] = $serverFilter;
                 }
 
                 if (count($where) > 1) {
@@ -1702,7 +1779,7 @@ class Table extends BaseDbTableResource
         }
     }
 
-    protected function buildQueryStringFromData($filter_info, $use_params = true)
+    protected function buildQueryStringFromData($filter_info, array &$params)
     {
         $filter_info = ArrayUtils::clean($filter_info);
         $filters = ArrayUtils::get($filter_info, 'filters');
@@ -1711,7 +1788,6 @@ class Table extends BaseDbTableResource
         }
 
         $sql = '';
-        $params = [];
         $combiner = ArrayUtils::get($filter_info, 'filter_op', 'and');
         foreach ($filters as $key => $filter) {
             if (!empty($sql)) {
@@ -1734,24 +1810,15 @@ class Table extends BaseDbTableResource
                     $sql .= $this->dbConn->quoteColumnName($name) . " $op";
                     break;
                 default:
-                    if ($use_params) {
-                        $paramName = ':ssf_' . $name . '_' . $key;
-                        $params[$paramName] = $value;
-                        $value = $paramName;
-                    } else {
-                        if (is_bool($value)) {
-                            $value = $value ? 'true' : 'false';
-                        }
-
-                        $value = (is_null($value)) ? 'NULL' : $this->dbConn->quoteValue($value);
-                    }
-
+                    $paramName = ':ssf_' . $name . '_' . $key;
+                    $params[$paramName] = $value;
+                    $value = $paramName;
                     $sql .= $this->dbConn->quoteColumnName($name) . " $op $value";
                     break;
             }
         }
 
-        return ['filter' => $sql, 'params' => $params];
+        return $sql;
     }
 
     /**
@@ -1918,19 +1985,18 @@ class Table extends BaseDbTableResource
         $params = [];
         if (is_array($id)) {
             foreach ($idFields as $name) {
-                $where[] = $this->dbConn->quoteColumnName($name) . " = :f_$name";
-                $params[":f_$name"] = ArrayUtils::get($id, $name);
+                $where[] = $this->dbConn->quoteColumnName($name) . " = :pk_$name";
+                $params[":pk_$name"] = ArrayUtils::get($id, $name);
             }
         } else {
             $name = ArrayUtils::get($idFields, 0);
-            $where[] = $this->dbConn->quoteColumnName($name) . " = :f_$name";
-            $params[":f_$name"] = $id;
+            $where[] = $this->dbConn->quoteColumnName($name) . " = :pk_$name";
+            $params[":pk_$name"] = $id;
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters, true);
+        $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
         if (!empty($serverFilter)) {
-            $where[] = $serverFilter['filter'];
-            $params = array_merge($params, $serverFilter['params']);
+            $where[] = $serverFilter;
         }
 
         if (count($where) > 1) {
@@ -2179,10 +2245,9 @@ class Table extends BaseDbTableResource
             $where[] = ['in', $idName, $this->batchIds];
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters, true);
+        $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
         if (!empty($serverFilter)) {
-            $where[] = $serverFilter['filter'];
-            $params = $serverFilter['params'];
+            $where[] = $serverFilter;
         }
 
         if (count($where) > 1) {
