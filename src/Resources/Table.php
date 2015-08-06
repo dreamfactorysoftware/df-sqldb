@@ -120,7 +120,7 @@ class Table extends BaseDbTableResource
 
         $result = $this->listTables($schema, $refresh);
 
-        $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $result, false, 'table,label,plural');
+        $extras = $this->parent->getSchemaExtrasForTables($result, false, 'table,label,plural');
 
         $resources = [];
         foreach ($result as $name) {
@@ -2507,7 +2507,7 @@ class Table extends BaseDbTableResource
                 throw new NotFoundException("Table '$name' does not exist in the database.");
             }
 
-            $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $name);
+            $extras = $this->parent->getSchemaExtrasForTables($name);
             $extras = DbUtilities::reformatFieldLabelArray($extras);
 
             return static::mergeTableExtras($table->toArray(), $extras);
@@ -2537,9 +2537,9 @@ class Table extends BaseDbTableResource
 
         if (!empty($field_names)) {
             $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
-            $extras = DbUtilities::getSchemaExtrasForFields($this->serviceId, $table_name, $field_names);
+            $extras = $this->parent->getSchemaExtrasForFields($table_name, $field_names);
         } else {
-            $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $table_name);
+            $extras = $this->parent->getSchemaExtrasForTables($table_name);
         }
 
         $extras = DbUtilities::reformatFieldLabelArray($extras);

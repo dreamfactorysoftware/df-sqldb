@@ -117,10 +117,7 @@ class StoredFunction extends BaseDbResource
     protected function listFunctions($schema = null, $refresh = false)
     {
         try {
-            $names = $this->dbConn->getSchema()->getFunctionNames($schema, $refresh);
-            natcasesort($names);
-
-            return array_values($names);
+            return $this->dbConn->getSchema()->getFunctionNames($schema, $refresh);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {

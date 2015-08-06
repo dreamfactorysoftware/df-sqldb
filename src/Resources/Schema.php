@@ -52,7 +52,7 @@ class Schema extends BaseDbSchemaResource
 
         $result = $this->listTables($schema, $refresh);
 
-        $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $result, false, 'table,label,plural');
+        $extras = $this->parent->getSchemaExtrasForTables($result, false, 'table,label,plural');
 
         $resources = [];
         foreach ($result as $name) {
@@ -116,7 +116,7 @@ class Schema extends BaseDbSchemaResource
                 throw new NotFoundException("Table '$name' does not exist in the database.");
             }
 
-            $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $name);
+            $extras = $this->parent->getSchemaExtrasForTables($name);
             $extras = DbUtilities::reformatFieldLabelArray($extras);
             $result = static::mergeTableExtras($table->toArray(), $extras);
             $result['access'] = $this->getPermissions($name);
@@ -167,7 +167,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->updateTablesInternal($tables);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTables($tables);
@@ -189,7 +189,7 @@ class Schema extends BaseDbSchemaResource
         $result = ArrayUtils::get($result, 0, []);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTable($table);
@@ -211,7 +211,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->updateFieldsInternal($table, $fields);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeField($table, $field);
@@ -236,7 +236,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->updateTablesInternal($tables, true, $allow_delete_fields);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTables($tables);
@@ -259,7 +259,7 @@ class Schema extends BaseDbSchemaResource
         $result = ArrayUtils::get($result, 0, []);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTable($table);
@@ -285,7 +285,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->updateFieldsInternal($table, $fields, true);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeField($table, $field);
@@ -304,7 +304,7 @@ class Schema extends BaseDbSchemaResource
         }
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         //  Does it exist
         if (!$this->doesTableExist($table)) {
@@ -319,7 +319,7 @@ class Schema extends BaseDbSchemaResource
         }
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         DbUtilities::removeSchemaExtrasForTables($this->serviceId, $table);
     }
@@ -345,7 +345,7 @@ class Schema extends BaseDbSchemaResource
         }
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         DbUtilities::removeSchemaExtrasForFields($this->serviceId, $table, $field);
     }
@@ -413,9 +413,9 @@ class Schema extends BaseDbSchemaResource
 
         if (!empty($field_names)) {
             $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
-            $extras = DbUtilities::getSchemaExtrasForFields($this->serviceId, $table_name, $field_names);
+            $extras = $this->parent->getSchemaExtrasForFields($table_name, $field_names);
         } else {
-            $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $table_name);
+            $extras = $this->parent->getSchemaExtrasForTables($table_name);
         }
 
         $extras = DbUtilities::reformatFieldLabelArray($extras);

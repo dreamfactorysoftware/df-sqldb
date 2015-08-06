@@ -116,10 +116,7 @@ class StoredProcedure extends BaseDbResource
     public function listProcedures($schema = null, $refresh = false)
     {
         try {
-            $names = $this->dbConn->getSchema()->getProcedureNames($schema, $refresh);
-            natcasesort($names);
-
-            return array_values($names);
+            return $this->dbConn->getSchema()->getProcedureNames($schema, $refresh);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
