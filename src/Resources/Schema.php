@@ -33,7 +33,7 @@ class Schema extends BaseDbSchemaResource
     /**
      * {@inheritdoc}
      */
-    public function listTables($schema = null, $refresh = false)
+    public function listResources($schema = null, $refresh = false)
     {
         return $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
     }
@@ -50,7 +50,7 @@ class Schema extends BaseDbSchemaResource
         $refresh = $this->request->getParameterAsBool(ApiOptions::REFRESH);
         $schema = $this->request->getParameter(ApiOptions::SCHEMA, '');
 
-        $result = $this->listTables($schema, $refresh);
+        $result = $this->listResources($schema, $refresh);
 
         $extras = $this->parent->getSchemaExtrasForTables($result, false, 'table,label,plural');
 
@@ -87,17 +87,6 @@ class Schema extends BaseDbSchemaResource
         }
 
         return $resources;
-    }
-
-    public function listAccessComponents($schema = null, $refresh = false)
-    {
-        $output = [];
-        $result = $this->listTables($schema, $refresh);
-        foreach ($result as $name) {
-            $output[] = static::RESOURCE_NAME . '/' . $name;
-        }
-
-        return $output;
     }
 
     /**

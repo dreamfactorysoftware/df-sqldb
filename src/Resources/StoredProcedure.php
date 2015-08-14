@@ -105,6 +105,14 @@ class StoredProcedure extends BaseDbResource
     }
 
     /**
+     * {@inheritdoc}
+     */
+    public function getResourceName()
+    {
+        return static::RESOURCE_NAME;
+    }
+
+    /**
      * @param null $schema
      * @param bool $refresh
      *
@@ -113,7 +121,7 @@ class StoredProcedure extends BaseDbResource
      * @throws RestException
      * @throws \Exception
      */
-    public function listProcedures($schema = null, $refresh = false)
+    public function listResources($schema = null, $refresh = false)
     {
         try {
             return $this->dbConn->getSchema()->getProcedureNames($schema, $refresh);
@@ -133,7 +141,7 @@ class StoredProcedure extends BaseDbResource
         $refresh = $this->request->getParameterAsBool('refresh');
         $schema = $this->request->getParameter('schema', '');
 
-        $result = $this->listProcedures($schema, $refresh);
+        $result = $this->listResources($schema, $refresh);
         $resources = [];
         foreach ($result as $name) {
             $access = $this->getPermissions($name);
@@ -143,17 +151,6 @@ class StoredProcedure extends BaseDbResource
         }
 
         return $resources;
-    }
-
-    public function listAccessComponents($schema = null, $refresh = false)
-    {
-        $output = [];
-        $result = $this->listProcedures($schema, $refresh);
-        foreach ($result as $name) {
-            $output[] = static::RESOURCE_NAME . '/' . $name;
-        }
-
-        return $output;
     }
 
     /**
@@ -280,37 +277,6 @@ class StoredProcedure extends BaseDbResource
         $base = parent::getApiDocInfo();
 
         $apis = [
-            [
-                'path'        => $path,
-                'operations'  => [
-                    [
-                        'method'           => 'GET',
-                        'summary'          => 'getStoredProcsList() - List callable stored procedures.',
-                        'nickname'         => 'getStoredProcsList',
-                        'notes'            => 'List the names of the available stored procedures on this database. ',
-                        'type'             => 'ResourceList',
-                        'event_name'       => [$eventPath . '.list'],
-                        'parameters'       => [
-                            ApiOptions::documentOption(ApiOptions::REFRESH),
-                        ],
-                        'responseMessages' => ApiDocUtilities::getCommonResponses([400, 401, 500]),
-                    ],
-                    [
-                        'method'           => 'GET',
-                        'summary'          => 'getStoredProcs() - List callable stored procedures.',
-                        'nickname'         => 'getStoredProcs',
-                        'notes'            => 'List the available stored procedures on this database. ',
-                        'type'             => 'Resources',
-                        'event_name'       => [$eventPath . '.list'],
-                        'parameters'       => [
-                            ApiOptions::documentOption(ApiOptions::FIELDS),
-                            ApiOptions::documentOption(ApiOptions::REFRESH),
-                        ],
-                        'responseMessages' => ApiDocUtilities::getCommonResponses([400, 401, 500]),
-                    ],
-                ],
-                'description' => 'Operations for retrieving callable stored procedures.',
-            ],
             [
                 'path'        => $path . '/{procedure_name}',
                 'operations'  => [
