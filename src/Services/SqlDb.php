@@ -2,7 +2,6 @@
 
 namespace DreamFactory\Core\SqlDb\Services;
 
-use DreamFactory\Core\Components\DbSchemaExtras;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
@@ -22,8 +21,6 @@ use DreamFactory\Core\Services\BaseDbService;
  */
 class SqlDb extends BaseDbService
 {
-    use DbSchemaExtras;
-
     //*************************************************************************
     //	Members
     //*************************************************************************

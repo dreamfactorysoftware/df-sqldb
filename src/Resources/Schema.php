@@ -1,7 +1,10 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
+use DreamFactory\Core\Components\DbSchemaExtras;
 use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Resources\System\Event;
+use DreamFactory\Core\Services\Swagger;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Inflector;
 use DreamFactory\Core\Enums\VerbsMask;
@@ -25,6 +28,7 @@ class Schema extends BaseDbSchemaResource
 
     use SqlDbResource;
     use TableDescriber;
+    use DbSchemaExtras;
 
     //*************************************************************************
     //	Methods
@@ -51,8 +55,7 @@ class Schema extends BaseDbSchemaResource
         $schema = $this->request->getParameter(ApiOptions::SCHEMA, '');
 
         $result = $this->listResources($schema, $refresh);
-
-        $extras = $this->parent->getSchemaExtrasForTables($result, false, 'table,label,plural');
+        $extras = $this->getSchemaExtrasForTables($result, false, 'table,label,plural');
 
         $resources = [];
         foreach ($result as $name) {
@@ -105,7 +108,7 @@ class Schema extends BaseDbSchemaResource
                 throw new NotFoundException("Table '$name' does not exist in the database.");
             }
 
-            $extras = $this->parent->getSchemaExtrasForTables($name);
+            $extras = $this->getSchemaExtrasForTables($name);
             $extras = DbUtilities::reformatFieldLabelArray($extras);
             $result = static::mergeTableExtras($table->toArray(), $extras);
             $result['access'] = $this->getPermissions($name);
@@ -402,9 +405,9 @@ class Schema extends BaseDbSchemaResource
 
         if (!empty($field_names)) {
             $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
-            $extras = $this->parent->getSchemaExtrasForFields($table_name, $field_names);
+            $extras = $this->getSchemaExtrasForFields($table_name, $field_names);
         } else {
-            $extras = $this->parent->getSchemaExtrasForTables($table_name);
+            $extras = $this->getSchemaExtrasForTables($table_name);
         }
 
         $extras = DbUtilities::reformatFieldLabelArray($extras);
@@ -558,7 +561,8 @@ class Schema extends BaseDbSchemaResource
         static::createFieldExtras($results);
 
         if (!empty($labels)) {
-            DbUtilities::setSchemaExtras($this->serviceId, $labels);
+            $this->setSchemaTableExtras($labels);
+            $this->setSchemaFieldExtras($labels);
         }
 
         return $out;
@@ -654,6 +658,43 @@ class Schema extends BaseDbSchemaResource
             $oldForeignKey = ArrayUtils::get($oldField, 'is_foreign_key', false);
             $temp = [];
 
+            $values = ArrayUtils::get($field, 'value');
+            if (empty($values)) {
+                $values = ArrayUtils::getDeep($field, 'values', 'value', []);
+            }
+            if (!is_array($values)) {
+                $values = array_map('trim', explode(',', trim($values, ',')));
+            }
+            if (!empty($values) && ($values != ArrayUtils::get($oldField, 'value'))) {
+                $picklist = '';
+                foreach ($values as $value) {
+                    if (!empty($picklist)) {
+                        $picklist .= "\r";
+                    }
+                    $picklist .= $value;
+                }
+                if (!empty($picklist)) {
+                    $temp['picklist'] = $picklist;
+                }
+            }
+
+            // labels
+            $label = ArrayUtils::get($field, 'label');
+            if (!empty($label) && ($label != ArrayUtils::get($oldField, 'label'))) {
+                $temp['label'] = $label;
+            }
+
+            $validation = ArrayUtils::get($field, 'validation');
+            if (!empty($validation) && ($validation != ArrayUtils::get($oldField, 'validation'))) {
+                $temp['validation'] = json_encode($validation);
+            }
+
+            if (!empty($temp)) {
+                $temp['table'] = $table_name;
+                $temp['field'] = $name;
+                $labels[] = $temp;
+            }
+
             // if same as old, don't bother
             if (!empty($oldField)) {
                 $same = true;
@@ -663,6 +704,10 @@ class Schema extends BaseDbSchemaResource
                         case 'label':
                         case 'value':
                         case 'validation':
+                        case 'description':
+                        case 'client_info':
+                        case 'extra_type':
+                            // extras from server already taken care of
                             break;
                         default:
                             if (isset($oldField[$key])) // could be extra stuff from client
@@ -754,43 +799,6 @@ class Schema extends BaseDbSchemaResource
                     'column' => $name,
                     'drop'   => $isAlter
                 ];
-            }
-
-            $values = ArrayUtils::get($field, 'value');
-            if (empty($values)) {
-                $values = ArrayUtils::getDeep($field, 'values', 'value', []);
-            }
-            if (!is_array($values)) {
-                $values = array_map('trim', explode(',', trim($values, ',')));
-            }
-            if (!empty($values) && ($values != ArrayUtils::get($oldField, 'value'))) {
-                $picklist = '';
-                foreach ($values as $value) {
-                    if (!empty($picklist)) {
-                        $picklist .= "\r";
-                    }
-                    $picklist .= $value;
-                }
-                if (!empty($picklist)) {
-                    $temp['picklist'] = $picklist;
-                }
-            }
-
-            // labels
-            $label = ArrayUtils::get($field, 'label');
-            if (!empty($label) && ($label != ArrayUtils::get($oldField, 'label'))) {
-                $temp['label'] = $label;
-            }
-
-            $validation = ArrayUtils::get($field, 'validation');
-            if (!empty($validation) && ($validation != ArrayUtils::get($oldField, 'validation'))) {
-                $temp['validation'] = json_encode($validation);
-            }
-
-            if (!empty($temp)) {
-                $temp['table'] = $table_name;
-                $temp['field'] = $name;
-                $labels[] = $temp;
             }
 
             if ($isAlter) {
@@ -1027,6 +1035,9 @@ class Schema extends BaseDbSchemaResource
     public function refreshCachedTables()
     {
         $this->dbConn->getSchema()->refresh();
+        // Any changes to tables needs to produce a new event list
+        Event::clearCache();
+        Swagger::clearCache($this->getServiceName());
     }
 
     public function getApiDocInfo()

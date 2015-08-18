@@ -15,33 +15,34 @@ trait TableDescriber
      */
     protected static function mergeTableExtras($table, $extras = null)
     {
-        $out = ArrayUtils::clean($table);
+        $table = ArrayUtils::clean($table);
         $extras = ArrayUtils::clean($extras);
 
         $labelInfo = ArrayUtils::get($extras, '', []);
         $label = ArrayUtils::get($labelInfo, 'label');
         if (!empty($label)) {
-            $out['label'] = $label;
+            $table['label'] = $label;
         }
 
         $plural = ArrayUtils::get($labelInfo, 'plural');
         if (!empty($plural)) {
-            $out['plural'] = $plural;
+            $table['plural'] = $plural;
         }
 
         $name_field = ArrayUtils::get($labelInfo, 'name_field');
         if (!empty($name_field)) {
-            $out['name_field'] = $name_field;
+            $table['name_field'] = $name_field;
         }
 
-        $fields = ArrayUtils::get($table, 'fields', []);
+        $fields = ArrayUtils::get($table, 'field', []);
         foreach ($fields as &$field) {
             $name = ArrayUtils::get($field, 'name');
             $info = ArrayUtils::get($extras, $name, []);
             $field = static::mergeFieldExtras($field, $info);
         }
+        $table['field'] = $fields;
 
-        return $out;
+        return $table;
     }
 
     /**
