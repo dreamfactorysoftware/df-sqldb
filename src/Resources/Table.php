@@ -414,7 +414,7 @@ class Table extends BaseDbTableResource
                 $meta['count'] = $count;
             }
             if (($count - $offset) > $limit) {
-                $meta['next'] = $offset + $limit + 1;
+                $meta['next'] = $offset + $limit;
             }
         }
 
