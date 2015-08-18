@@ -1,6 +1,7 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Models;
 
+use DreamFactory\Core\Models\ServiceCacheConfig;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Core\Components\RequireExtensions;
 use DreamFactory\Core\Exceptions\BadRequestException;
@@ -31,6 +32,22 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     protected $encrypted = ['username', 'password'];
 
+    /**
+     * @param int $id
+     *
+     * @return array
+     */
+    public static function getConfig($id)
+    {
+        $config = parent::getConfig($id);
+
+        $cacheConfig = ServiceCacheConfig::whereServiceId($id)->first();
+        $config['cache_enabled'] = (empty($cacheConfig)) ? false : $cacheConfig->getAttribute('cache_enabled');
+        $config['cache_ttl'] = (empty($cacheConfig)) ? 0 : $cacheConfig->getAttribute('cache_ttl');
+
+        return $config;
+    }
+
     public static function validateConfig($config, $create = true)
     {
         if (null === ($dsn = ArrayUtils::get($config, 'dsn', null, true))) {
@@ -41,6 +58,38 @@ class SqlDbConfig extends BaseServiceConfigModel
         Connection::requireDriver($driver);
 
         return true;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public static function setConfig($id, $config)
+    {
+        $cache = [];
+        if (isset($config['cache_enabled'])) {
+            $cache['cache_enabled'] = $config['cache_enabled'];
+            unset($config['cache_enabled']);
+        }
+        if (isset($config['cache_ttl'])) {
+            $cache['cache_ttl'] = $config['cache_ttl'];
+            unset($config['cache_ttl']);
+        }
+        if (!empty($cache)) {
+            ServiceCacheConfig::setConfig($id, $cache);
+        }
+
+        parent::setConfig($id, $config);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public static function getConfigSchema()
+    {
+        $schema = parent::getConfigSchema();
+        $schema = array_merge($schema, ServiceCacheConfig::getConfigSchema());
+
+        return $schema;
     }
 
     /**

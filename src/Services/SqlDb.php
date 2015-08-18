@@ -13,7 +13,6 @@ use DreamFactory\Core\SqlDb\Resources\Table;
 use DreamFactory\Core\SqlDbCore\Connection;
 use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Services\BaseDbService;
-use DreamFactory\Core\Resources\BaseRestResource;
 
 /**
  * Class SqlDb
@@ -22,10 +21,6 @@ use DreamFactory\Core\Resources\BaseRestResource;
  */
 class SqlDb extends BaseDbService
 {
-    //*************************************************************************
-    //	Constants
-    //*************************************************************************
-
     //*************************************************************************
     //	Members
     //*************************************************************************
@@ -91,7 +86,7 @@ class SqlDb extends BaseDbService
         $user = ArrayUtils::get($config, 'username');
         $password = ArrayUtils::get($config, 'password');
 
-        $this->dbConn = new Connection($dsn, $user, $password);
+        $this->dbConn = new Connection($dsn, $user, $password, $this);
 
         switch ($this->dbConn->getDBName()) {
             case SqlDbDriverTypes::MYSQL:

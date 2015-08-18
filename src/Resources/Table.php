@@ -101,7 +101,7 @@ class Table extends BaseDbTableResource
     /**
      * {@inheritdoc}
      */
-    public function listTables($schema = null, $refresh = false)
+    public function listResources($schema = null, $refresh = false)
     {
         return $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
     }
@@ -118,9 +118,9 @@ class Table extends BaseDbTableResource
         $refresh = $this->request->getParameterAsBool(ApiOptions::REFRESH);
         $schema = $this->request->getParameter(ApiOptions::SCHEMA, '');
 
-        $result = $this->listTables($schema, $refresh);
+        $result = $this->listResources($schema, $refresh);
 
-        $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $result, false, 'table,label,plural');
+        $extras = $this->getSchemaExtrasForTables($result, false, 'table,label,plural');
 
         $resources = [];
         foreach ($result as $name) {
@@ -155,20 +155,6 @@ class Table extends BaseDbTableResource
         }
 
         return $resources;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function listAccessComponents($schema = null, $refresh = false)
-    {
-        $output = [];
-        $result = $this->listTables($schema, $refresh);
-        foreach ($result as $name) {
-            $output[] = static::RESOURCE_NAME . '/' . $name;
-        }
-
-        return $output;
     }
 
     /**
@@ -428,7 +414,7 @@ class Table extends BaseDbTableResource
                 $meta['count'] = $count;
             }
             if (($count - $offset) > $limit) {
-                $meta['next'] = $offset + $limit + 1;
+                $meta['next'] = $offset + $limit;
             }
         }
 
@@ -2507,7 +2493,7 @@ class Table extends BaseDbTableResource
                 throw new NotFoundException("Table '$name' does not exist in the database.");
             }
 
-            $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $name);
+            $extras = $this->getSchemaExtrasForTables($name);
             $extras = DbUtilities::reformatFieldLabelArray($extras);
 
             return static::mergeTableExtras($table->toArray(), $extras);
@@ -2537,9 +2523,9 @@ class Table extends BaseDbTableResource
 
         if (!empty($field_names)) {
             $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
-            $extras = DbUtilities::getSchemaExtrasForFields($this->serviceId, $table_name, $field_names);
+            $extras = $this->getSchemaExtrasForFields($table_name, $field_names);
         } else {
-            $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $table_name);
+            $extras = $this->getSchemaExtrasForTables($table_name);
         }
 
         $extras = DbUtilities::reformatFieldLabelArray($extras);

@@ -2,6 +2,8 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Resources\System\Event;
+use DreamFactory\Core\Services\Swagger;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Inflector;
 use DreamFactory\Core\Enums\VerbsMask;
@@ -33,7 +35,7 @@ class Schema extends BaseDbSchemaResource
     /**
      * {@inheritdoc}
      */
-    public function listTables($schema = null, $refresh = false)
+    public function listResources($schema = null, $refresh = false)
     {
         return $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
     }
@@ -50,9 +52,8 @@ class Schema extends BaseDbSchemaResource
         $refresh = $this->request->getParameterAsBool(ApiOptions::REFRESH);
         $schema = $this->request->getParameter(ApiOptions::SCHEMA, '');
 
-        $result = $this->listTables($schema, $refresh);
-
-        $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $result, false, 'table,label,plural');
+        $result = $this->listResources($schema, $refresh);
+        $extras = $this->getSchemaExtrasForTables($result, false, 'table,label,plural');
 
         $resources = [];
         foreach ($result as $name) {
@@ -89,17 +90,6 @@ class Schema extends BaseDbSchemaResource
         return $resources;
     }
 
-    public function listAccessComponents($schema = null, $refresh = false)
-    {
-        $output = [];
-        $result = $this->listTables($schema, $refresh);
-        foreach ($result as $name) {
-            $output[] = static::RESOURCE_NAME . '/' . $name;
-        }
-
-        return $output;
-    }
-
     /**
      * {@inheritdoc}
      */
@@ -116,7 +106,7 @@ class Schema extends BaseDbSchemaResource
                 throw new NotFoundException("Table '$name' does not exist in the database.");
             }
 
-            $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $name);
+            $extras = $this->getSchemaExtrasForTables($name);
             $extras = DbUtilities::reformatFieldLabelArray($extras);
             $result = static::mergeTableExtras($table->toArray(), $extras);
             $result['access'] = $this->getPermissions($name);
@@ -167,7 +157,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->updateTablesInternal($tables);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTables($tables);
@@ -189,7 +179,7 @@ class Schema extends BaseDbSchemaResource
         $result = ArrayUtils::get($result, 0, []);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTable($table);
@@ -211,7 +201,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->updateFieldsInternal($table, $fields);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeField($table, $field);
@@ -236,7 +226,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->updateTablesInternal($tables, true, $allow_delete_fields);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTables($tables);
@@ -259,7 +249,7 @@ class Schema extends BaseDbSchemaResource
         $result = ArrayUtils::get($result, 0, []);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTable($table);
@@ -285,7 +275,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->updateFieldsInternal($table, $fields, true);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeField($table, $field);
@@ -304,7 +294,7 @@ class Schema extends BaseDbSchemaResource
         }
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
         //  Does it exist
         if (!$this->doesTableExist($table)) {
@@ -319,9 +309,9 @@ class Schema extends BaseDbSchemaResource
         }
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
-        DbUtilities::removeSchemaExtrasForTables($this->serviceId, $table);
+        $this->removeSchemaExtrasForTables($table);
     }
 
     /**
@@ -345,9 +335,9 @@ class Schema extends BaseDbSchemaResource
         }
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables($this->dbConn);
+        static::refreshCachedTables();
 
-        DbUtilities::removeSchemaExtrasForFields($this->serviceId, $table, $field);
+        $this->removeSchemaExtrasForFields($table, $field);
     }
 
     /**
@@ -411,11 +401,10 @@ class Schema extends BaseDbSchemaResource
             throw new NotFoundException("Table '$table_name' does not exist in the database.");
         }
 
+        $extras = [];
         if (!empty($field_names)) {
             $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
-            $extras = DbUtilities::getSchemaExtrasForFields($this->serviceId, $table_name, $field_names);
-        } else {
-            $extras = DbUtilities::getSchemaExtrasForTables($this->serviceId, $table_name);
+            $extras = $this->getSchemaExtrasForFields($table_name, $field_names);
         }
 
         $extras = DbUtilities::reformatFieldLabelArray($extras);
@@ -490,7 +479,7 @@ class Schema extends BaseDbSchemaResource
 
             $labels = ArrayUtils::get($results, 'labels', null, true);
             if (!empty($labels)) {
-                DbUtilities::setSchemaExtras($this->serviceId, $labels);
+                $this->setSchemaFieldExtras($labels);
             }
 
             return ['names' => $names];
@@ -569,7 +558,8 @@ class Schema extends BaseDbSchemaResource
         static::createFieldExtras($results);
 
         if (!empty($labels)) {
-            DbUtilities::setSchemaExtras($this->serviceId, $labels);
+            $this->setSchemaTableExtras($labels);
+            $this->setSchemaFieldExtras($labels);
         }
 
         return $out;
@@ -665,6 +655,43 @@ class Schema extends BaseDbSchemaResource
             $oldForeignKey = ArrayUtils::get($oldField, 'is_foreign_key', false);
             $temp = [];
 
+            $values = ArrayUtils::get($field, 'value');
+            if (empty($values)) {
+                $values = ArrayUtils::getDeep($field, 'values', 'value', []);
+            }
+            if (!is_array($values)) {
+                $values = array_map('trim', explode(',', trim($values, ',')));
+            }
+            if (!empty($values) && ($values != ArrayUtils::get($oldField, 'value'))) {
+                $picklist = '';
+                foreach ($values as $value) {
+                    if (!empty($picklist)) {
+                        $picklist .= "\r";
+                    }
+                    $picklist .= $value;
+                }
+                if (!empty($picklist)) {
+                    $temp['picklist'] = $picklist;
+                }
+            }
+
+            // labels
+            $label = ArrayUtils::get($field, 'label');
+            if (!empty($label) && ($label != ArrayUtils::get($oldField, 'label'))) {
+                $temp['label'] = $label;
+            }
+
+            $validation = ArrayUtils::get($field, 'validation');
+            if (!empty($validation) && ($validation != ArrayUtils::get($oldField, 'validation'))) {
+                $temp['validation'] = json_encode($validation);
+            }
+
+            if (!empty($temp)) {
+                $temp['table'] = $table_name;
+                $temp['field'] = $name;
+                $labels[] = $temp;
+            }
+
             // if same as old, don't bother
             if (!empty($oldField)) {
                 $same = true;
@@ -674,6 +701,10 @@ class Schema extends BaseDbSchemaResource
                         case 'label':
                         case 'value':
                         case 'validation':
+                        case 'description':
+                        case 'client_info':
+                        case 'extra_type':
+                            // extras from server already taken care of
                             break;
                         default:
                             if (isset($oldField[$key])) // could be extra stuff from client
@@ -765,43 +796,6 @@ class Schema extends BaseDbSchemaResource
                     'column' => $name,
                     'drop'   => $isAlter
                 ];
-            }
-
-            $values = ArrayUtils::get($field, 'value');
-            if (empty($values)) {
-                $values = ArrayUtils::getDeep($field, 'values', 'value', []);
-            }
-            if (!is_array($values)) {
-                $values = array_map('trim', explode(',', trim($values, ',')));
-            }
-            if (!empty($values) && ($values != ArrayUtils::get($oldField, 'value'))) {
-                $picklist = '';
-                foreach ($values as $value) {
-                    if (!empty($picklist)) {
-                        $picklist .= "\r";
-                    }
-                    $picklist .= $value;
-                }
-                if (!empty($picklist)) {
-                    $temp['picklist'] = $picklist;
-                }
-            }
-
-            // labels
-            $label = ArrayUtils::get($field, 'label');
-            if (!empty($label) && ($label != ArrayUtils::get($oldField, 'label'))) {
-                $temp['label'] = $label;
-            }
-
-            $validation = ArrayUtils::get($field, 'validation');
-            if (!empty($validation) && ($validation != ArrayUtils::get($oldField, 'validation'))) {
-                $temp['validation'] = json_encode($validation);
-            }
-
-            if (!empty($temp)) {
-                $temp['table'] = $table_name;
-                $temp['field'] = $name;
-                $labels[] = $temp;
             }
 
             if ($isAlter) {
@@ -1038,6 +1032,9 @@ class Schema extends BaseDbSchemaResource
     public function refreshCachedTables()
     {
         $this->dbConn->getSchema()->refresh();
+        // Any changes to tables needs to produce a new event list
+        Event::clearCache();
+        Swagger::clearCache($this->getServiceName());
     }
 
     public function getApiDocInfo()

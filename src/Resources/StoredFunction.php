@@ -105,22 +105,20 @@ class StoredFunction extends BaseDbResource
     }
 
     /**
-     * @param null|string $schema
-     * @param bool        $refresh
-     *
-     * @return array
-     * @throws InternalServerErrorException
-     * @throws RestException
-     * @throws \Exception
-     *
+     * {@inheritdoc}
      */
-    protected function listFunctions($schema = null, $refresh = false)
+    public function getResourceName()
+    {
+        return static::RESOURCE_NAME;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function listResources($schema = null, $refresh = false)
     {
         try {
-            $names = $this->dbConn->getSchema()->getFunctionNames($schema, $refresh);
-            natcasesort($names);
-
-            return array_values($names);
+            return $this->dbConn->getSchema()->getFunctionNames($schema, $refresh);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
@@ -128,6 +126,9 @@ class StoredFunction extends BaseDbResource
         }
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function getResources($only_handlers = false)
     {
         if ($only_handlers) {
@@ -137,7 +138,7 @@ class StoredFunction extends BaseDbResource
         $refresh = $this->request->getParameterAsBool('refresh');
         $schema = $this->request->getParameter('schema', '');
 
-        $result = $this->listFunctions($schema, $refresh);
+        $result = $this->listResources($schema, $refresh);
 
         $resources = [];
         foreach ($result as $name) {
@@ -148,17 +149,6 @@ class StoredFunction extends BaseDbResource
         }
 
         return $resources;
-    }
-
-    public function listAccessComponents($schema = null, $refresh = false)
-    {
-        $output = [];
-        $result = $this->listFunctions($schema, $refresh);
-        foreach ($result as $name) {
-            $output[] = static::RESOURCE_NAME . '/' . $name;
-        }
-
-        return $output;
     }
 
     /**
@@ -250,37 +240,6 @@ class StoredFunction extends BaseDbResource
         $base = parent::getApiDocInfo();
 
         $apis = [
-            [
-                'path'        => $path,
-                'operations'  => [
-                    [
-                        'method'           => 'GET',
-                        'summary'          => 'getStoredFuncsList() - List callable stored functions.',
-                        'nickname'         => 'getStoredFuncsList',
-                        'notes'            => 'List the names of the available stored functions on this database. ',
-                        'type'             => 'ResourceList',
-                        'event_name'       => [$eventPath . '.list'],
-                        'parameters'       => [
-                            ApiOptions::documentOption(ApiOptions::REFRESH),
-                        ],
-                        'responseMessages' => ApiDocUtilities::getCommonResponses([400, 401, 500]),
-                    ],
-                    [
-                        'method'           => 'GET',
-                        'summary'          => 'getStoredFuncs() - List callable stored functions.',
-                        'nickname'         => 'getStoredFuncs',
-                        'notes'            => 'List the available stored functions on this database. ',
-                        'type'             => 'Resources',
-                        'event_name'       => [$eventPath . '.list'],
-                        'parameters'       => [
-                            ApiOptions::documentOption(ApiOptions::FIELDS),
-                            ApiOptions::documentOption(ApiOptions::REFRESH),
-                        ],
-                        'responseMessages' => ApiDocUtilities::getCommonResponses([400, 401, 500]),
-                    ],
-                ],
-                'description' => 'Operations for retrieving callable stored functions.',
-            ],
             [
                 'path'        => $path . '/{function_name}',
                 'operations'  => [
