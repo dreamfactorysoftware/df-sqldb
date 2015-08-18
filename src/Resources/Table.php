@@ -3,7 +3,6 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use Config;
-use DreamFactory\Core\Components\DbSchemaExtras;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
@@ -34,7 +33,6 @@ class Table extends BaseDbTableResource
 
     use SqlDbResource;
     use TableDescriber;
-    use DbSchemaExtras;
 
     //*************************************************************************
     //	Members

@@ -1,7 +1,6 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
-use DreamFactory\Core\Components\DbSchemaExtras;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Resources\System\Event;
 use DreamFactory\Core\Services\Swagger;
@@ -28,7 +27,6 @@ class Schema extends BaseDbSchemaResource
 
     use SqlDbResource;
     use TableDescriber;
-    use DbSchemaExtras;
 
     //*************************************************************************
     //	Methods
@@ -313,7 +311,7 @@ class Schema extends BaseDbSchemaResource
         //  Any changes here should refresh cached schema
         static::refreshCachedTables();
 
-        DbUtilities::removeSchemaExtrasForTables($this->serviceId, $table);
+        $this->removeSchemaExtrasForTables($table);
     }
 
     /**
@@ -339,7 +337,7 @@ class Schema extends BaseDbSchemaResource
         //  Any changes here should refresh cached schema
         static::refreshCachedTables();
 
-        DbUtilities::removeSchemaExtrasForFields($this->serviceId, $table, $field);
+        $this->removeSchemaExtrasForFields($table, $field);
     }
 
     /**
@@ -403,11 +401,10 @@ class Schema extends BaseDbSchemaResource
             throw new NotFoundException("Table '$table_name' does not exist in the database.");
         }
 
+        $extras = [];
         if (!empty($field_names)) {
             $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
             $extras = $this->getSchemaExtrasForFields($table_name, $field_names);
-        } else {
-            $extras = $this->getSchemaExtrasForTables($table_name);
         }
 
         $extras = DbUtilities::reformatFieldLabelArray($extras);
@@ -482,7 +479,7 @@ class Schema extends BaseDbSchemaResource
 
             $labels = ArrayUtils::get($results, 'labels', null, true);
             if (!empty($labels)) {
-                DbUtilities::setSchemaExtras($this->serviceId, $labels);
+                $this->setSchemaFieldExtras($labels);
             }
 
             return ['names' => $names];
