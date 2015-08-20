@@ -778,24 +778,28 @@ class Schema extends BaseDbSchemaResource
 
             // regardless of type
             if (ArrayUtils::getBool($field, 'is_unique')) {
-                // will get to it later, create after table built
-                $keyName = $this->dbConn->getSchema()->makeConstraintName('undx', $table_name, $name);
-                $indexes[] = [
-                    'name'   => $keyName,
-                    'table'  => $table_name,
-                    'column' => $name,
-                    'unique' => true,
-                    'drop'   => $isAlter
-                ];
+                if ($this->dbConn->getSchema()->requiresCreateIndex(true, !$isAlter)) {
+                    // will get to it later, create after table built
+                    $keyName = $this->dbConn->getSchema()->makeConstraintName('undx', $table_name, $name);
+                    $indexes[] = [
+                        'name'   => $keyName,
+                        'table'  => $table_name,
+                        'column' => $name,
+                        'unique' => true,
+                        'drop'   => $isAlter
+                    ];
+                }
             } elseif (ArrayUtils::get($field, 'is_index')) {
-                // will get to it later, create after table built
-                $keyName = $this->dbConn->getSchema()->makeConstraintName('ndx', $table_name, $name);
-                $indexes[] = [
-                    'name'   => $keyName,
-                    'table'  => $table_name,
-                    'column' => $name,
-                    'drop'   => $isAlter
-                ];
+                if ($this->dbConn->getSchema()->requiresCreateIndex(false, !$isAlter)) {
+                    // will get to it later, create after table built
+                    $keyName = $this->dbConn->getSchema()->makeConstraintName('ndx', $table_name, $name);
+                    $indexes[] = [
+                        'name'   => $keyName,
+                        'table'  => $table_name,
+                        'column' => $name,
+                        'drop'   => $isAlter
+                    ];
+                }
             }
 
             if ($isAlter) {
