@@ -379,7 +379,9 @@ class Table extends BaseDbTableResource
             foreach ($bind_columns as $binding) {
                 $name = ArrayUtils::get($binding, 'name');
                 $type = ArrayUtils::get($binding, 'php_type');
-                $value = ArrayUtils::get($dummy, $name, (is_array($read) ? ArrayUtils::get($read, $name) : null));
+                if (null === $value = ArrayUtils::get($dummy, $name)) {
+                    $value = (is_array($read) ? ArrayUtils::get($read, $name) : null);
+                }
                 if (!is_null($type) && !is_null($value)) {
                     if (('int' === $type) && ('' === $value)) {
                         // Postgresql strangely returns "" for null integers
