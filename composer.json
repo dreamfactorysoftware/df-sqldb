@@ -38,7 +38,7 @@
   },
   "require": {
     "dreamfactory/df-core": "~0.0.2",
-    "dreamfactory/df-sqldb-core": "~0.0.2"
+    "dreamfactory/df-sqldb-core": "~0.0.3"
   },
   "autoload": {
     "psr-4": {
