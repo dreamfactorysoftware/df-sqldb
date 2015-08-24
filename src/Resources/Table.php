@@ -189,9 +189,7 @@ class Table extends BaseDbTableResource
             $params = ArrayUtils::get($criteria, 'params', []);
 
             if (!empty($parsed)) {
-                /** @var Command $command */
-                $command = $this->dbConn->createCommand();
-                $command->update($table, $parsed, $where, $params);
+                $this->dbConn->createCommand()->update($table, $parsed, $where, $params);
             }
 
             $results = $this->recordQuery($table, $fields, $where, $params, $bindings, $extras);
@@ -232,17 +230,14 @@ class Table extends BaseDbTableResource
     {
         // truncate the table, return success
         try {
-            /** @var Command $command */
-            $command = $this->dbConn->createCommand();
-
             // build filter string if necessary, add server-side filters if necessary
             $ssFilters = ArrayUtils::get($extras, 'ss_filters');
             $params = [];
             $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
             if (!empty($serverFilter)) {
-                $command->delete($table, $serverFilter, $params);
+                $this->dbConn->createCommand()->delete($table, $serverFilter, $params);
             } else {
-                $command->truncateTable($table);
+                $this->dbConn->createCommand()->truncateTable($table);
             }
 
             return ['success' => true];
@@ -283,10 +278,7 @@ class Table extends BaseDbTableResource
             $params = ArrayUtils::get($criteria, 'params', []);
 
             $results = $this->recordQuery($table, $fields, $where, $params, $bindings, $extras);
-
-            /** @var Command $command */
-            $command = $this->dbConn->createCommand();
-            $command->delete($table, $where, $params);
+            $this->dbConn->createCommand()->delete($table, $where, $params);
 
             return $results;
         } catch (RestException $ex) {
@@ -1818,9 +1810,7 @@ class Table extends BaseDbTableResource
             throw new BadRequestException('[NOQUERY]: No query string present in request.');
         }
         try {
-            /** @var Command $command */
-            $command = $this->dbConn->createCommand($query);
-            $reader = $command->query();
+            $reader = $this->dbConn->createCommand($query)->query();
             $dummy = [];
             foreach ($bindings as $binding) {
                 $name = ArrayUtils::get($binding, 'name');
@@ -1867,12 +1857,10 @@ class Table extends BaseDbTableResource
             throw new BadRequestException('[NOQUERY]: No query string present in request.');
         }
         try {
-            /** @var Command $command */
-            $command = $this->dbConn->createCommand($query);
             if (isset($params) && !empty($params)) {
-                $data = $command->queryAll(true, $params);
+                $data = $this->dbConn->createCommand($query)->queryAll(true, $params);
             } else {
-                $data = $command->queryAll();
+                $data = $this->dbConn->createCommand($query)->queryAll();
             }
 
             return $data;
@@ -1892,12 +1880,10 @@ class Table extends BaseDbTableResource
             throw new BadRequestException('[NOQUERY]: No query string present in request.');
         }
         try {
-            /** @var Command $command */
-            $command = $this->dbConn->createCommand($query);
             if (isset($params) && !empty($params)) {
-                $data = $command->execute($params);
+                $data = $this->dbConn->createCommand($query)->execute($params);
             } else {
-                $data = $command->execute();
+                $data = $this->dbConn->createCommand($query)->execute();
             }
 
             return $data;
@@ -2495,10 +2481,7 @@ class Table extends BaseDbTableResource
                 throw new NotFoundException("Table '$name' does not exist in the database.");
             }
 
-            $extras = $this->getSchemaExtrasForTables($name);
-            $extras = DbUtilities::reformatFieldLabelArray($extras);
-
-            return static::mergeTableExtras($table->toArray(), $extras);
+            return $table->toArray();
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
@@ -2525,20 +2508,14 @@ class Table extends BaseDbTableResource
 
         if (!empty($field_names)) {
             $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
-            $extras = $this->getSchemaExtrasForFields($table_name, $field_names);
-        } else {
-            $extras = $this->getSchemaExtrasForTables($table_name);
         }
-
-        $extras = DbUtilities::reformatFieldLabelArray($extras);
 
         $out = [];
         try {
             /** @var ColumnSchema $column */
             foreach ($table->columns as $column) {
                 if (empty($field_names) || (false !== array_search($column->name, $field_names))) {
-                    $info = ArrayUtils::get($extras, $column->name, []);
-                    $out[] = static::mergeFieldExtras($column->toArray(), $info);
+                    $out[] = $column->toArray();
                 }
             }
         } catch (\Exception $ex) {
