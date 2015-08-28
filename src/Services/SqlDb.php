@@ -3,24 +3,25 @@
 namespace DreamFactory\Core\SqlDb\Services;
 
 use DreamFactory\Core\Components\DbSchemaExtras;
-use DreamFactory\Core\Utility\Session;
-use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
-use DreamFactory\Core\Exceptions\NotFoundException;
+use DreamFactory\Core\Services\BaseDbService;
 use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\StoredFunction;
 use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
 use DreamFactory\Core\SqlDbCore\Connection;
-use DreamFactory\Core\Enums\SqlDbDriverTypes;
-use DreamFactory\Core\Services\BaseDbService;
+use DreamFactory\Core\SqlDbCore\CacheInterface;
+use DreamFactory\Core\SqlDbCore\DbExtrasInterface;
+use DreamFactory\Core\Utility\Session;
+use DreamFactory\Library\Utility\ArrayUtils;
 
 /**
  * Class SqlDb
  *
  * @package DreamFactory\Core\SqlDb\Services
  */
-class SqlDb extends BaseDbService
+class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
 {
     use DbSchemaExtras;
 
@@ -90,6 +91,11 @@ class SqlDb extends BaseDbService
         $password = ArrayUtils::get($config, 'password');
 
         $this->dbConn = new Connection($dsn, $user, $password, $this, $this);
+        $this->dbConn->setCache($this);
+        $this->dbConn->setExtraStore($this);
+
+        $defaultSchemaOnly = ArrayUtils::getBool($config, 'default_schema_only');
+        $this->dbConn->setDefaultSchemaOnly($defaultSchemaOnly);
 
         switch ($this->dbConn->getDBName()) {
             case SqlDbDriverTypes::MYSQL:
@@ -154,26 +160,13 @@ class SqlDb extends BaseDbService
         }
     }
 
-    /**
-     * {@InheritDoc}
-     */
-    protected function handleResource(array $resources)
+    public function getTableNames($schema = null, $refresh = false)
     {
-        try {
-            return parent::handleResource($resources);
-        } catch (NotFoundException $ex) {
-            // If version 1.x, the resource could be a table
-//            if ($this->request->getApiVersion())
-//            {
-//                $resource = $this->instantiateResource( Table::class, [ 'name' => $this->resource ] );
-//                $newPath = $this->resourceArray;
-//                array_shift( $newPath );
-//                $newPath = implode( '/', $newPath );
-//
-//                return $resource->handleRequest( $this->request, $newPath, $this->outputFormat );
-//            }
+        return $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
+    }
 
-            throw $ex;
-        }
+    public function refreshTableCache()
+    {
+        $this->dbConn->getSchema()->refresh();
     }
 }

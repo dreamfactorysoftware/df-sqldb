@@ -26,9 +26,23 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     protected $table = 'sql_db_config';
 
-    protected $fillable = ['service_id', 'driver', 'dsn', 'username', 'password', 'options', 'attributes'];
+    protected $fillable = [
+        'service_id',
+        'driver',
+        'dsn',
+        'username',
+        'password',
+        'options',
+        'attributes',
+        'default_schema_only'
+    ];
 
-    protected $casts = ['options' => 'array', 'attributes' => 'array', 'service_id' => 'integer'];
+    protected $casts = [
+        'options'             => 'array',
+        'attributes'          => 'array',
+        'service_id'          => 'integer',
+        'default_schema_only' => 'boolean'
+    ];
 
     protected $encrypted = ['username', 'password'];
 
@@ -146,6 +160,11 @@ class SqlDbConfig extends BaseServiceConfigModel
                 $schema['description'] =
                     'A key=>value array of attributes to be set after connection.' .
                     ' For further information, see http://php.net/manual/en/pdo.setattribute.php';
+                break;
+            case 'default_schema_only':
+                $schema['description'] =
+                    'Do not include other schemas/databases on this server ' .
+                    'regardless of permissions given to the supplied credentials.';
                 break;
         }
     }
