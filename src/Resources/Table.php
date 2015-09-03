@@ -8,7 +8,6 @@ use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Enums\Verbs;
-use DreamFactory\Library\Utility\Inflector;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
@@ -23,6 +22,7 @@ use DreamFactory\Core\SqlDbCore\RelationSchema;
 use DreamFactory\Core\SqlDbCore\Transaction;
 use DreamFactory\Core\SqlDbCore\Expression;
 use DreamFactory\Core\SqlDbCore\ColumnSchema;
+use DreamFactory\Core\SqlDbCore\TableNameSchema;
 use DreamFactory\Core\Utility\DbUtilities;
 
 class Table extends BaseDbTableResource
@@ -55,106 +55,29 @@ class Table extends BaseDbTableResource
         parent::detectRequestMembers();
 
         if (!empty($this->resource)) {
-            switch ($this->resource) {
-                default:
-                    // All calls can request related data to be returned
-                    $related = ArrayUtils::get($this->options, ApiOptions::RELATED);
-                    if (!empty($related) && is_string($related) && ('*' !== $related)) {
-                        $relations = [];
-                        if (!is_array($related)) {
-                            $related = array_map('trim', explode(',', $related));
-                        }
-                        foreach ($related as $relative) {
-                            $extraFields = ArrayUtils::get($this->options, $relative . '_fields', '*');
-                            $extraOrder = ArrayUtils::get($this->options, $relative . '_order', '');
-                            $relations[] =
-                                [
-                                    'name'             => $relative,
-                                    ApiOptions::FIELDS => $extraFields,
-                                    ApiOptions::ORDER  => $extraOrder
-                                ];
-                        }
+            // All calls can request related data to be returned
+            $related = ArrayUtils::get($this->options, ApiOptions::RELATED);
+            if (!empty($related) && is_string($related) && ('*' !== $related)) {
+                $relations = [];
+                if (!is_array($related)) {
+                    $related = array_map('trim', explode(',', $related));
+                }
+                foreach ($related as $relative) {
+                    $extraFields = ArrayUtils::get($this->options, $relative . '_fields', '*');
+                    $extraOrder = ArrayUtils::get($this->options, $relative . '_order', '');
+                    $relations[] =
+                        [
+                            'name'             => $relative,
+                            ApiOptions::FIELDS => $extraFields,
+                            ApiOptions::ORDER  => $extraOrder
+                        ];
+                }
 
-                        $this->options['related'] = $relations;
-                    }
-                    break;
+                $this->options['related'] = $relations;
             }
         }
 
         return $this;
-    }
-
-    /**
-     * Corrects capitalization, etc. on table names, ensures it is not a system table
-     *
-     * {@InheritDoc}
-     */
-    public function correctTableName(&$name)
-    {
-        if (false !== ($table = $this->doesTableExist($name, true))) {
-            $name = $table;
-        } else {
-            throw new NotFoundException('Table "' . $name . '" does not exist in the database.');
-        }
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function listResources($schema = null, $refresh = false)
-    {
-        return $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function getResources($only_handlers = false)
-    {
-        if ($only_handlers) {
-            return [];
-        }
-
-        $refresh = $this->request->getParameterAsBool(ApiOptions::REFRESH);
-        $schema = $this->request->getParameter(ApiOptions::SCHEMA, '');
-
-        $result = $this->listResources($schema, $refresh);
-
-        $extras = $this->getSchemaExtrasForTables($result, false, 'table,label,plural');
-
-        $resources = [];
-        foreach ($result as $name) {
-            $access = $this->getPermissions($name);
-            if (!empty($access)) {
-                $label = '';
-                $plural = '';
-                foreach ($extras as $each) {
-                    if (0 == strcasecmp($name, ArrayUtils::get($each, 'table', ''))) {
-                        $label = ArrayUtils::get($each, 'label');
-                        $plural = ArrayUtils::get($each, 'plural');
-                        break;
-                    }
-                }
-
-                if (empty($label)) {
-                    $label = Inflector::camelize($name, ['_', '.'], true);
-                }
-
-                if (empty($plural)) {
-                    $plural = Inflector::pluralize($label);
-                }
-
-                $resources[] =
-                    [
-                        'name'   => $name,
-                        'label'  => $label,
-                        'plural' => $plural,
-                        'access' => VerbsMask::maskToArray($access)
-                    ];
-            }
-        }
-
-        return $resources;
     }
 
     /**
@@ -414,7 +337,12 @@ class Table extends BaseDbTableResource
 
         if (ArrayUtils::getBool($extras, ApiOptions::INCLUDE_SCHEMA, false)) {
             try {
-                $meta['schema'] = $this->describeTable($table);
+                $schema = $this->dbConn->getSchema()->getTable($table);
+                if (!$schema) {
+                    throw new NotFoundException("Table '$table' does not exist in the database.");
+                }
+
+                $meta['schema'] = $schema->toArray(true);
             } catch (RestException $ex) {
                 throw $ex;
             } catch (\Exception $ex) {
@@ -446,9 +374,32 @@ class Table extends BaseDbTableResource
      */
     protected function getFieldsInfo($name)
     {
-        $fields = $this->describeTableFields($name);
+        $table = $this->dbConn->getSchema()->getTable($name);
+        if (!$table) {
+            throw new NotFoundException("Table '$name' does not exist in the database.");
+        }
 
-        return $fields;
+        if (!empty($field_names)) {
+            $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
+        }
+
+        $out = [];
+        try {
+            /** @var ColumnSchema $column */
+            foreach ($table->columns as $column) {
+                if (empty($field_names) || (false !== array_search($column->name, $field_names))) {
+                    $out[] = $column->toArray();
+                }
+            }
+        } catch (\Exception $ex) {
+            throw new InternalServerErrorException("Failed to query table field schema.\n{$ex->getMessage()}");
+        }
+
+        if (empty($out)) {
+            throw new NotFoundException("No requested fields found in table '$table'.");
+        }
+
+        return $out;
     }
 
     /**
@@ -2433,100 +2384,6 @@ class Table extends BaseDbTableResource
         }
 
         return true;
-    }
-
-    /**
-     * @param string $name       The name of the table to check
-     * @param bool   $returnName If true, the table name is returned instead of TRUE
-     *
-     * @throws \InvalidArgumentException
-     * @return bool
-     */
-    public function doesTableExist($name, $returnName = false)
-    {
-        if (empty($name)) {
-            throw new \InvalidArgumentException('Table name cannot be empty.');
-        }
-
-        //  Build the lower-cased table array
-        $tables = $this->dbConn->getSchema()->getTableNames();
-
-        //	Search normal, return real name
-        if (false !== array_search($name, $tables)) {
-            return $returnName ? $name : true;
-        }
-
-        if (false !== $key = array_search(strtolower($name), array_map('strtolower', $tables))) {
-            return $returnName ? $tables[$key] : true;
-        }
-
-        return false;
-    }
-
-    /**
-     * @param string $name
-     * @param bool   $refresh
-     *
-     * @throws InternalServerErrorException
-     * @throws RestException
-     * @throws \Exception
-     * @return array
-     */
-    public function describeTable($name, $refresh = false)
-    {
-        $this->correctTableName($name);
-        try {
-            $table = $this->dbConn->getSchema()->getTable($name, $refresh);
-            if (!$table) {
-                throw new NotFoundException("Table '$name' does not exist in the database.");
-            }
-
-            return $table->toArray();
-        } catch (RestException $ex) {
-            throw $ex;
-        } catch (\Exception $ex) {
-            throw new InternalServerErrorException("Failed to query database schema.\n{$ex->getMessage()}");
-        }
-    }
-
-    /**
-     * @param string                $table_name
-     * @param null | string | array $field_names
-     * @param bool                  $refresh
-     *
-     * @throws NotFoundException
-     * @throws InternalServerErrorException
-     * @return array
-     */
-    public function describeTableFields($table_name, $field_names = null, $refresh = false)
-    {
-        $this->correctTableName($table_name);
-        $table = $this->dbConn->getSchema()->getTable($table_name, $refresh);
-        if (!$table) {
-            throw new NotFoundException("Table '$table_name' does not exist in the database.");
-        }
-
-        if (!empty($field_names)) {
-            $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
-        }
-
-        $out = [];
-        try {
-            /** @var ColumnSchema $column */
-            foreach ($table->columns as $column) {
-                if (empty($field_names) || (false !== array_search($column->name, $field_names))) {
-                    $out[] = $column->toArray();
-                }
-            }
-        } catch (\Exception $ex) {
-            throw new InternalServerErrorException("Failed to query table field schema.\n{$ex->getMessage()}");
-        }
-
-        if (empty($out)) {
-            throw new NotFoundException("No requested fields found in table '$table_name'.");
-        }
-
-        return $out;
     }
 
     /**

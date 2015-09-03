@@ -37,6 +37,7 @@
     "wiki": "https://wiki.dreamfactory.com"
   },
   "require": {
+    "dreamfactory/php-utils": "1.1.*",
     "dreamfactory/df-core": "~0.0.2",
     "dreamfactory/df-sqldb-core": "~0.0.3"
   },

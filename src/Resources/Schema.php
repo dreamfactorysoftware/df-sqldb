@@ -1,12 +1,7 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
-use DreamFactory\Core\Enums\ApiOptions;
-use DreamFactory\Core\Resources\System\Event;
-use DreamFactory\Core\Services\Swagger;
 use DreamFactory\Library\Utility\ArrayUtils;
-use DreamFactory\Library\Utility\Inflector;
-use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
@@ -33,71 +28,12 @@ class Schema extends BaseDbSchemaResource
     /**
      * {@inheritdoc}
      */
-    public function listResources($schema = null, $refresh = false)
-    {
-        return $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function getResources($only_handlers = false)
-    {
-        if ($only_handlers) {
-            return [];
-        }
-
-        $refresh = $this->request->getParameterAsBool(ApiOptions::REFRESH);
-        $schema = $this->request->getParameter(ApiOptions::SCHEMA, '');
-
-        $result = $this->listResources($schema, $refresh);
-        $extras = $this->getSchemaExtrasForTables($result, false, 'table,label,plural');
-
-        $resources = [];
-        foreach ($result as $name) {
-            $access = $this->getPermissions($name);
-            if (!empty($access)) {
-                $label = '';
-                $plural = '';
-                foreach ($extras as $each) {
-                    if (0 == strcasecmp($name, ArrayUtils::get($each, 'table', ''))) {
-                        $label = ArrayUtils::get($each, 'label');
-                        $plural = ArrayUtils::get($each, 'plural');
-                        break;
-                    }
-                }
-
-                if (empty($label)) {
-                    $label = Inflector::camelize($name, ['_', '.'], true);
-                }
-
-                if (empty($plural)) {
-                    $plural = Inflector::pluralize($label);
-                }
-
-                $resources[] =
-                    [
-                        'name'   => $name,
-                        'label'  => $label,
-                        'plural' => $plural,
-                        'access' => VerbsMask::maskToArray($access)
-                    ];
-            }
-        }
-
-        return $resources;
-    }
-
-    /**
-     * {@inheritdoc}
-     */
     public function describeTable($name, $refresh = false)
     {
         if (empty($name)) {
             throw new BadRequestException('Table name can not be empty.');
         }
 
-        $this->correctTableName($name);
         try {
             $table = $this->dbConn->getSchema()->getTable($name, $refresh);
             if (!$table) {
@@ -152,7 +88,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->dbConn->updateSchema($tables);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables();
+        $this->refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTables($tables);
@@ -174,7 +110,7 @@ class Schema extends BaseDbSchemaResource
         $result = ArrayUtils::get($result, 0, []);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables();
+        $this->refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTable($table);
@@ -196,7 +132,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->dbConn->updateFields($table, $fields);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables();
+        $this->refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeField($table, $field);
@@ -221,7 +157,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->dbConn->updateSchema($tables, true, $allow_delete_fields);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables();
+        $this->refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTables($tables);
@@ -244,7 +180,7 @@ class Schema extends BaseDbSchemaResource
         $result = ArrayUtils::get($result, 0, []);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables();
+        $this->refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeTable($table);
@@ -270,7 +206,7 @@ class Schema extends BaseDbSchemaResource
         $result = $this->dbConn->updateFields($table, $fields, true);
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables();
+        $this->refreshCachedTables();
 
         if ($return_schema) {
             return $this->describeField($table, $field);
@@ -302,7 +238,7 @@ class Schema extends BaseDbSchemaResource
         }
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables();
+        $this->refreshCachedTables();
     }
 
     /**
@@ -327,7 +263,7 @@ class Schema extends BaseDbSchemaResource
         }
 
         //  Any changes here should refresh cached schema
-        static::refreshCachedTables();
+        $this->refreshCachedTables();
     }
 
     /**
@@ -355,23 +291,7 @@ class Schema extends BaseDbSchemaResource
      */
     public function doesTableExist($name, $returnName = false)
     {
-        if (empty($name)) {
-            throw new \InvalidArgumentException('Table name cannot be empty.');
-        }
-
-        //  Build the lower-cased table array
-        $tables = $this->dbConn->getSchema()->getTableNames();
-
-        //	Search normal, return real name
-        if (false !== array_search($name, $tables)) {
-            return $returnName ? $name : true;
-        }
-
-        if (false !== $key = array_search(strtolower($name), array_map('strtolower', $tables))) {
-            return $returnName ? $tables[$key] : true;
-        }
-
-        return false;
+        return $this->dbConn->getSchema()->doesTableExist($name, $returnName);
     }
 
     /**
@@ -385,7 +305,6 @@ class Schema extends BaseDbSchemaResource
      */
     public function describeTableFields($table_name, $field_names = null, $refresh = false)
     {
-        $this->correctTableName($table_name);
         $table = $this->dbConn->getSchema()->getTable($table_name, $refresh);
         if (!$table) {
             throw new NotFoundException("Table '$table_name' does not exist in the database.");
@@ -439,19 +358,6 @@ class Schema extends BaseDbSchemaResource
         }
 
         return null;
-    }
-
-    /**
-     * Refreshes all schema associated with this db connection:
-     *
-     * @return array
-     */
-    public function refreshCachedTables()
-    {
-        $this->dbConn->getSchema()->refresh();
-        // Any changes to tables needs to produce a new event list
-        Event::clearCache();
-        Swagger::clearCache($this->getServiceName());
     }
 
     public function getApiDocInfo()
