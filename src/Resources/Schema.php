@@ -1,7 +1,7 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
-use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Core\Database\ColumnSchema;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
@@ -9,8 +9,8 @@ use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbSchemaResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
-use DreamFactory\Core\SqlDbCore\ColumnSchema;
 use DreamFactory\Core\Utility\DbUtilities;
+use DreamFactory\Library\Utility\ArrayUtils;
 
 class Schema extends BaseDbSchemaResource
 {
