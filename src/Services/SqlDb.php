@@ -3,6 +3,9 @@
 namespace DreamFactory\Core\SqlDb\Services;
 
 use DreamFactory\Core\Components\DbSchemaExtras;
+use DreamFactory\Core\Contracts\CacheInterface;
+use DreamFactory\Core\Database\Connection;
+use DreamFactory\Core\Database\DbExtrasInterface;
 use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Services\BaseDbService;
@@ -10,9 +13,6 @@ use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\StoredFunction;
 use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
-use DreamFactory\Core\Database\Connection;
-use DreamFactory\Core\Database\CacheInterface;
-use DreamFactory\Core\Database\DbExtrasInterface;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 
