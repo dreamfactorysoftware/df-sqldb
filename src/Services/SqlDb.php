@@ -3,6 +3,9 @@
 namespace DreamFactory\Core\SqlDb\Services;
 
 use DreamFactory\Core\Components\DbSchemaExtras;
+use DreamFactory\Core\Contracts\CacheInterface;
+use DreamFactory\Core\Database\Connection;
+use DreamFactory\Core\Database\DbExtrasInterface;
 use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Services\BaseDbService;
@@ -10,9 +13,6 @@ use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\StoredFunction;
 use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
-use DreamFactory\Core\SqlDbCore\Connection;
-use DreamFactory\Core\SqlDbCore\CacheInterface;
-use DreamFactory\Core\SqlDbCore\DbExtrasInterface;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 
@@ -81,7 +81,7 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         parent::__construct($settings);
 
         $config = ArrayUtils::clean(ArrayUtils::get($settings, 'config'));
-        Session::replaceLookups( $config, true );
+        Session::replaceLookups($config, true);
 
         if (null === ($dsn = ArrayUtils::get($config, 'dsn', null, true))) {
             throw new \InvalidArgumentException('Database connection string (DSN) can not be empty.');
@@ -160,6 +160,13 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         }
     }
 
+    /**
+     * @param string|null $schema
+     * @param bool        $refresh
+     *
+     * @return \DreamFactory\Core\Database\TableNameSchema[]
+     * @throws \Exception
+     */
     public function getTableNames($schema = null, $refresh = false)
     {
         return $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);

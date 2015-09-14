@@ -2,7 +2,7 @@
 namespace DreamFactory\Core\SqlDb\Components;
 
 use DreamFactory\Core\Contracts\RequestHandlerInterface;
-use DreamFactory\Core\SqlDbCore\Connection;
+use DreamFactory\Core\Database\Connection;
 use DreamFactory\Core\SqlDb\Services\SqlDb;
 
 trait SqlDbResource

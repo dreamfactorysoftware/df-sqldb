@@ -1,12 +1,12 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Models;
 
-use DreamFactory\Core\Models\ServiceCacheConfig;
-use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Core\Components\RequireExtensions;
+use DreamFactory\Core\Database\Connection;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Models\BaseServiceConfigModel;
-use DreamFactory\Core\SqlDbCore\Connection;
+use DreamFactory\Core\Models\ServiceCacheConfig;
+use DreamFactory\Library\Utility\ArrayUtils;
 
 /**
  * SqlDbConfig

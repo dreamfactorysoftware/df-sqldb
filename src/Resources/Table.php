@@ -3,12 +3,12 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use Config;
+use DreamFactory\Core\Database\Command;
+use DreamFactory\Core\Database\RelationSchema;
+use DreamFactory\Core\Database\Transaction;
+use DreamFactory\Core\Database\Expression;
+use DreamFactory\Core\Database\ColumnSchema;
 use DreamFactory\Core\Enums\ApiOptions;
-use DreamFactory\Core\Utility\ResourcesWrapper;
-use DreamFactory\Core\Utility\Session;
-use DreamFactory\Library\Utility\ArrayUtils;
-use DreamFactory\Library\Utility\Enums\Verbs;
-use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
@@ -17,13 +17,11 @@ use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbTableResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
-use DreamFactory\Core\SqlDbCore\Command;
-use DreamFactory\Core\SqlDbCore\RelationSchema;
-use DreamFactory\Core\SqlDbCore\Transaction;
-use DreamFactory\Core\SqlDbCore\Expression;
-use DreamFactory\Core\SqlDbCore\ColumnSchema;
-use DreamFactory\Core\SqlDbCore\TableNameSchema;
 use DreamFactory\Core\Utility\DbUtilities;
+use DreamFactory\Core\Utility\ResourcesWrapper;
+use DreamFactory\Core\Utility\Session;
+use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Library\Utility\Enums\Verbs;
 
 class Table extends BaseDbTableResource
 {
@@ -379,27 +377,7 @@ class Table extends BaseDbTableResource
             throw new NotFoundException("Table '$name' does not exist in the database.");
         }
 
-        if (!empty($field_names)) {
-            $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
-        }
-
-        $out = [];
-        try {
-            /** @var ColumnSchema $column */
-            foreach ($table->columns as $column) {
-                if (empty($field_names) || (false !== array_search($column->name, $field_names))) {
-                    $out[] = $column->toArray();
-                }
-            }
-        } catch (\Exception $ex) {
-            throw new InternalServerErrorException("Failed to query table field schema.\n{$ex->getMessage()}");
-        }
-
-        if (empty($out)) {
-            throw new NotFoundException("No requested fields found in table '$table'.");
-        }
-
-        return $out;
+        return $table->columns;
     }
 
     /**
@@ -537,6 +515,7 @@ class Table extends BaseDbTableResource
             switch (count($ops)) {
                 case 2:
                     $field = trim($ops[0]);
+                    /** @type ColumnSchema $info */
                     if (null === $info = DbUtilities::getFieldFromDescribe($field, $field_list)) {
                         // This could be SQL injection attempt or bad field
                         throw new BadRequestException('Invalid or unparsable field in filter request.');
@@ -547,7 +526,7 @@ class Table extends BaseDbTableResource
                         // if not already a replacement parameter, evaluate it
                         $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
 
-                        switch ($cnvType = DbUtilities::determinePhpConversionType($info['type'])) {
+                        switch ($cnvType = DbUtilities::determinePhpConversionType($info->type)) {
                             case 'int':
                                 if (!is_int($value)) {
                                     if (!(ctype_digit($value))) {
@@ -587,7 +566,7 @@ class Table extends BaseDbTableResource
                         $params[$paramName] = $value;
                         $value = $paramName;
                     }
-                    $field = $this->dbConn->quoteColumnName($info['name']);
+                    $field = $this->dbConn->quoteColumnName($info->name);
 
                     return "$field $sqlOp $value";
             }
@@ -595,24 +574,26 @@ class Table extends BaseDbTableResource
 
         if (' IS NULL' === substr($filter, -8)) {
             $field = trim(substr($filter, 0, -8));
+            /** @type ColumnSchema $info */
             if (null === $info = DbUtilities::getFieldFromDescribe($field, $field_list)) {
                 // This could be SQL injection attempt or bad field
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            $field = $this->dbConn->quoteColumnName($info['name']);
+            $field = $this->dbConn->quoteColumnName($info->name);
 
             return "$field IS NULL";
         }
 
         if (' IS NOT NULL' === substr($filter, -12)) {
             $field = trim(substr($filter, 0, -12));
+            /** @type ColumnSchema $info */
             if (null === $info = DbUtilities::getFieldFromDescribe($field, $field_list)) {
                 // This could be SQL injection attempt or bad field
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            $field = $this->dbConn->quoteColumnName($info['name']);
+            $field = $this->dbConn->quoteColumnName($info->name);
 
             return "$field IS NOT NULL";
         }
@@ -621,157 +602,56 @@ class Table extends BaseDbTableResource
         throw new BadRequestException('Invalid or unparsable filter request.');
     }
 
-    /**
-     * @param array $record
-     * @param array $fields_info
-     * @param array $filter_info
-     * @param bool  $for_update
-     * @param array $old_record
-     *
-     * @return array
-     * @throws \Exception
-     */
-    protected function parseRecord($record, $fields_info, $filter_info = null, $for_update = false, $old_record = null)
+    protected function getCurrentTimestamp()
     {
-        $record = $this->interpretRecordValues($record);
+        $this->dbConn->getSchema()->getTimestampForSet();
+    }
 
-        $parsed = [];
-//        $record = DataFormat::arrayKeyLower( $record );
-        $keys = array_keys($record);
-        $values = array_values($record);
-        foreach ($fields_info as $fieldInfo) {
-//            $name = strtolower( ArrayUtils::get( $field_info, 'name', '' ) );
-            $name = ArrayUtils::get($fieldInfo, 'name', '');
-            $type = ArrayUtils::get($fieldInfo, 'type');
+    protected function parseValueForSet($value, $field_info)
+    {
+        if (!is_null($value) && !($value instanceof Expression)) {
+            $value = $this->dbConn->getSchema()->parseValueForSet($value, $field_info);
 
-            // add or override for specific fields
-            switch ($type) {
-                case 'timestamp_on_create':
-                    if (!$for_update) {
-                        $parse[$name] = $this->dbConn->getSchema()->getTimestampForSet();
-                    }
-                    break;
-                case 'timestamp_on_update':
-                    $parse[$name] = $this->dbConn->getSchema()->getTimestampForSet();
-                    break;
-                case 'user_id_on_create':
-                    if (!$for_update) {
-                        $userId = 1; // TODO Session::getCurrentUserId();
-                        if (isset($userId)) {
-                            $parsed[$name] = $userId;
+            switch ($cnvType = DbUtilities::determinePhpConversionType($field_info->type)) {
+                case 'int':
+                    if (!is_int($value)) {
+                        if (('' === $value) && $field_info->allowNull) {
+                            $value = null;
+                        } elseif (!(ctype_digit($value))) {
+                            throw new BadRequestException("Field '{$field_info->name}' must be a valid integer.");
+                        } else {
+                            $value = intval($value);
                         }
                     }
                     break;
-                case 'user_id_on_update':
-                    $userId = 1; // TODO Session::getCurrentUserId();
-                    if (isset($userId)) {
-                        $parsed[$name] = $userId;
-                    }
+
+                case 'time':
+                    $cfgFormat = Config::get('df.db_time_format');
+                    $outFormat = 'H:i:s.u';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
                     break;
+                case 'date':
+                    $cfgFormat = Config::get('df.db_date_format');
+                    $outFormat = 'Y-m-d';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+                case 'datetime':
+                    $cfgFormat = Config::get('df.db_datetime_format');
+                    $outFormat = 'Y-m-d H:i:s';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+                case 'timestamp':
+                    $cfgFormat = Config::get('df.db_timestamp_format');
+                    $outFormat = 'Y-m-d H:i:s';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+
                 default:
-                    $pos = array_search($name, $keys);
-                    if (false !== $pos) {
-                        $fieldVal = ArrayUtils::get($values, $pos);
-                        // due to conversion from XML to array, null or empty xml elements have the array value of an empty array
-                        if (is_array($fieldVal) && empty($fieldVal)) {
-                            $fieldVal = null;
-                        }
-
-                        // overwrite some undercover fields
-                        if (ArrayUtils::getBool($fieldInfo, 'auto_increment', false)) {
-                            // should I error this?
-                            // drop for now
-                            unset($keys[$pos]);
-                            unset($values[$pos]);
-                            continue;
-                        }
-                        if (is_null($fieldVal) && !ArrayUtils::getBool($fieldInfo, 'allow_null')) {
-                            throw new BadRequestException("Field '$name' can not be NULL.");
-                        }
-
-                        /** validations **/
-
-                        $validations = ArrayUtils::get($fieldInfo, 'validation');
-                        if (!empty($validations) && is_string($validations)) {
-                            // backwards compatible with old strings
-                            $validations = array_map('trim', explode(',', $validations));
-                            $validations = array_flip($validations);
-                        }
-
-                        if (!static::validateFieldValue(
-                            $name,
-                            $fieldVal,
-                            $validations,
-                            $for_update,
-                            $fieldInfo
-                        )
-                        ) {
-                            // if invalid and exception not thrown, drop it
-                            unset($keys[$pos]);
-                            unset($values[$pos]);
-                            continue;
-                        }
-
-                        if (!is_null($fieldVal) && !($fieldVal instanceof Expression)) {
-                            $fieldVal = $this->dbConn->getSchema()->parseValueForSet($fieldVal, $fieldInfo);
-
-                            switch ($cnvType = DbUtilities::determinePhpConversionType($type)) {
-                                case 'int':
-                                    if (!is_int($fieldVal)) {
-                                        if (('' === $fieldVal) && ArrayUtils::getBool($fieldInfo, 'allow_null')) {
-                                            $fieldVal = null;
-                                        } elseif (!(ctype_digit($fieldVal))) {
-                                            throw new BadRequestException("Field '$name' must be a valid integer.");
-                                        } else {
-                                            $fieldVal = intval($fieldVal);
-                                        }
-                                    }
-                                    break;
-
-                                case 'time':
-                                    $cfgFormat = Config::get('df.db_time_format');
-                                    $outFormat = 'H:i:s.u';
-                                    $fieldVal = DbUtilities::formatDateTime($outFormat, $fieldVal, $cfgFormat);
-                                    break;
-                                case 'date':
-                                    $cfgFormat = Config::get('df.db_date_format');
-                                    $outFormat = 'Y-m-d';
-                                    $fieldVal = DbUtilities::formatDateTime($outFormat, $fieldVal, $cfgFormat);
-                                    break;
-                                case 'datetime':
-                                    $cfgFormat = Config::get('df.db_datetime_format');
-                                    $outFormat = 'Y-m-d H:i:s';
-                                    $fieldVal = DbUtilities::formatDateTime($outFormat, $fieldVal, $cfgFormat);
-                                    break;
-                                case 'timestamp':
-                                    $cfgFormat = Config::get('df.db_timestamp_format');
-                                    $outFormat = 'Y-m-d H:i:s';
-                                    $fieldVal = DbUtilities::formatDateTime($outFormat, $fieldVal, $cfgFormat);
-                                    break;
-
-                                default:
-                                    break;
-                            }
-                        }
-                        $parsed[$name] = $fieldVal;
-                        unset($keys[$pos]);
-                        unset($values[$pos]);
-                    } else {
-                        // if field is required, kick back error
-                        if (ArrayUtils::getBool($fieldInfo, 'required') && !$for_update) {
-                            throw new BadRequestException("Required field '$name' can not be NULL.");
-                        }
-                        break;
-                    }
                     break;
             }
         }
 
-        if (!empty($filter_info)) {
-            $this->validateRecord($record, $filter_info, $for_update, $old_record);
-        }
-
-        return $parsed;
+        return $value;
     }
 
     /**
@@ -940,6 +820,8 @@ class Table extends BaseDbTableResource
      * @param string $fields_as
      *
      * @return string
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
      */
     protected function parseFieldsForSqlSelect(
         $fields,
@@ -952,26 +834,25 @@ class Table extends BaseDbTableResource
             $fields = DbUtilities::listAllFieldsFromDescribe($avail_fields);
         }
 
-        $field_arr = (!is_array($fields)) ? array_map('trim', explode(',', $fields)) : $fields;
-        $as_arr = (!is_array($fields_as)) ? array_map('trim', explode(',', $fields_as)) : $fields_as;
+        $fieldArray = (!is_array($fields)) ? array_map('trim', explode(',', $fields)) : $fields;
+        $asArray = (!is_array($fields_as)) ? array_map('trim', explode(',', $fields_as)) : $fields_as;
         $outArray = [];
         $bindArray = [];
-        for ($i = 0, $size = sizeof($field_arr); $i < $size; $i++) {
-            $field = $field_arr[$i];
-            $as = (isset($as_arr[$i]) ? $as_arr[$i] : '');
+        for ($i = 0, $size = sizeof($fieldArray); $i < $size; $i++) {
+            $field = $fieldArray[$i];
+            $as = (isset($asArray[$i]) ? $asArray[$i] : '');
             $context = (empty($prefix) ? $field : $prefix . '.' . $field);
             $out_as = (empty($as) ? $field : $as);
-            // find the type
-            if (null === $field_info = DbUtilities::getFieldFromDescribe($field, $avail_fields)) {
+            /** @type ColumnSchema $fieldInfo */
+            if (null === $fieldInfo = DbUtilities::getFieldFromDescribe($field, $avail_fields)) {
                 throw new BadRequestException('Invalid field requested.');
             }
-            $allowsNull = ArrayUtils::getBool($field_info, 'allow_null');
-            $pdoType = ($allowsNull) ? null : ArrayUtils::get($field_info, 'pdo_type');
-            $phpType = (is_null($pdoType)) ? ArrayUtils::get($field_info, 'php_type') : null;
+            $pdoType = ($fieldInfo->allowNull) ? null : $fieldInfo->pdoType;
+            $phpType = (is_null($pdoType)) ? $fieldInfo->phpType : null;
 
             $bindArray[] = ['name' => $field, 'pdo_type' => $pdoType, 'php_type' => $phpType];
             $outArray[] =
-                $this->dbConn->getSchema()->parseFieldsForSelect($context, $field_info, $as_quoted_string, $out_as);
+                $this->dbConn->getSchema()->parseFieldsForSelect($context, $fieldInfo, $as_quoted_string, $out_as);
         }
 
         return ['fields' => $outArray, 'bindings' => $bindArray];
@@ -1199,8 +1080,12 @@ class Table extends BaseDbTableResource
         try {
             $manyFields = $this->getFieldsInfo($many_table);
             $pksInfo = DbUtilities::getPrimaryKeys($manyFields);
-            $fieldInfo = DbUtilities::getFieldFromDescribe($many_field, $manyFields);
-            $deleteRelated = (!ArrayUtils::getBool($fieldInfo, 'allow_null') && $allow_delete);
+            /** @type ColumnSchema $fieldInfo */
+            if (null === $fieldInfo = DbUtilities::getFieldFromDescribe($many_field, $manyFields)) {
+                throw new InternalServerErrorException("Relationship field '$many_field' not found in schema.");
+            }
+
+            $deleteRelated = (!$fieldInfo->allowNull && $allow_delete);
             $relateMany = [];
             $disownMany = [];
             $insertMany = [];
@@ -1210,8 +1095,8 @@ class Table extends BaseDbTableResource
 
             foreach ($many_records as $item) {
                 if (1 === count($pksInfo)) {
-                    $pkAutoSet = ArrayUtils::getBool($pksInfo[0], 'auto_increment');
-                    $pkField = ArrayUtils::get($pksInfo[0], 'name');
+                    $pkAutoSet = $pksInfo[0]->autoIncrement;
+                    $pkField = $pksInfo[0]->name;
                     $id = ArrayUtils::get($item, $pkField);
                     if (empty($id)) {
                         if (!$pkAutoSet) {
@@ -1266,7 +1151,7 @@ class Table extends BaseDbTableResource
                 $where = [];
                 $params = [];
                 if (1 === count($pksInfo)) {
-                    $pkField = ArrayUtils::get($pksInfo[0], 'name');
+                    $pkField = $pksInfo[0]->name;
                     $where[] = ['in', $pkField, $checkIds];
                 } else {
                     // todo How to handle multiple primary keys?
@@ -1321,7 +1206,7 @@ class Table extends BaseDbTableResource
                 $where = [];
                 $params = [];
                 if (1 === count($pksInfo)) {
-                    $pkField = ArrayUtils::get($pksInfo[0], 'name');
+                    $pkField = $pksInfo[0]->name;
                     $where[] = ['in', $pkField, $deleteMany];
                 } else {
                     // todo How to handle multiple primary keys?
@@ -1355,7 +1240,7 @@ class Table extends BaseDbTableResource
                     $where = [];
                     $params = [];
                     if (1 === count($pksInfo)) {
-                        $pkField = ArrayUtils::get($pksInfo[0], 'name');
+                        $pkField = $pksInfo[0]->name;
                         $where[] = $this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField";
                     } else {
                         // todo How to handle multiple primary keys?
@@ -1374,7 +1259,7 @@ class Table extends BaseDbTableResource
 
                     foreach ($updateMany as $record) {
                         if (1 === count($pksInfo)) {
-                            $pkField = ArrayUtils::get($pksInfo[0], 'name');
+                            $pkField = $pksInfo[0]->name;
                             $params[":pk_$pkField"] = ArrayUtils::get($record, $pkField);
                         } else {
                             // todo How to handle multiple primary keys?
@@ -1398,7 +1283,7 @@ class Table extends BaseDbTableResource
                     $where = [];
                     $params = [];
                     if (1 === count($pksInfo)) {
-                        $pkField = ArrayUtils::get($pksInfo[0], 'name');
+                        $pkField = $pksInfo[0]->name;
                         $where[] = ['in', $pkField, $relateMany];
                     } else {
                         // todo How to handle multiple primary keys?
@@ -1431,7 +1316,7 @@ class Table extends BaseDbTableResource
                     $where = [];
                     $params = [];
                     if (1 === count($pksInfo)) {
-                        $pkField = ArrayUtils::get($pksInfo[0], 'name');
+                        $pkField = $pksInfo[0]->name;
                         $where[] = ['in', $pkField, $disownMany];
                     } else {
                         // todo How to handle multiple primary keys?
@@ -1514,8 +1399,8 @@ class Table extends BaseDbTableResource
             $upsertMany = [];
             foreach ($many_records as $item) {
                 if (1 === count($pksManyInfo)) {
-                    $pkAutoSet = ArrayUtils::getBool($pksManyInfo[0], 'auto_increment');
-                    $pkManyField = ArrayUtils::get($pksManyInfo[0], 'name');
+                    $pkAutoSet = $pksManyInfo[0]->autoIncrement;
+                    $pkManyField = $pksManyInfo[0]->name;
                     $id = ArrayUtils::get($item, $pkManyField);
                     if (empty($id)) {
                         if (!$pkAutoSet) {
@@ -1569,7 +1454,7 @@ class Table extends BaseDbTableResource
                 $where = [];
                 $params = [];
                 if (1 === count($pksManyInfo)) {
-                    $pkField = ArrayUtils::get($pksManyInfo[0], 'name');
+                    $pkField = $pksManyInfo[0]->name;
                     $where[] = ['in', $pkField, $checkIds];
                 } else {
                     // todo How to handle multiple primary keys?
@@ -1630,7 +1515,7 @@ class Table extends BaseDbTableResource
                 $where = [];
                 $params = [];
                 if (1 === count($pksManyInfo)) {
-                    $pkField = ArrayUtils::get($pksManyInfo[0], 'name');
+                    $pkField = $pksManyInfo[0]->name;
                     $where[] = $this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField";
                 } else {
                     // todo How to handle multiple primary keys?
@@ -1852,7 +1737,7 @@ class Table extends BaseDbTableResource
             $requested_fields = [];
             $idsInfo = DbUtilities::getPrimaryKeys($fields_info);
             foreach ($idsInfo as $info) {
-                $requested_fields[] = ArrayUtils::get($info, 'name');
+                $requested_fields[] = $info->name;
             }
         } else {
             if (false !== $requested_fields = DbUtilities::validateAsArray($requested_fields, ',')) {
@@ -1868,11 +1753,11 @@ class Table extends BaseDbTableResource
     /**
      * {@inheritdoc}
      */
-    protected function initTransaction($handle = null)
+    protected function initTransaction($table_name, &$id_fields = null, $id_types = null, $require_ids = true)
     {
         $this->transaction = null;
 
-        return parent::initTransaction($handle);
+        return parent::initTransaction($table_name, $id_fields, $id_types, $require_ids);
     }
 
     /**
@@ -1894,12 +1779,10 @@ class Table extends BaseDbTableResource
         }
 
         $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
-        $fieldsInfo = ArrayUtils::get($extras, 'fields_info');
         $ssFilters = ArrayUtils::get($extras, 'ss_filters');
         $updates = ArrayUtils::get($extras, 'updates');
-        $idsInfo = ArrayUtils::get($extras, 'ids_info');
         $idFields = ArrayUtils::get($extras, 'id_fields');
-        $needToIterate = ($single || !$continue || (1 < count($idsInfo)));
+        $needToIterate = ($single || !$continue || (1 < count($this->tableIdsInfo)));
 
         $related = ArrayUtils::get($extras, 'related');
         $requireMore = ArrayUtils::getBool($extras, 'require_more') || !empty($related);
@@ -1936,7 +1819,7 @@ class Table extends BaseDbTableResource
         $out = [];
         switch ($this->getAction()) {
             case Verbs::POST:
-                $parsed = $this->parseRecord($record, $fieldsInfo, $ssFilters);
+                $parsed = $this->parseRecord($record, $this->tableFieldsInfo, $ssFilters);
                 if (empty($parsed)) {
                     throw new BadRequestException('No valid fields were found in record.');
                 }
@@ -1948,9 +1831,9 @@ class Table extends BaseDbTableResource
 
                 if (empty($id)) {
                     $id = [];
-                    foreach ($idsInfo as $info) {
-                        $idName = ArrayUtils::get($info, 'name');
-                        if (ArrayUtils::getBool($info, 'auto_increment')) {
+                    foreach ($this->tableIdsInfo as $info) {
+                        $idName = $info->name;
+                        if ($info->autoIncrement) {
                             $schema = $this->dbConn->getSchema()->getTable($this->transactionTable);
                             $sequenceName = $schema->sequenceName;
                             $id[$idName] = (int)$this->dbConn->getLastInsertID($sequenceName);
@@ -1970,7 +1853,9 @@ class Table extends BaseDbTableResource
                     );
                 }
 
-                $idName = (isset($idsInfo, $idsInfo[0], $idsInfo[0]['name'])) ? $idsInfo[0]['name'] : null;
+                $idName =
+                    (isset($this->tableIdsInfo, $this->tableIdsInfo[0], $this->tableIdsInfo[0]->name))
+                        ? $this->tableIdsInfo[0]->name : null;
                 $out = (is_array($id)) ? $id : [$idName => $id];
 
                 // add via record, so batch processing can retrieve extras
@@ -1986,7 +1871,7 @@ class Table extends BaseDbTableResource
                     $record = $updates;
                 }
 
-                $parsed = $this->parseRecord($record, $fieldsInfo, $ssFilters, true);
+                $parsed = $this->parseRecord($record, $this->tableFieldsInfo, $ssFilters, true);
 
                 // only update by ids can use batching, too complicated with ssFilters and related update
 //                if ( !$needToIterate && !empty( $updates ) )
@@ -1999,7 +1884,7 @@ class Table extends BaseDbTableResource
                     if (0 >= $rows) {
                         // could have just not updated anything, or could be bad id
                         $fields = (empty($fields)) ? $idFields : $fields;
-                        $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
+                        $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
                         $bindings = ArrayUtils::get($result, 'bindings');
                         $fields = ArrayUtils::get($result, 'fields');
                         $fields = (empty($fields)) ? '*' : $fields;
@@ -2030,7 +1915,9 @@ class Table extends BaseDbTableResource
                     );
                 }
 
-                $idName = (isset($idsInfo, $idsInfo[0], $idsInfo[0]['name'])) ? $idsInfo[0]['name'] : null;
+                $idName =
+                    (isset($this->tableIdsInfo, $this->tableIdsInfo[0], $this->tableIdsInfo[0]->name))
+                        ? $this->tableIdsInfo[0]->name : null;
                 $out = (is_array($id)) ? $id : [$idName => $id];
 
                 // add via record, so batch processing can retrieve extras
@@ -2047,7 +1934,7 @@ class Table extends BaseDbTableResource
                 // add via record, so batch processing can retrieve extras
                 if ($requireMore) {
                     $fields = (empty($fields)) ? $idFields : $fields;
-                    $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
+                    $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
                     $bindings = ArrayUtils::get($result, 'bindings');
                     $fields = ArrayUtils::get($result, 'fields');
                     $fields = (empty($fields)) ? '*' : $fields;
@@ -2072,7 +1959,7 @@ class Table extends BaseDbTableResource
                     if (empty($out)) {
                         // could have just not updated anything, or could be bad id
                         $fields = (empty($fields)) ? $idFields : $fields;
-                        $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
+                        $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
                         $bindings = ArrayUtils::get($result, 'bindings');
                         $fields = ArrayUtils::get($result, 'fields');
                         $fields = (empty($fields)) ? '*' : $fields;
@@ -2094,7 +1981,9 @@ class Table extends BaseDbTableResource
                 }
 
                 if (empty($out)) {
-                    $idName = (isset($idsInfo, $idsInfo[0], $idsInfo[0]['name'])) ? $idsInfo[0]['name'] : null;
+                    $idName =
+                        (isset($this->tableIdsInfo, $this->tableIdsInfo[0], $this->tableIdsInfo[0]->name))
+                            ? $this->tableIdsInfo[0]->name : null;
                     $out = (is_array($id)) ? $id : [$idName => $id];
                 }
                 break;
@@ -2105,7 +1994,7 @@ class Table extends BaseDbTableResource
                 }
 
                 $fields = (empty($fields)) ? $idFields : $fields;
-                $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
+                $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
                 $bindings = ArrayUtils::get($result, 'bindings');
                 $fields = ArrayUtils::get($result, 'fields');
                 $fields = (empty($fields)) ? '*' : $fields;
@@ -2138,9 +2027,7 @@ class Table extends BaseDbTableResource
 
         $updates = ArrayUtils::get($extras, 'updates');
         $ssFilters = ArrayUtils::get($extras, 'ss_filters');
-        $fieldsInfo = ArrayUtils::get($extras, 'fields_info');
         $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
-        $idsInfo = ArrayUtils::get($extras, 'ids_info');
         $idFields = ArrayUtils::get($extras, 'id_fields');
         $related = ArrayUtils::get($extras, 'related');
         $requireMore = ArrayUtils::getBool($extras, 'require_more') || !empty($related);
@@ -2150,7 +2037,9 @@ class Table extends BaseDbTableResource
         $where = [];
         $params = [];
 
-        $idName = (isset($idsInfo, $idsInfo[0], $idsInfo[0]['name'])) ? $idsInfo[0]['name'] : null;
+        $idName =
+            (isset($this->tableIdsInfo, $this->tableIdsInfo[0], $this->tableIdsInfo[0]->name))
+                ? $this->tableIdsInfo[0]->name : null;
         if (empty($idName)) {
             throw new BadRequestException('No valid identifier found for this table.');
         }
@@ -2184,11 +2073,11 @@ class Table extends BaseDbTableResource
         $out = [];
         $action = $this->getAction();
         if (!empty($this->batchRecords)) {
-            if (1 == count($idsInfo)) {
+            if (1 == count($this->tableIdsInfo)) {
                 // records are used to retrieve extras
                 // ids array are now more like records
                 $fields = (empty($fields)) ? $idFields : $fields;
-                $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
+                $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
                 $bindings = ArrayUtils::get($result, 'bindings');
                 $fields = ArrayUtils::get($result, 'fields');
                 $fields = (empty($fields)) ? '*' : $fields;
@@ -2214,7 +2103,7 @@ class Table extends BaseDbTableResource
                 case Verbs::MERGE:
                 case Verbs::PATCH:
                     if (!empty($updates)) {
-                        $parsed = $this->parseRecord($updates, $fieldsInfo, $ssFilters, true);
+                        $parsed = $this->parseRecord($updates, $this->tableFieldsInfo, $ssFilters, true);
                         if (!empty($parsed)) {
                             $rows = $command->update($this->transactionTable, $parsed, $where, $params);
                             if (0 >= $rows) {
@@ -2240,7 +2129,7 @@ class Table extends BaseDbTableResource
 
                         if ($requireMore) {
                             $fields = (empty($fields)) ? $idFields : $fields;
-                            $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
+                            $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
                             $bindings = ArrayUtils::get($result, 'bindings');
                             $fields = ArrayUtils::get($result, 'fields');
                             $fields = (empty($fields)) ? '*' : $fields;
@@ -2265,7 +2154,7 @@ class Table extends BaseDbTableResource
                 case Verbs::DELETE:
                     if ($requireMore) {
                         $fields = (empty($fields)) ? $idFields : $fields;
-                        $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
+                        $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
                         $bindings = ArrayUtils::get($result, 'bindings');
                         $fields = ArrayUtils::get($result, 'fields');
                         $fields = (empty($fields)) ? '*' : $fields;
@@ -2309,7 +2198,7 @@ class Table extends BaseDbTableResource
 
                 case Verbs::GET:
                     $fields = (empty($fields)) ? $idFields : $fields;
-                    $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
+                    $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
                     $bindings = ArrayUtils::get($result, 'bindings');
                     $fields = ArrayUtils::get($result, 'fields');
                     $fields = (empty($fields)) ? '*' : $fields;
