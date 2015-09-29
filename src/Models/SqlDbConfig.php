@@ -137,9 +137,11 @@ class SqlDbConfig extends BaseServiceConfigModel
                 break;
             case 'username':
                 $schema['type'] = 'string';
+                $schema['description'] = 'The name of the database user. This can be a lookup key.';
                 break;
             case 'password':
                 $schema['type'] = 'password';
+                $schema['description'] = 'The password for the database user. This can be a lookup key.';
                 break;
             case 'options':
                 $schema['type'] = 'object';
