@@ -163,13 +163,24 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
     /**
      * @param string|null $schema
      * @param bool        $refresh
+     * @param bool        $use_alias
      *
      * @return \DreamFactory\Core\Database\TableNameSchema[]
      * @throws \Exception
      */
-    public function getTableNames($schema = null, $refresh = false)
+    public function getTableNames($schema = null, $refresh = false, $use_alias = false)
     {
-        return $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
+        $tables = $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
+        if ($use_alias){
+            $temp = []; // reassign index to alias
+            foreach ($tables as $table){
+                $temp[$table->getName(true)] = $table;
+            }
+
+            return $temp;
+        }
+
+        return $tables;
     }
 
     public function refreshTableCache()
