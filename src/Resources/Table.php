@@ -484,9 +484,9 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param       $filter
-     * @param array $params
-     * @param       $fields_info
+     * @param    string       $filter
+     * @param array           $params
+     * @param  ColumnSchema[] $fields_info
      *
      * @return string
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
@@ -533,28 +533,32 @@ class Table extends BaseDbTableResource
             return implode(' AND ', $parts);
         }
 
-        // handle negation operator, i.e. starts with NOT?
-        if (0 == substr_compare($filter, 'not ', 0, 4, true)) {
-//            $parts = trim( substr( $filter, 4 ) );
-        }
-
         if ((0 === strpos($filter, '(')) && ((strlen($filter) - 1) === strpos($filter, ')'))) {
             $filter = trim(substr($filter, 1, strlen($filter) - 2));
         }
 
         // the rest should be comparison operators
-        $search = [' eq ', ' ne ', ' gte ', ' lte ', ' gt ', ' lt ', ' in ', ' nin ', ' all ', ' like ', ' <> '];
-        $replace = ['=', '!=', '>=', '<=', '>', '<', ' IN ', ' NIN ', ' ALL ', ' LIKE ', '!='];
+        $search = [' eq ', ' ne ', ' gte ', ' lte ', ' gt ', ' lt ', ' in ', ' all ', ' like ', ' <> '];
+        $replace = ['=', '!=', '>=', '<=', '>', '<', ' IN ', ' ALL ', ' LIKE ', '!='];
         $filter = trim(str_ireplace($search, $replace, $filter));
 
-        // Note: order matters, watch '='
-        $sqlOperators =
-            ['!=', '>=', '<=', '=', '>', '<', ' NIN ', ' IN ', ' ALL ', ' LIKE '];
+        // Note: order matters here!
+        $sqlOperators = ['!=', '>=', '<=', '=', '>', '<', ' IN ', ' ALL ', ' LIKE '];
         foreach ($sqlOperators as $sqlOp) {
             $ops = explode($sqlOp, $filter);
             switch (count($ops)) {
                 case 2:
                     $field = trim($ops[0]);
+                    $negate = false;
+                    if (false !== strpos($field, ' ')) {
+                        $parts = explode(' ', $field);
+                        if ((count($parts) > 2) || (0 !== strcasecmp($parts[1], 'not'))) {
+                            // invalid field side of operator
+                            throw new BadRequestException('Invalid or unparsable field in filter request.');
+                        }
+                        $field = $parts[0];
+                        $negate = true;
+                    }
                     /** @type ColumnSchema $info */
                     if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
                         // This could be SQL injection attempt or bad field
@@ -562,52 +566,26 @@ class Table extends BaseDbTableResource
                     }
 
                     $value = trim($ops[1]);
-                    if (0 !== strpos($value, ':')) {
-                        // if not already a replacement parameter, evaluate it
-                        $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
-
-                        switch ($cnvType = DbUtilities::determinePhpConversionType($info->type)) {
-                            case 'int':
-                                if (!is_int($value)) {
-                                    if (!(ctype_digit($value))) {
-                                        throw new BadRequestException("Field '$field' must be a valid integer.");
-                                    } else {
-                                        $value = intval($value);
-                                    }
-                                }
-                                break;
-
-                            case 'time':
-                                $cfgFormat = Config::get('df.db_time_format');
-                                $outFormat = 'H:i:s.u';
-                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
-                                break;
-                            case 'date':
-                                $cfgFormat = Config::get('df.db_date_format');
-                                $outFormat = 'Y-m-d';
-                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
-                                break;
-                            case 'datetime':
-                                $cfgFormat = Config::get('df.db_datetime_format');
-                                $outFormat = 'Y-m-d H:i:s';
-                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
-                                break;
-                            case 'timestamp':
-                                $cfgFormat = Config::get('df.db_timestamp_format');
-                                $outFormat = 'Y-m-d H:i:s';
-                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
-                                break;
-
-                            default:
-                                break;
-                        }
-
-                        $paramName = ':cf_' . count($params); // positionally unique
-                        $params[$paramName] = $value;
-                        $value = $paramName;
+                    switch ($sqlOp) {
+                        case ' IN ':
+                        case ' ALL ':
+                            $value = trim($value, '()[]');
+                            $parsed = [];
+                            foreach (explode(',', $value) as $each) {
+                                $parsed[] = $this->parseFilterValue($each, $info, $params);
+                            }
+                            $value = '(' . implode(',', $parsed) . ')';
+                            break;
+                        default:
+                            $value = $this->parseFilterValue($value, $info, $params);
+                            break;
                     }
 
-                    return $info->rawName . " $sqlOp $value";
+                    if ($negate) {
+                        $sqlOp = 'NOT ' . $sqlOp;
+                    }
+
+                    return "{$info->rawName} $sqlOp $value";
             }
         }
 
@@ -619,7 +597,7 @@ class Table extends BaseDbTableResource
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            return $info->rawName . " IS NULL";
+            return $info->rawName . ' IS NULL';
         }
 
         if (' IS NOT NULL' === substr($filter, -12)) {
@@ -630,11 +608,69 @@ class Table extends BaseDbTableResource
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            return $info->rawName . " IS NOT NULL";
+            return $info->rawName . ' IS NOT NULL';
         }
 
         // This could be SQL injection attempt or unsupported filter arrangement
         throw new BadRequestException('Invalid or unparsable filter request.');
+    }
+
+    /**
+     * @param mixed        $value
+     * @param ColumnSchema $info
+     * @param array        $params
+     *
+     * @return int|null|string
+     * @throws BadRequestException
+     */
+    protected function parseFilterValue($value, ColumnSchema $info, array &$params)
+    {
+        if (0 !== strpos($value, ':')) {
+            // if not already a replacement parameter, evaluate it
+            $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
+
+            switch ($cnvType = DbUtilities::determinePhpConversionType($info->type)) {
+                case 'int':
+                    if (!is_int($value)) {
+                        if (!(ctype_digit($value))) {
+                            throw new BadRequestException("Field '{$info->getName(true)}' must be a valid integer.");
+                        } else {
+                            $value = intval($value);
+                        }
+                    }
+                    break;
+
+                case 'time':
+                    $cfgFormat = Config::get('df.db_time_format');
+                    $outFormat = 'H:i:s.u';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+                case 'date':
+                    $cfgFormat = Config::get('df.db_date_format');
+                    $outFormat = 'Y-m-d';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+                case 'datetime':
+                    $cfgFormat = Config::get('df.db_datetime_format');
+                    $outFormat = 'Y-m-d H:i:s';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+                case 'timestamp':
+                    $cfgFormat = Config::get('df.db_timestamp_format');
+                    $outFormat = 'Y-m-d H:i:s';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+
+                default:
+                    break;
+            }
+
+            $paramName = ':cf_' . count($params); // positionally unique
+            $params[$paramName] = $value;
+            $value = $paramName;
+        }
+
+        return $value;
     }
 
     /**
@@ -646,7 +682,7 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param mixed $value
+     * @param mixed        $value
      * @param ColumnSchema $field_info
      *
      * @return mixed
