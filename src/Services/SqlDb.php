@@ -90,7 +90,7 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         $user = ArrayUtils::get($config, 'username');
         $password = ArrayUtils::get($config, 'password');
 
-        $this->dbConn = new Connection($dsn, $user, $password, $this, $this);
+        $this->dbConn = new Connection($dsn, $user, $password);
         $this->dbConn->setCache($this);
         $this->dbConn->setExtraStore($this);
 
