@@ -15,6 +15,7 @@ use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Managed\Support\Managed;
 
 /**
  * Class SqlDb
@@ -87,10 +88,26 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
             throw new \InvalidArgumentException('Database connection string (DSN) can not be empty.');
         }
 
+        if (0 === stripos($dsn, 'sqlite:')) {
+            $file = substr($dsn, 7);
+            if (false === strpos($file, DIRECTORY_SEPARATOR)) {
+                // no directories involved, store it where we want to store it
+                if (config('df.standalone')) {
+                    $storage = config('df.db.sqlite_storage');
+                } else {
+                    $storage = Managed::getStoragePath();
+                    $storage = rtrim($storage, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'databases';
+                }
+                if (is_dir($storage)) {
+                    $dsn = 'sqlite:' . rtrim($storage, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $file;
+                }
+            }
+        }
+
         $user = ArrayUtils::get($config, 'username');
         $password = ArrayUtils::get($config, 'password');
 
-        $this->dbConn = new Connection($dsn, $user, $password, $this, $this);
+        $this->dbConn = new Connection($dsn, $user, $password);
         $this->dbConn->setCache($this);
         $this->dbConn->setExtraStore($this);
 
@@ -163,13 +180,24 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
     /**
      * @param string|null $schema
      * @param bool        $refresh
+     * @param bool        $use_alias
      *
      * @return \DreamFactory\Core\Database\TableNameSchema[]
      * @throws \Exception
      */
-    public function getTableNames($schema = null, $refresh = false)
+    public function getTableNames($schema = null, $refresh = false, $use_alias = false)
     {
-        return $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
+        $tables = $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
+        if ($use_alias) {
+            $temp = []; // reassign index to alias
+            foreach ($tables as $table) {
+                $temp[$table->getName(true)] = $table;
+            }
+
+            return $temp;
+        }
+
+        return $tables;
     }
 
     public function refreshTableCache()

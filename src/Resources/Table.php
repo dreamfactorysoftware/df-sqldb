@@ -9,6 +9,7 @@ use DreamFactory\Core\Database\Transaction;
 use DreamFactory\Core\Database\Expression;
 use DreamFactory\Core\Database\ColumnSchema;
 use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
@@ -23,6 +24,11 @@ use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Enums\Verbs;
 
+/**
+ * Class Table
+ *
+ * @package DreamFactory\Core\SqlDb\Resources
+ */
 class Table extends BaseDbTableResource
 {
     //*************************************************************************
@@ -239,6 +245,21 @@ class Table extends BaseDbTableResource
 
     // Helper methods
 
+    /**
+     * @param $table
+     * @param $select
+     * @param $where
+     * @param $bind_values
+     * @param $bind_columns
+     * @param $extras
+     *
+     * @return array
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     * @throws \DreamFactory\Core\Exceptions\NotFoundException
+     * @throws \DreamFactory\Core\Exceptions\RestException
+     * @throws \Exception
+     */
     protected function recordQuery($table, $select, $where, $bind_values, $bind_columns, $extras)
     {
         $order = ArrayUtils::get($extras, ApiOptions::ORDER);
@@ -263,6 +284,15 @@ class Table extends BaseDbTableResource
         }
         if ($offset > 0) {
             $command->offset($offset);
+            switch ($this->dbConn->getDBName()) {
+                case SqlDbDriverTypes::SQL_SERVER:
+                case SqlDbDriverTypes::DBLIB:
+                    if (empty($order) && isset($select[0])){
+                        // Microsoft strangely requires an order for using offset
+                        $command->order("{$select[0]} ASC");
+                    }
+                    break;
+            }
         }
         if (($limit < 1) || ($limit > $maxAllowed)) {
             // impose a limit to protect server
@@ -365,33 +395,44 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param $name
+     * @param $table_name
      *
      * @return array
      * @throws \Exception
      */
-    protected function getFieldsInfo($name)
+    protected function getFieldsInfo($table_name)
     {
-        $table = $this->dbConn->getSchema()->getTable($name);
+        $table = $this->dbConn->getSchema()->getTable($table_name);
         if (!$table) {
-            throw new NotFoundException("Table '$name' does not exist in the database.");
+            throw new NotFoundException("Table '$table_name' does not exist in the database.");
         }
 
-        return $table->columns;
+        // re-index for alias usage, easier to find requested fields from client
+        $columns = [];
+        /** @var ColumnSchema $column */
+        foreach ($table->columns as $column) {
+            $columns[strtolower($column->getName(true))] = $column;
+        }
+
+        return $columns;
     }
 
     /**
-     * @param $name
+     * @param $table_name
      *
      * @return array
      * @throws \Exception
      */
-    protected function describeTableRelated($name)
+    protected function describeTableRelated($table_name)
     {
-        $schema = $this->dbConn->getSchema()->getTable($name);
+        $table = $this->dbConn->getSchema()->getTable($table_name);
+        if (!$table) {
+            throw new NotFoundException("Table '$table_name' does not exist in the database.");
+        }
+
         $relatives = [];
         /** @var RelationSchema $relation */
-        foreach ($schema->relations as $relation) {
+        foreach ($table->relations as $relation) {
             $relatives[$relation->name] = $relation->toArray();
         }
 
@@ -452,7 +493,16 @@ class Table extends BaseDbTableResource
         }
     }
 
-    protected function parseFilterString($filter, array &$params, $field_list = null)
+    /**
+     * @param    string       $filter
+     * @param array           $params
+     * @param  ColumnSchema[] $fields_info
+     *
+     * @return string
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
+    protected function parseFilterString($filter, array &$params, $fields_info)
     {
         if (empty($filter)) {
             return null;
@@ -467,7 +517,7 @@ class Table extends BaseDbTableResource
         if (count($ops) > 1) {
             $parts = [];
             foreach ($ops as $op) {
-                $parts[] = static::parseFilterString($op, $params, $field_list);
+                $parts[] = static::parseFilterString($op, $params, $fields_info);
             }
 
             return implode(' OR ', $parts);
@@ -477,7 +527,7 @@ class Table extends BaseDbTableResource
         if (count($ops) > 1) {
             $parts = [];
             foreach ($ops as $op) {
-                $parts[] = static::parseFilterString($op, $params, $field_list);
+                $parts[] = static::parseFilterString($op, $params, $fields_info);
             }
 
             return implode(' NOR ', $parts);
@@ -487,15 +537,10 @@ class Table extends BaseDbTableResource
         if (count($ops) > 1) {
             $parts = [];
             foreach ($ops as $op) {
-                $parts[] = static::parseFilterString($op, $params, $field_list);
+                $parts[] = static::parseFilterString($op, $params, $fields_info);
             }
 
             return implode(' AND ', $parts);
-        }
-
-        // handle negation operator, i.e. starts with NOT?
-        if (0 == substr_compare($filter, 'not ', 0, 4, true)) {
-//            $parts = trim( substr( $filter, 4 ) );
         }
 
         if ((0 === strpos($filter, '(')) && ((strlen($filter) - 1) === strpos($filter, ')'))) {
@@ -503,110 +548,157 @@ class Table extends BaseDbTableResource
         }
 
         // the rest should be comparison operators
-        $search = [' eq ', ' ne ', ' gte ', ' lte ', ' gt ', ' lt ', ' in ', ' nin ', ' all ', ' like ', ' <> '];
-        $replace = ['=', '!=', '>=', '<=', '>', '<', ' IN ', ' NIN ', ' ALL ', ' LIKE ', '!='];
+        $search = [' eq ', ' ne ', ' gte ', ' lte ', ' gt ', ' lt ', ' in ', ' all ', ' like ', ' <> '];
+        $replace = ['=', '!=', '>=', '<=', '>', '<', ' IN ', ' ALL ', ' LIKE ', '!='];
         $filter = trim(str_ireplace($search, $replace, $filter));
 
-        // Note: order matters, watch '='
-        $sqlOperators =
-            ['!=', '>=', '<=', '=', '>', '<', ' NIN ', ' IN ', ' ALL ', ' LIKE '];
+        // Note: order matters here!
+        $sqlOperators = ['!=', '>=', '<=', '=', '>', '<', ' IN ', ' ALL ', ' LIKE '];
         foreach ($sqlOperators as $sqlOp) {
             $ops = explode($sqlOp, $filter);
             switch (count($ops)) {
                 case 2:
                     $field = trim($ops[0]);
+                    $negate = false;
+                    if (false !== strpos($field, ' ')) {
+                        $parts = explode(' ', $field);
+                        if ((count($parts) > 2) || (0 !== strcasecmp($parts[1], 'not'))) {
+                            // invalid field side of operator
+                            throw new BadRequestException('Invalid or unparsable field in filter request.');
+                        }
+                        $field = $parts[0];
+                        $negate = true;
+                    }
                     /** @type ColumnSchema $info */
-                    if (null === $info = DbUtilities::getFieldFromDescribe($field, $field_list)) {
+                    if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
                         // This could be SQL injection attempt or bad field
                         throw new BadRequestException('Invalid or unparsable field in filter request.');
                     }
 
                     $value = trim($ops[1]);
-                    if (0 !== strpos($value, ':')) {
-                        // if not already a replacement parameter, evaluate it
-                        $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
-
-                        switch ($cnvType = DbUtilities::determinePhpConversionType($info->type)) {
-                            case 'int':
-                                if (!is_int($value)) {
-                                    if (!(ctype_digit($value))) {
-                                        throw new BadRequestException("Field '$field' must be a valid integer.");
-                                    } else {
-                                        $value = intval($value);
-                                    }
-                                }
-                                break;
-
-                            case 'time':
-                                $cfgFormat = Config::get('df.db_time_format');
-                                $outFormat = 'H:i:s.u';
-                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
-                                break;
-                            case 'date':
-                                $cfgFormat = Config::get('df.db_date_format');
-                                $outFormat = 'Y-m-d';
-                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
-                                break;
-                            case 'datetime':
-                                $cfgFormat = Config::get('df.db_datetime_format');
-                                $outFormat = 'Y-m-d H:i:s';
-                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
-                                break;
-                            case 'timestamp':
-                                $cfgFormat = Config::get('df.db_timestamp_format');
-                                $outFormat = 'Y-m-d H:i:s';
-                                $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
-                                break;
-
-                            default:
-                                break;
-                        }
-
-                        $paramName = ':cf_' . count($params); // positionally unique
-                        $params[$paramName] = $value;
-                        $value = $paramName;
+                    switch ($sqlOp) {
+                        case ' IN ':
+                        case ' ALL ':
+                            $value = trim($value, '()[]');
+                            $parsed = [];
+                            foreach (explode(',', $value) as $each) {
+                                $parsed[] = $this->parseFilterValue($each, $info, $params);
+                            }
+                            $value = '(' . implode(',', $parsed) . ')';
+                            break;
+                        default:
+                            $value = $this->parseFilterValue($value, $info, $params);
+                            break;
                     }
-                    $field = $this->dbConn->quoteColumnName($info->name);
 
-                    return "$field $sqlOp $value";
+                    if ($negate) {
+                        $sqlOp = 'NOT ' . $sqlOp;
+                    }
+
+                    return "{$info->rawName} $sqlOp $value";
             }
         }
 
         if (' IS NULL' === substr($filter, -8)) {
             $field = trim(substr($filter, 0, -8));
             /** @type ColumnSchema $info */
-            if (null === $info = DbUtilities::getFieldFromDescribe($field, $field_list)) {
+            if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
                 // This could be SQL injection attempt or bad field
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            $field = $this->dbConn->quoteColumnName($info->name);
-
-            return "$field IS NULL";
+            return $info->rawName . ' IS NULL';
         }
 
         if (' IS NOT NULL' === substr($filter, -12)) {
             $field = trim(substr($filter, 0, -12));
             /** @type ColumnSchema $info */
-            if (null === $info = DbUtilities::getFieldFromDescribe($field, $field_list)) {
+            if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
                 // This could be SQL injection attempt or bad field
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            $field = $this->dbConn->quoteColumnName($info->name);
-
-            return "$field IS NOT NULL";
+            return $info->rawName . ' IS NOT NULL';
         }
 
         // This could be SQL injection attempt or unsupported filter arrangement
         throw new BadRequestException('Invalid or unparsable filter request.');
     }
 
+    /**
+     * @param mixed        $value
+     * @param ColumnSchema $info
+     * @param array        $params
+     *
+     * @return int|null|string
+     * @throws BadRequestException
+     */
+    protected function parseFilterValue($value, ColumnSchema $info, array &$params)
+    {
+        if (0 !== strpos($value, ':')) {
+            // if not already a replacement parameter, evaluate it
+            $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
+
+            switch ($cnvType = DbUtilities::determinePhpConversionType($info->type)) {
+                case 'int':
+                    if (!is_int($value)) {
+                        if (!(ctype_digit($value))) {
+                            throw new BadRequestException("Field '{$info->getName(true)}' must be a valid integer.");
+                        } else {
+                            $value = intval($value);
+                        }
+                    }
+                    break;
+
+                case 'time':
+                    $cfgFormat = Config::get('df.db_time_format');
+                    $outFormat = 'H:i:s.u';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+                case 'date':
+                    $cfgFormat = Config::get('df.db_date_format');
+                    $outFormat = 'Y-m-d';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+                case 'datetime':
+                    $cfgFormat = Config::get('df.db_datetime_format');
+                    $outFormat = 'Y-m-d H:i:s';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+                case 'timestamp':
+                    $cfgFormat = Config::get('df.db_timestamp_format');
+                    $outFormat = 'Y-m-d H:i:s';
+                    $value = DbUtilities::formatDateTime($outFormat, $value, $cfgFormat);
+                    break;
+
+                default:
+                    break;
+            }
+
+            $paramName = ':cf_' . count($params); // positionally unique
+            $params[$paramName] = $value;
+            $value = $paramName;
+        }
+
+        return $value;
+    }
+
+    /**
+     * @throws \Exception
+     */
     protected function getCurrentTimestamp()
     {
         $this->dbConn->getSchema()->getTimestampForSet();
     }
 
+    /**
+     * @param mixed        $value
+     * @param ColumnSchema $field_info
+     *
+     * @return mixed
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
     protected function parseValueForSet($value, $field_info)
     {
         if (!is_null($value) && !($value instanceof Expression)) {
@@ -617,8 +709,10 @@ class Table extends BaseDbTableResource
                     if (!is_int($value)) {
                         if (('' === $value) && $field_info->allowNull) {
                             $value = null;
-                        } elseif (!(ctype_digit($value))) {
-                            throw new BadRequestException("Field '{$field_info->name}' must be a valid integer.");
+                        } elseif (!ctype_digit($value)) {
+                            if (!is_float($value)) { // bigint catch as float
+                                throw new BadRequestException("Field '{$field_info->getName(true)}' must be a valid integer.");
+                            }
                         } else {
                             $value = intval($value);
                         }
@@ -674,6 +768,9 @@ class Table extends BaseDbTableResource
         return $record;
     }
 
+    /**
+     * @param $value
+     */
     public static function valueToExpression(&$value)
     {
         if (is_array($value) && isset($value['expression'])) {
@@ -813,55 +910,43 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param        $fields
-     * @param        $avail_fields
-     * @param bool   $as_quoted_string
-     * @param string $prefix
-     * @param string $fields_as
+     * @param  string|array   $fields
+     * @param  ColumnSchema[] $avail_fields
      *
-     * @return string
+     * @return array
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
      * @throws \Exception
      */
-    protected function parseFieldsForSqlSelect(
-        $fields,
-        $avail_fields,
-        $as_quoted_string = false,
-        $prefix = '',
-        $fields_as = ''
-    ){
-        if (empty($fields) || (ApiOptions::FIELDS_ALL === $fields)) {
-            $fields = DbUtilities::listAllFieldsFromDescribe($avail_fields);
-        }
-
-        $fieldArray = (!is_array($fields)) ? array_map('trim', explode(',', $fields)) : $fields;
-        $asArray = (!is_array($fields_as)) ? array_map('trim', explode(',', $fields_as)) : $fields_as;
+    protected function parseFieldsForSqlSelect($fields, $avail_fields)
+    {
         $outArray = [];
         $bindArray = [];
-        for ($i = 0, $size = sizeof($fieldArray); $i < $size; $i++) {
-            $field = $fieldArray[$i];
-            $as = (isset($asArray[$i]) ? $asArray[$i] : '');
-            $context = (empty($prefix) ? $field : $prefix . '.' . $field);
-            $out_as = (empty($as) ? $field : $as);
-            /** @type ColumnSchema $fieldInfo */
-            if (null === $fieldInfo = DbUtilities::getFieldFromDescribe($field, $avail_fields)) {
-                throw new BadRequestException('Invalid field requested.');
-            }
-            $pdoType = ($fieldInfo->allowNull) ? null : $fieldInfo->pdoType;
-            $phpType = (is_null($pdoType)) ? $fieldInfo->phpType : null;
+        if (!(empty($fields) || (ApiOptions::FIELDS_ALL === $fields))) {
+            $fields = (!is_array($fields)) ? array_map('trim', explode(',', trim($fields, ','))) : $fields;
+            foreach ($fields as $field) {
+                $ndx = strtolower($field);
+                if (!isset($avail_fields[$ndx])) {
+                    throw new BadRequestException('Invalid field requested: ' . $field);
+                }
 
-            $bindArray[] = ['name' => $field, 'pdo_type' => $pdoType, 'php_type' => $phpType];
-            $outArray[] =
-                $this->dbConn->getSchema()->parseFieldsForSelect($context, $fieldInfo, $as_quoted_string, $out_as);
+                $fieldInfo = $avail_fields[$ndx];
+                $bindArray[] = $this->dbConn->getSchema()->parseFieldForBinding($fieldInfo);
+                $outArray[] = $this->dbConn->getSchema()->parseFieldForSelect($fieldInfo);
+            }
+        } else {
+            foreach ($avail_fields as $fieldInfo) {
+                $bindArray[] = $this->dbConn->getSchema()->parseFieldForBinding($fieldInfo);
+                $outArray[] = $this->dbConn->getSchema()->parseFieldForSelect($fieldInfo);
+            }
         }
 
         return ['fields' => $outArray, 'bindings' => $bindArray];
     }
 
     /**
-     * @param        $fields
-     * @param        $avail_fields
-     * @param string $prefix
+     * @param string|array    $fields
+     * @param  ColumnSchema[] $avail_fields
+     * @param string          $prefix
      *
      * @throws BadRequestException
      * @return string
@@ -875,14 +960,13 @@ class Table extends BaseDbTableResource
         $out_str = '';
         $field_arr = array_map('trim', explode(',', $fields));
         foreach ($field_arr as $field) {
-            // find the type
-            if (false === DbUtilities::findFieldFromDescribe($field, $avail_fields)) {
+            if (null === $info = ArrayUtils::get($avail_fields, $field)) {
                 throw new BadRequestException("Invalid field '$field' selected for output.");
             }
             if (!empty($out_str)) {
                 $out_str .= ', ';
             }
-            $out_str .= $prefix . '.' . $this->dbConn->quoteColumnName($field);
+            $out_str .= $prefix . '.' . $info->rawName;
         }
 
         return $out_str;
@@ -930,6 +1014,18 @@ class Table extends BaseDbTableResource
         return array_merge($data, $relatedData);
     }
 
+    /**
+     * @param $data
+     * @param $relation
+     * @param $extras
+     *
+     * @return array|null
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     * @throws \DreamFactory\Core\Exceptions\NotFoundException
+     * @throws \DreamFactory\Core\Exceptions\RestException
+     * @throws \Exception
+     */
     protected function retrieveRelationRecords($data, $relation, $extras)
     {
         if (empty($relation)) {
@@ -1034,6 +1130,7 @@ class Table extends BaseDbTableResource
                         $fields = (empty($fields)) ? '*' : $fields;
 
                         $where = ['in', $relatedField, $relatedIds];
+                        $params = [];
 
                         return $this->recordQuery(
                             $relatedTable,
@@ -1081,7 +1178,7 @@ class Table extends BaseDbTableResource
             $manyFields = $this->getFieldsInfo($many_table);
             $pksInfo = DbUtilities::getPrimaryKeys($manyFields);
             /** @type ColumnSchema $fieldInfo */
-            if (null === $fieldInfo = DbUtilities::getFieldFromDescribe($many_field, $manyFields)) {
+            if (null === $fieldInfo = ArrayUtils::get($manyFields, strtolower($many_field))) {
                 throw new InternalServerErrorException("Relationship field '$many_field' not found in schema.");
             }
 
@@ -1595,6 +1692,13 @@ class Table extends BaseDbTableResource
         }
     }
 
+    /**
+     * @param       $filter_info
+     * @param array $params
+     *
+     * @return null|string
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     */
     protected function buildQueryStringFromData($filter_info, array &$params)
     {
         $filter_info = ArrayUtils::clean($filter_info);
@@ -1730,19 +1834,32 @@ class Table extends BaseDbTableResource
         }
     }
 
+    /**
+     * @param      $table
+     * @param null $fields_info
+     * @param null $requested_fields
+     * @param null $requested_types
+     *
+     * @return array|\DreamFactory\Core\Database\ColumnSchema[]
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     */
     protected function getIdsInfo($table, $fields_info = null, &$requested_fields = null, $requested_types = null)
     {
         $idsInfo = [];
         if (empty($requested_fields)) {
             $requested_fields = [];
+            /** @type ColumnSchema[] $idsInfo */
             $idsInfo = DbUtilities::getPrimaryKeys($fields_info);
             foreach ($idsInfo as $info) {
-                $requested_fields[] = $info->name;
+                $requested_fields[] = $info->getName(true);
             }
         } else {
             if (false !== $requested_fields = DbUtilities::validateAsArray($requested_fields, ',')) {
                 foreach ($requested_fields as $field) {
-                    $idsInfo[] = DbUtilities::getFieldFromDescribe($field, $fields_info);
+                    $ndx = strtolower($field);
+                    if (isset($fields_info[$ndx])) {
+                        $idsInfo[] = $fields_info[$ndx];
+                    }
                 }
             }
         }
@@ -2302,6 +2419,9 @@ class Table extends BaseDbTableResource
         return null;
     }
 
+    /**
+     * @return array
+     */
     public function getApiDocInfo()
     {
         $base = parent::getApiDocInfo();
