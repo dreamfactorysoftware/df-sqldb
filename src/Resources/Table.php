@@ -9,6 +9,7 @@ use DreamFactory\Core\Database\Transaction;
 use DreamFactory\Core\Database\Expression;
 use DreamFactory\Core\Database\ColumnSchema;
 use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
@@ -283,6 +284,15 @@ class Table extends BaseDbTableResource
         }
         if ($offset > 0) {
             $command->offset($offset);
+            switch ($this->dbConn->getDBName()) {
+                case SqlDbDriverTypes::SQL_SERVER:
+                case SqlDbDriverTypes::DBLIB:
+                    if (empty($order) && isset($select[0])){
+                        // Microsoft strangely requires an order for using offset
+                        $command->order("{$select[0]} ASC");
+                    }
+                    break;
+            }
         }
         if (($limit < 1) || ($limit > $maxAllowed)) {
             // impose a limit to protect server
