@@ -18,5 +18,6 @@ class DatabaseSeeder extends Seeder
         $this->call(ServiceTypeSeeder::class);
         $this->call(DbTableExtrasSeeder::class);
         $this->call(DbFieldExtrasSeeder::class);
+        $this->call(ServiceSeeder::class);
     }
 }
