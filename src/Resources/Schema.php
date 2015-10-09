@@ -30,6 +30,7 @@ class Schema extends BaseDbSchemaResource
      */
     public function describeTable($name, $refresh = false)
     {
+        $name = (is_array($name)) ? ArrayUtils::get($name, 'name') : $name;
         if (empty($name)) {
             throw new BadRequestException('Table name can not be empty.');
         }

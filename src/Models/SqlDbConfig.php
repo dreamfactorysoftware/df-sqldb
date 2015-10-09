@@ -2,11 +2,10 @@
 namespace DreamFactory\Core\SqlDb\Models;
 
 use DreamFactory\Core\Components\RequireExtensions;
-use DreamFactory\Core\Database\Connection;
+use DreamFactory\Core\Database\ConnectionFactory;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Models\BaseServiceConfigModel;
 use DreamFactory\Core\Models\ServiceCacheConfig;
-use DreamFactory\Library\Utility\ArrayUtils;
 
 /**
  * SqlDbConfig
@@ -18,7 +17,7 @@ use DreamFactory\Library\Utility\ArrayUtils;
  * @property string  $db
  * @property string  $options
  * @property string  $attributes
- * @method static \Illuminate\Database\Query\Builder|SqlDbConfig whereServiceId($value)
+ * @method static SqlDbConfig whereServiceId($value)
  */
 class SqlDbConfig extends BaseServiceConfigModel
 {
@@ -64,12 +63,13 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     public static function validateConfig($config, $create = true)
     {
-        if (null === ($dsn = ArrayUtils::get($config, 'dsn', null, true))) {
+        $dsn = isset($config['dsn']) ? $config['dsn'] : null;
+        if (empty($dsn)) {
             throw new BadRequestException('Database connection string (DSN) can not be empty.');
         }
 
-        $driver = Connection::getDriverFromDSN($dsn);
-        Connection::requireDriver($driver);
+        $driver = isset($config['driver']) ? $config['driver'] : null;
+        ConnectionFactory::requireDriver($driver);
 
         return true;
     }
@@ -115,7 +115,7 @@ class SqlDbConfig extends BaseServiceConfigModel
 
         switch ($schema['name']) {
             case 'driver':
-                $values = Connection::getAllDrivers();
+                $values = ConnectionFactory::getAllDrivers();
                 $schema['type'] = 'picklist';
                 $schema['values'] = $values;
                 $schema['affects'] = 'dsn';
