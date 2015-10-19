@@ -9,7 +9,6 @@ use DreamFactory\Core\Database\Transaction;
 use DreamFactory\Core\Database\Expression;
 use DreamFactory\Core\Database\ColumnSchema;
 use DreamFactory\Core\Enums\ApiOptions;
-use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
@@ -268,12 +267,31 @@ class Table extends BaseDbTableResource
         $maxAllowed = static::getMaxRecordsReturnedLimit();
         $needLimit = false;
 
+        $from = $table;
+
         // use query builder
+//        $builder = $this->dbConn->getSchema()->getCommandBuilder();
+//        $criteria = $builder->createCriteria();
+//        $criteria->select = $select;
+//        if (!empty($where)) {
+//            $criteria->addCondition($where);
+//        }
+//        if (!empty($order)) {
+//            $criteria->order = ($order);
+//        }
+//        if (($limit < 1) || ($limit > $maxAllowed)) {
+//            // impose a limit to protect server
+//            $limit = $maxAllowed;
+//            $needLimit = true;
+//        }
+//        $criteria->limit = $limit;
+//        $criteria->offset = $offset;
+//        $command = $builder->createFindCommand($table, $criteria);
+
         /** @var Command $command */
         $command = $this->dbConn->createCommand();
         $command->select($select);
 
-        $from = $table;
         $command->from($from);
 
         if (!empty($where)) {
@@ -282,24 +300,12 @@ class Table extends BaseDbTableResource
         if (!empty($order)) {
             $command->order($order);
         }
-        if ($offset > 0) {
-            $command->offset($offset);
-            switch ($this->dbConn->getDBName()) {
-                case SqlDbDriverTypes::SQL_SERVER:
-                case SqlDbDriverTypes::DBLIB:
-                    if (empty($order) && isset($select[0])){
-                        // Microsoft strangely requires an order for using offset
-                        $command->order("{$select[0]} ASC");
-                    }
-                    break;
-            }
-        }
         if (($limit < 1) || ($limit > $maxAllowed)) {
             // impose a limit to protect server
             $limit = $maxAllowed;
             $needLimit = true;
         }
-        $command->limit($limit);
+        $command->limit($limit, $offset);
 
         // must bind values after setting all components of the query,
         // otherwise yii text string is generated without limit, etc.
@@ -325,13 +331,8 @@ class Table extends BaseDbTableResource
                 if (null === $value = ArrayUtils::get($dummy, $name)) {
                     $value = (is_array($read) ? ArrayUtils::get($read, $name) : null);
                 }
-                if (!is_null($type) && !is_null($value)) {
-                    if (('int' === $type) && ('' === $value)) {
-                        // Postgresql strangely returns "" for null integers
-                        $value = null;
-                    } else {
-                        $value = DbUtilities::formatValue($value, $type);
-                    }
+                if (!is_null($value)) {
+                    $value = $this->dbConn->getSchema()->formatValue($value, $type);
                 }
                 $temp[$name] = $value;
             }
@@ -636,6 +637,13 @@ class Table extends BaseDbTableResource
     protected function parseFilterValue($value, ColumnSchema $info, array &$params)
     {
         if (0 !== strpos($value, ':')) {
+            // remove quoting on strings if used, i.e. 1.x required them
+            if (is_string($value) &&
+                ((0 === strcmp("'" . trim($value, "'") . "'", $value)) ||
+                    (0 === strcmp('"' . trim($value, '"') . '"', $value)))
+            ) {
+                $value = trim($value, '"\'');
+            }
             // if not already a replacement parameter, evaluate it
             $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
 

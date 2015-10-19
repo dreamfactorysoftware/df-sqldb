@@ -5,6 +5,7 @@ namespace DreamFactory\Core\SqlDb\Services;
 use DreamFactory\Core\Components\DbSchemaExtras;
 use DreamFactory\Core\Contracts\CacheInterface;
 use DreamFactory\Core\Database\Connection;
+use DreamFactory\Core\Database\ConnectionFactory;
 use DreamFactory\Core\Database\DbExtrasInterface;
 use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
@@ -84,30 +85,8 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         $config = ArrayUtils::clean(ArrayUtils::get($settings, 'config'));
         Session::replaceLookups($config, true);
 
-        if (null === ($dsn = ArrayUtils::get($config, 'dsn', null, true))) {
-            throw new \InvalidArgumentException('Database connection string (DSN) can not be empty.');
-        }
-
-        if (0 === stripos($dsn, 'sqlite:')) {
-            $file = substr($dsn, 7);
-            if (false === strpos($file, DIRECTORY_SEPARATOR)) {
-                // no directories involved, store it where we want to store it
-                if (config('df.standalone')) {
-                    $storage = config('df.db.sqlite_storage');
-                } else {
-                    $storage = Managed::getStoragePath();
-                    $storage = rtrim($storage, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'databases';
-                }
-                if (is_dir($storage)) {
-                    $dsn = 'sqlite:' . rtrim($storage, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $file;
-                }
-            }
-        }
-
-        $user = ArrayUtils::get($config, 'username');
-        $password = ArrayUtils::get($config, 'password');
-
-        $this->dbConn = new Connection($dsn, $user, $password);
+        $driver = isset($config['driver']) ? $config['driver'] : null;
+        $this->dbConn = ConnectionFactory::createConnection($driver, $config);
         $this->dbConn->setCache($this);
         $this->dbConn->setExtraStore($this);
 
@@ -191,7 +170,7 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         if ($use_alias) {
             $temp = []; // reassign index to alias
             foreach ($tables as $table) {
-                $temp[$table->getName(true)] = $table;
+                $temp[strtolower($table->getName(true))] = $table;
             }
 
             return $temp;
