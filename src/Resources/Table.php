@@ -544,9 +544,11 @@ class Table extends BaseDbTableResource
             return implode(' AND ', $parts);
         }
 
-        if ((0 === strpos($filter, '(')) && ((strlen($filter) - 1) === strpos($filter, ')'))) {
-            $filter = trim(substr($filter, 1, strlen($filter) - 2));
-        }
+        $pure = trim($filter, '()');
+        $pieces = explode($pure, $filter);
+        $leftParen = (!empty($pieces[0]) ? $pieces[0] : null);
+        $rightParen = (!empty($pieces[1]) ? $pieces[1] : null);
+        $filter = $pure;
 
         // the rest should be comparison operators
         $search = [' eq ', ' ne ', ' gte ', ' lte ', ' gt ', ' lt ', ' in ', ' all ', ' like ', ' <> '];
@@ -596,11 +598,19 @@ class Table extends BaseDbTableResource
                         $sqlOp = 'NOT ' . $sqlOp;
                     }
 
-                    return "{$info->rawName} $sqlOp $value";
+                    $out = "{$info->rawName} $sqlOp $value";
+                    if ($leftParen) {
+                        $out = $leftParen . $out;
+                    }
+                    if ($rightParen) {
+                        $out .= $rightParen;
+                    }
+
+                    return $out;
             }
         }
 
-        if (' IS NULL' === substr($filter, -8)) {
+        if (0 === strcasecmp(' IS NULL', substr($filter, -8))) {
             $field = trim(substr($filter, 0, -8));
             /** @type ColumnSchema $info */
             if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
@@ -608,10 +618,18 @@ class Table extends BaseDbTableResource
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            return $info->rawName . ' IS NULL';
+            $out = $info->rawName . ' IS NULL';
+            if ($leftParen) {
+                $out = $leftParen . $out;
+            }
+            if ($rightParen) {
+                $out .= $rightParen;
+            }
+
+            return $out;
         }
 
-        if (' IS NOT NULL' === substr($filter, -12)) {
+        if (0 === strcasecmp(' IS NOT NULL', substr($filter, -12))) {
             $field = trim(substr($filter, 0, -12));
             /** @type ColumnSchema $info */
             if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
@@ -619,7 +637,15 @@ class Table extends BaseDbTableResource
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            return $info->rawName . ' IS NOT NULL';
+            $out = $info->rawName . ' IS NOT NULL';
+            if ($leftParen) {
+                $out = $leftParen . $out;
+            }
+            if ($rightParen) {
+                $out .= $rightParen;
+            }
+
+            return $out;
         }
 
         // This could be SQL injection attempt or unsupported filter arrangement
@@ -696,7 +722,7 @@ class Table extends BaseDbTableResource
      */
     protected function getCurrentTimestamp()
     {
-        $this->dbConn->getSchema()->getTimestampForSet();
+        return $this->dbConn->getSchema()->getTimestampForSet();
     }
 
     /**
