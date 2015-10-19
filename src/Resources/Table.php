@@ -637,6 +637,13 @@ class Table extends BaseDbTableResource
     protected function parseFilterValue($value, ColumnSchema $info, array &$params)
     {
         if (0 !== strpos($value, ':')) {
+            // remove quoting on strings if used, i.e. 1.x required them
+            if (is_string($value) &&
+                ((0 === strcmp("'" . trim($value, "'") . "'", $value)) ||
+                    (0 === strcmp('"' . trim($value, '"') . '"', $value)))
+            ) {
+                $value = trim($value, '"\'');
+            }
             // if not already a replacement parameter, evaluate it
             $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
 
