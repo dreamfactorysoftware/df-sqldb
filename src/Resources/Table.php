@@ -68,11 +68,13 @@ class Table extends BaseDbTableResource
                 foreach ($related as $relative) {
                     $extraFields = ArrayUtils::get($this->options, $relative . '_fields', '*');
                     $extraOrder = ArrayUtils::get($this->options, $relative . '_order', '');
+                    $extraGroup = ArrayUtils::get($this->options, $relative . '_group', '');
                     $relations[] =
                         [
                             'name'             => $relative,
                             ApiOptions::FIELDS => $extraFields,
-                            ApiOptions::ORDER  => $extraOrder
+                            ApiOptions::ORDER  => $extraOrder,
+                            ApiOptions::GROUP  => $extraGroup,
                         ];
                 }
 
@@ -262,6 +264,7 @@ class Table extends BaseDbTableResource
     protected function recordQuery($table, $select, $where, $bind_values, $bind_columns, $extras)
     {
         $order = ArrayUtils::get($extras, ApiOptions::ORDER);
+        $group = ArrayUtils::get($extras, ApiOptions::GROUP);
         $limit = intval(ArrayUtils::get($extras, ApiOptions::LIMIT, 0));
         $offset = intval(ArrayUtils::get($extras, ApiOptions::OFFSET, 0));
         $maxAllowed = static::getMaxRecordsReturnedLimit();
@@ -299,6 +302,9 @@ class Table extends BaseDbTableResource
         }
         if (!empty($order)) {
             $command->order($order);
+        }
+        if (!empty($group)) {
+            $command->group($group);
         }
         if (($limit < 1) || ($limit > $maxAllowed)) {
             // impose a limit to protect server
@@ -518,7 +524,7 @@ class Table extends BaseDbTableResource
         if (count($ops) > 1) {
             $parts = [];
             foreach ($ops as $op) {
-                $parts[] = static::parseFilterString($op, $params, $fields_info);
+                $parts[] = $this->parseFilterString($op, $params, $fields_info);
             }
 
             return implode(' OR ', $parts);
@@ -528,7 +534,7 @@ class Table extends BaseDbTableResource
         if (count($ops) > 1) {
             $parts = [];
             foreach ($ops as $op) {
-                $parts[] = static::parseFilterString($op, $params, $fields_info);
+                $parts[] = $this->parseFilterString($op, $params, $fields_info);
             }
 
             return implode(' NOR ', $parts);
@@ -538,7 +544,7 @@ class Table extends BaseDbTableResource
         if (count($ops) > 1) {
             $parts = [];
             foreach ($ops as $op) {
-                $parts[] = static::parseFilterString($op, $params, $fields_info);
+                $parts[] = $this->parseFilterString($op, $params, $fields_info);
             }
 
             return implode(' AND ', $parts);
