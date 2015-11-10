@@ -604,7 +604,7 @@ class Table extends BaseDbTableResource
                         $sqlOp = 'NOT ' . $sqlOp;
                     }
 
-                    $out = "{$info->rawName} $sqlOp $value";
+                    $out = $info->parseFieldForFilter() . " $sqlOp $value";
                     if ($leftParen) {
                         $out = $leftParen . $out;
                     }
@@ -624,7 +624,7 @@ class Table extends BaseDbTableResource
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            $out = $info->rawName . ' IS NULL';
+            $out = $info->parseFieldForFilter() . ' IS NULL';
             if ($leftParen) {
                 $out = $leftParen . $out;
             }
@@ -643,7 +643,7 @@ class Table extends BaseDbTableResource
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            $out = $info->rawName . ' IS NOT NULL';
+            $out = $info->parseFieldForFilter() . ' IS NOT NULL';
             if ($leftParen) {
                 $out = $leftParen . $out;
             }
@@ -970,16 +970,16 @@ class Table extends BaseDbTableResource
                 }
 
                 $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = $this->dbConn->getSchema()->parseFieldForBinding($fieldInfo);
-                $outArray[] = $this->dbConn->getSchema()->parseFieldForSelect($fieldInfo);
+                $bindArray[] = $fieldInfo->getPdoBinding();
+                $outArray[] = $fieldInfo->parseFieldForSelect();
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
                 if ($fieldInfo->isAggregate()){
                     continue;
                 }
-                $bindArray[] = $this->dbConn->getSchema()->parseFieldForBinding($fieldInfo);
-                $outArray[] = $this->dbConn->getSchema()->parseFieldForSelect($fieldInfo);
+                $bindArray[] = $fieldInfo->getPdoBinding();
+                $outArray[] = $fieldInfo->parseFieldForSelect();
             }
         }
 
