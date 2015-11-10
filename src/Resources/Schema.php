@@ -334,33 +334,6 @@ class Schema extends BaseDbSchemaResource
         return $out;
     }
 
-    /**
-     * @param $type
-     *
-     * @return int | null
-     */
-    public static function determinePdoBindingType($type)
-    {
-        switch ($type) {
-            case 'boolean':
-                return \PDO::PARAM_BOOL;
-
-            case 'integer':
-            case 'id':
-            case 'reference':
-            case 'user_id':
-            case 'user_id_on_create':
-            case 'user_id_on_update':
-                return \PDO::PARAM_INT;
-
-            case 'string':
-                return \PDO::PARAM_STR;
-                break;
-        }
-
-        return null;
-    }
-
     public function getApiDocInfo()
     {
         $base = parent::getApiDocInfo();
