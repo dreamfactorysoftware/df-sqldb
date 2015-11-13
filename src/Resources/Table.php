@@ -852,7 +852,7 @@ class Table extends BaseDbTableResource
                 $relations = ArrayUtils::get($values, $pos);
                 $relationType = ArrayUtils::get($relationInfo, 'type');
                 switch ($relationType) {
-                    case 'belongs_to':
+                    case RelationSchema::BELONGS_TO:
                         /*
                     "name": "role_by_role_id",
                     "type": "belongs_to",
@@ -862,7 +862,7 @@ class Table extends BaseDbTableResource
                     */
                         // todo handle this?
                         break;
-                    case 'has_many':
+                    case RelationSchema::HAS_MANY:
                         /*
                     "name": "users_by_last_modified_by_id",
                     "type": "has_many",
@@ -881,7 +881,7 @@ class Table extends BaseDbTableResource
                             $allow_delete
                         );
                         break;
-                    case 'many_many':
+                    case RelationSchema::MANY_MANY:
                         /*
                     "name": "roles_by_user",
                     "type": "many_many",
@@ -1085,7 +1085,7 @@ class Table extends BaseDbTableResource
         $this->validateTableAccess($relatedTable, Verbs::GET);
 
         switch ($relationType) {
-            case 'belongs_to':
+            case RelationSchema::BELONGS_TO:
                 if (empty($fieldVal)) {
                     return null;
                 }
@@ -1109,7 +1109,7 @@ class Table extends BaseDbTableResource
                     return ArrayUtils::get($relatedRecords, 0);
                 }
                 break;
-            case 'has_many':
+            case RelationSchema::HAS_MANY:
                 if (empty($fieldVal)) {
                     return [];
                 }
@@ -1130,7 +1130,7 @@ class Table extends BaseDbTableResource
 
                 return $this->recordQuery($relatedTable, $fields, $where, $params, $bindings, $extras);
                 break;
-            case 'many_many':
+            case RelationSchema::MANY_MANY:
                 if (empty($fieldVal)) {
                     return [];
                 }
