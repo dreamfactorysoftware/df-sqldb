@@ -604,7 +604,7 @@ class Table extends BaseDbTableResource
                         $sqlOp = 'NOT ' . $sqlOp;
                     }
 
-                    $out = "{$info->rawName} $sqlOp $value";
+                    $out = $info->parseFieldForFilter() . " $sqlOp $value";
                     if ($leftParen) {
                         $out = $leftParen . $out;
                     }
@@ -624,7 +624,7 @@ class Table extends BaseDbTableResource
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            $out = $info->rawName . ' IS NULL';
+            $out = $info->parseFieldForFilter() . ' IS NULL';
             if ($leftParen) {
                 $out = $leftParen . $out;
             }
@@ -643,7 +643,7 @@ class Table extends BaseDbTableResource
                 throw new BadRequestException('Invalid or unparsable field in filter request.');
             }
 
-            $out = $info->rawName . ' IS NOT NULL';
+            $out = $info->parseFieldForFilter() . ' IS NOT NULL';
             if ($leftParen) {
                 $out = $leftParen . $out;
             }
@@ -852,7 +852,7 @@ class Table extends BaseDbTableResource
                 $relations = ArrayUtils::get($values, $pos);
                 $relationType = ArrayUtils::get($relationInfo, 'type');
                 switch ($relationType) {
-                    case 'belongs_to':
+                    case RelationSchema::BELONGS_TO:
                         /*
                     "name": "role_by_role_id",
                     "type": "belongs_to",
@@ -862,7 +862,7 @@ class Table extends BaseDbTableResource
                     */
                         // todo handle this?
                         break;
-                    case 'has_many':
+                    case RelationSchema::HAS_MANY:
                         /*
                     "name": "users_by_last_modified_by_id",
                     "type": "has_many",
@@ -881,7 +881,7 @@ class Table extends BaseDbTableResource
                             $allow_delete
                         );
                         break;
-                    case 'many_many':
+                    case RelationSchema::MANY_MANY:
                         /*
                     "name": "roles_by_user",
                     "type": "many_many",
@@ -970,13 +970,16 @@ class Table extends BaseDbTableResource
                 }
 
                 $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = $this->dbConn->getSchema()->parseFieldForBinding($fieldInfo);
-                $outArray[] = $this->dbConn->getSchema()->parseFieldForSelect($fieldInfo);
+                $bindArray[] = $fieldInfo->getPdoBinding();
+                $outArray[] = $fieldInfo->parseFieldForSelect();
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
-                $bindArray[] = $this->dbConn->getSchema()->parseFieldForBinding($fieldInfo);
-                $outArray[] = $this->dbConn->getSchema()->parseFieldForSelect($fieldInfo);
+                if ($fieldInfo->isAggregate()){
+                    continue;
+                }
+                $bindArray[] = $fieldInfo->getPdoBinding();
+                $outArray[] = $fieldInfo->parseFieldForSelect();
             }
         }
 
@@ -1082,7 +1085,7 @@ class Table extends BaseDbTableResource
         $this->validateTableAccess($relatedTable, Verbs::GET);
 
         switch ($relationType) {
-            case 'belongs_to':
+            case RelationSchema::BELONGS_TO:
                 if (empty($fieldVal)) {
                     return null;
                 }
@@ -1106,7 +1109,7 @@ class Table extends BaseDbTableResource
                     return ArrayUtils::get($relatedRecords, 0);
                 }
                 break;
-            case 'has_many':
+            case RelationSchema::HAS_MANY:
                 if (empty($fieldVal)) {
                     return [];
                 }
@@ -1127,7 +1130,7 @@ class Table extends BaseDbTableResource
 
                 return $this->recordQuery($relatedTable, $fields, $where, $params, $bindings, $extras);
                 break;
-            case 'many_many':
+            case RelationSchema::MANY_MANY:
                 if (empty($fieldVal)) {
                     return [];
                 }
@@ -2430,33 +2433,6 @@ class Table extends BaseDbTableResource
         }
 
         return true;
-    }
-
-    /**
-     * @param $type
-     *
-     * @return int | null
-     */
-    public static function determinePdoBindingType($type)
-    {
-        switch ($type) {
-            case 'boolean':
-                return \PDO::PARAM_BOOL;
-
-            case 'integer':
-            case 'id':
-            case 'reference':
-            case 'user_id':
-            case 'user_id_on_create':
-            case 'user_id_on_update':
-                return \PDO::PARAM_INT;
-
-            case 'string':
-                return \PDO::PARAM_STR;
-                break;
-        }
-
-        return null;
     }
 
     /**
