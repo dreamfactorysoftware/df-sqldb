@@ -4,6 +4,7 @@ namespace DreamFactory\Core\SqlDb\Resources;
 
 use Config;
 use DreamFactory\Core\Database\Command;
+use DreamFactory\Core\Database\Criteria;
 use DreamFactory\Core\Database\RelationSchema;
 use DreamFactory\Core\Database\Transaction;
 use DreamFactory\Core\Database\Expression;
@@ -61,20 +62,21 @@ class Table extends BaseDbTableResource
             // All calls can request related data to be returned
             $related = ArrayUtils::get($this->options, ApiOptions::RELATED);
             if (!empty($related) && is_string($related) && ('*' !== $related)) {
-                $relations = [];
                 if (!is_array($related)) {
                     $related = array_map('trim', explode(',', $related));
                 }
+                $relations = [];
                 foreach ($related as $relative) {
-                    $extraFields = ArrayUtils::get($this->options, $relative . '_fields', '*');
-                    $extraOrder = ArrayUtils::get($this->options, $relative . '_order', '');
-                    $extraGroup = ArrayUtils::get($this->options, $relative . '_group', '');
-                    $relations[] =
+                    // search for relation + '_' + option because '.' is replaced by '_'
+                    $relations[strtolower($relative)] =
                         [
                             'name'             => $relative,
-                            ApiOptions::FIELDS => $extraFields,
-                            ApiOptions::ORDER  => $extraOrder,
-                            ApiOptions::GROUP  => $extraGroup,
+                            ApiOptions::FIELDS => ArrayUtils::get($this->options, $relative . '_' . ApiOptions::FIELDS,
+                                '*'),
+                            ApiOptions::LIMIT  => ArrayUtils::get($this->options, $relative . '_' . ApiOptions::LIMIT,
+                                static::MAX_RECORDS_RETURNED),
+                            ApiOptions::ORDER  => ArrayUtils::get($this->options, $relative . '_' . ApiOptions::ORDER),
+                            ApiOptions::GROUP  => ArrayUtils::get($this->options, $relative . '_' . ApiOptions::GROUP),
                         ];
                 }
 
@@ -263,6 +265,12 @@ class Table extends BaseDbTableResource
      */
     protected function recordQuery($table, $select, $where, $bind_values, $bind_columns, $extras)
     {
+        $schema = $this->dbConn->getSchema()->getTable($table);
+        if (!$schema) {
+            throw new NotFoundException("Table '$table' does not exist in the database.");
+        }
+
+        $extras = ArrayUtils::clean($extras);
         $order = ArrayUtils::get($extras, ApiOptions::ORDER);
         $group = ArrayUtils::get($extras, ApiOptions::GROUP);
         $limit = intval(ArrayUtils::get($extras, ApiOptions::LIMIT, 0));
@@ -270,56 +278,29 @@ class Table extends BaseDbTableResource
         $maxAllowed = static::getMaxRecordsReturnedLimit();
         $needLimit = false;
 
-        $from = $table;
-
         // use query builder
-//        $builder = $this->dbConn->getSchema()->getCommandBuilder();
-//        $criteria = $builder->createCriteria();
-//        $criteria->select = $select;
-//        if (!empty($where)) {
-//            $criteria->addCondition($where);
-//        }
-//        if (!empty($order)) {
-//            $criteria->order = ($order);
-//        }
-//        if (($limit < 1) || ($limit > $maxAllowed)) {
-//            // impose a limit to protect server
-//            $limit = $maxAllowed;
-//            $needLimit = true;
-//        }
-//        $criteria->limit = $limit;
-//        $criteria->offset = $offset;
-//        $command = $builder->createFindCommand($table, $criteria);
-
-        /** @var Command $command */
-        $command = $this->dbConn->createCommand();
-        $command->select($select);
-
-        $command->from($from);
-
-        if (!empty($where)) {
-            $command->where($where);
-        }
+        $builder = $this->dbConn->getSchema()->getCommandBuilder();
+        $criteria = $builder->createCriteria($where, $bind_values);
+        $criteria->select = $select;
         if (!empty($order)) {
-            $command->order($order);
+            $criteria->order = $order;
         }
         if (!empty($group)) {
-            $command->group($group);
+            $criteria->group = $group;
         }
         if (($limit < 1) || ($limit > $maxAllowed)) {
             // impose a limit to protect server
             $limit = $maxAllowed;
             $needLimit = true;
         }
-        $command->limit($limit, $offset);
+        $criteria->limit = $limit;
+        $criteria->offset = $offset;
+        $command = $builder->createFindCommand($schema, $criteria);
 
-        // must bind values after setting all components of the query,
-        // otherwise yii text string is generated without limit, etc.
-        if (!empty($bind_values)) {
-            $command->bindValues($bind_values);
+        if (is_a($where, Criteria::class)) {
+            $bind_values = $where->params;
         }
-
-        $reader = $command->query();
+        $reader = $command->query($bind_values);
         $data = [];
         $dummy = [];
         foreach ($bind_columns as $binding) {
@@ -350,17 +331,8 @@ class Table extends BaseDbTableResource
         $includeCount = ArrayUtils::getBool($extras, ApiOptions::INCLUDE_COUNT, false);
         // count total records
         if ($includeCount || $needLimit) {
-            $command->reset();
-            $command->select('(COUNT(*)) as ' . $this->dbConn->quoteColumnName('count'));
-            $command->from($from);
-            if (!empty($where)) {
-                $command->where($where);
-            }
-            if (!empty($bind_values)) {
-                $command->bindValues($bind_values);
-            }
-
-            $count = intval($command->queryScalar());
+            $command = $builder->createCountCommand($schema, $criteria);
+            $count = intval($command->queryScalar($bind_values));
 
             if ($includeCount || $count > $maxAllowed) {
                 $meta['count'] = $count;
@@ -372,11 +344,6 @@ class Table extends BaseDbTableResource
 
         if (ArrayUtils::getBool($extras, ApiOptions::INCLUDE_SCHEMA, false)) {
             try {
-                $schema = $this->dbConn->getSchema()->getTable($table);
-                if (!$schema) {
-                    throw new NotFoundException("Table '$table' does not exist in the database.");
-                }
-
                 $meta['schema'] = $schema->toArray(true);
             } catch (RestException $ex) {
                 throw $ex;
@@ -387,7 +354,7 @@ class Table extends BaseDbTableResource
         }
 
         $related = ArrayUtils::get($extras, ApiOptions::RELATED);
-        if (!empty($related)) {
+        if (!empty($related) || $schema->fetchRequiresRelations) {
             $relations = $this->describeTableRelated($table);
             foreach ($data as $key => $temp) {
                 $data[$key] = $this->retrieveRelatedRecords($temp, $relations, $related);
@@ -427,7 +394,7 @@ class Table extends BaseDbTableResource
     /**
      * @param $table_name
      *
-     * @return array
+     * @return RelationSchema[]
      * @throws \Exception
      */
     protected function describeTableRelated($table_name)
@@ -440,7 +407,7 @@ class Table extends BaseDbTableResource
         $relatives = [];
         /** @var RelationSchema $relation */
         foreach ($table->relations as $relation) {
-            $relatives[$relation->name] = $relation->toArray();
+            $relatives[strtolower($relation->getName(true))] = $relation;
         }
 
         return $relatives;
@@ -501,9 +468,9 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param    string       $filter
-     * @param array           $params
-     * @param  ColumnSchema[] $fields_info
+     * @param string         $filter
+     * @param array          $params
+     * @param ColumnSchema[] $fields_info
      *
      * @return string
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
@@ -826,11 +793,11 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param string $table
-     * @param array  $record Record containing relationships by name if any
-     * @param array  $id     Array of id field and value, only one supported currently
-     * @param array  $avail_relations
-     * @param bool   $allow_delete
+     * @param string           $table
+     * @param array            $record Record containing relationships by name if any
+     * @param array            $id     Array of id field and value, only one supported currently
+     * @param RelationSchema[] $avail_relations
+     * @param bool             $allow_delete
      *
      * @throws InternalServerErrorException
      * @return void
@@ -843,65 +810,32 @@ class Table extends BaseDbTableResource
             $id = @current($id);
         }
 
-        $keys = array_keys($record);
-        $values = array_values($record);
-        foreach ($avail_relations as $relationInfo) {
-            $name = ArrayUtils::get($relationInfo, 'name');
-            $pos = array_search($name, $keys);
-            if (false !== $pos) {
-                $relations = ArrayUtils::get($values, $pos);
-                $relationType = ArrayUtils::get($relationInfo, 'type');
-                switch ($relationType) {
+        $record = array_change_key_case($record, CASE_LOWER);
+        foreach ($avail_relations as $name => $relationInfo) {
+            if (array_key_exists($name, $record)) {
+                $relations = $record[$name];
+                switch ($relationInfo->type) {
                     case RelationSchema::BELONGS_TO:
-                        /*
-                    "name": "role_by_role_id",
-                    "type": "belongs_to",
-                    "ref_table": "role",
-                    "ref_field": "id",
-                    "field": "role_id"
-                    */
                         // todo handle this?
                         break;
                     case RelationSchema::HAS_MANY:
-                        /*
-                    "name": "users_by_last_modified_by_id",
-                    "type": "has_many",
-                    "ref_table": "user",
-                    "ref_field": "last_modified_by_id",
-                    "field": "id"
-                    */
-                        $relatedTable = ArrayUtils::get($relationInfo, 'ref_table');
-                        $relatedField = ArrayUtils::get($relationInfo, 'ref_fields');
                         $this->assignManyToOne(
                             $table,
                             $id,
-                            $relatedTable,
-                            $relatedField,
+                            $relationInfo->refTable,
+                            $relationInfo->refFields,
                             $relations,
                             $allow_delete
                         );
                         break;
                     case RelationSchema::MANY_MANY:
-                        /*
-                    "name": "roles_by_user",
-                    "type": "many_many",
-                    "ref_table": "role",
-                    "ref_field": "id",
-                    "join": "user(default_app_id,role_id)"
-                    */
-                        $relatedTable = ArrayUtils::get($relationInfo, 'ref_table');
-                        $join = ArrayUtils::get($relationInfo, 'join', '');
-                        $joinTable = substr($join, 0, strpos($join, '('));
-                        $other = explode(',', substr($join, strpos($join, '(') + 1, -1));
-                        $joinLeftField = trim(ArrayUtils::get($other, 0, ''));
-                        $joinRightField = trim(ArrayUtils::get($other, 1, ''));
                         $this->assignManyToOneByMap(
                             $table,
                             $id,
-                            $relatedTable,
-                            $joinTable,
-                            $joinLeftField,
-                            $joinRightField,
+                            $relationInfo->refTable,
+                            $relationInfo->junctionTable,
+                            $relationInfo->junctionField,
+                            $relationInfo->junctionRefField,
                             $relations
                         );
                         break;
@@ -909,44 +843,9 @@ class Table extends BaseDbTableResource
                         throw new InternalServerErrorException('Invalid relationship type detected.');
                         break;
                 }
-                unset($keys[$pos]);
-                unset($values[$pos]);
+                unset($record[$name]);
             }
         }
-    }
-
-    /**
-     * @param array $record
-     *
-     * @return string
-     */
-    protected function parseRecordForSqlInsert($record)
-    {
-        $values = '';
-        foreach ($record as $value) {
-            $fieldVal = (is_null($value)) ? "NULL" : $this->dbConn->quoteValue($value);
-            $values .= (!empty($values)) ? ',' : '';
-            $values .= $fieldVal;
-        }
-
-        return $values;
-    }
-
-    /**
-     * @param array $record
-     *
-     * @return string
-     */
-    protected function parseRecordForSqlUpdate($record)
-    {
-        $out = '';
-        foreach ($record as $key => $value) {
-            $fieldVal = (is_null($value)) ? "NULL" : $this->dbConn->quoteValue($value);
-            $out .= (!empty($out)) ? ',' : '';
-            $out .= "$key = $fieldVal";
-        }
-
-        return $out;
     }
 
     /**
@@ -975,7 +874,7 @@ class Table extends BaseDbTableResource
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
-                if ($fieldInfo->isAggregate()){
+                if ($fieldInfo->isAggregate()) {
                     continue;
                 }
                 $bindArray[] = $fieldInfo->getPdoBinding();
@@ -986,41 +885,12 @@ class Table extends BaseDbTableResource
         return ['fields' => $outArray, 'bindings' => $bindArray];
     }
 
-    /**
-     * @param string|array    $fields
-     * @param  ColumnSchema[] $avail_fields
-     * @param string          $prefix
-     *
-     * @throws BadRequestException
-     * @return string
-     */
-    public function parseOutFields($fields, $avail_fields, $prefix = 'INSERTED')
-    {
-        if (empty($fields)) {
-            return '';
-        }
-
-        $out_str = '';
-        $field_arr = array_map('trim', explode(',', $fields));
-        foreach ($field_arr as $field) {
-            if (null === $info = ArrayUtils::get($avail_fields, $field)) {
-                throw new BadRequestException("Invalid field '$field' selected for output.");
-            }
-            if (!empty($out_str)) {
-                $out_str .= ', ';
-            }
-            $out_str .= $prefix . '.' . $info->rawName;
-        }
-
-        return $out_str;
-    }
-
     // generic assignments
 
     /**
-     * @param $relations
-     * @param $data
-     * @param $requests
+     * @param array            $data
+     * @param RelationSchema[] $relations
+     * @param string|array     $requests
      *
      * @throws InternalServerErrorException
      * @throws BadRequestException
@@ -1028,29 +898,23 @@ class Table extends BaseDbTableResource
      */
     protected function retrieveRelatedRecords($data, $relations, $requests)
     {
-        if (empty($relations) || empty($requests)) {
+        if (empty($relations)) {
             return $data;
         }
 
         $relatedData = [];
         $relatedExtras = [ApiOptions::LIMIT => static::MAX_RECORDS_RETURNED, ApiOptions::FIELDS => '*'];
-        if ('*' == $requests) {
-            foreach ($relations as $name => $relation) {
-                if (empty($relation)) {
-                    throw new BadRequestException("Empty relationship '$name' found.");
-                }
-                $relatedData[$name] = $this->retrieveRelationRecords($data, $relation, $relatedExtras);
+        foreach ($relations as $key => $relation) {
+            if (empty($relation)) {
+                throw new BadRequestException("Empty relationship found.");
             }
-        } else {
-            foreach ($requests as $request) {
-                $name = ArrayUtils::get($request, 'name');
-                $relation = ArrayUtils::get($relations, $name);
-                if (empty($relation)) {
-                    throw new BadRequestException("Invalid relationship '$name' requested.");
-                }
 
-                $relatedExtras['fields'] = ArrayUtils::get($request, 'fields');
-                $relatedData[$name] = $this->retrieveRelationRecords($data, $relation, $relatedExtras);
+            if (is_array($requests) && array_key_exists($key, $requests)) {
+                $relatedData[$relation->getName(true)] =
+                    $this->retrieveRelationRecords($data, $relation, $requests[$key]);
+            } elseif (('*' == $requests) || $relation->alwaysFetch) {
+                $relatedData[$relation->getName(true)] =
+                    $this->retrieveRelationRecords($data, $relation, $relatedExtras);
             }
         }
 
@@ -1058,9 +922,9 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param $data
-     * @param $relation
-     * @param $extras
+     * @param                $data
+     * @param RelationSchema $relation
+     * @param                $extras
      *
      * @return array|null
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
@@ -1075,16 +939,12 @@ class Table extends BaseDbTableResource
             return null;
         }
 
-        $relationType = ArrayUtils::get($relation, 'type');
-        $relatedTable = ArrayUtils::get($relation, 'ref_table');
-        $relatedField = ArrayUtils::get($relation, 'ref_fields');
-        $field = ArrayUtils::get($relation, 'field');
-        $fieldVal = ArrayUtils::get($data, $field);
+        $fieldVal = ArrayUtils::get($data, $relation->field);
 
         // do we have permission to do so?
-        $this->validateTableAccess($relatedTable, Verbs::GET);
+        $this->validateTableAccess($relation->refTable, Verbs::GET);
 
-        switch ($relationType) {
+        switch ($relation->type) {
             case RelationSchema::BELONGS_TO:
                 if (empty($fieldVal)) {
                     return null;
@@ -1092,7 +952,7 @@ class Table extends BaseDbTableResource
 
                 $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
                 $ssFilters = ArrayUtils::get($extras, 'ss_filters');
-                $fieldsInfo = $this->getFieldsInfo($relatedTable);
+                $fieldsInfo = $this->getFieldsInfo($relation->refTable);
                 $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
                 $bindings = ArrayUtils::get($result, 'bindings');
                 $fields = ArrayUtils::get($result, 'fields');
@@ -1100,11 +960,11 @@ class Table extends BaseDbTableResource
 
                 // build filter string if necessary, add server-side filters if necessary
                 $criteria =
-                    $this->convertFilterToNative("$relatedField = $fieldVal", [], $ssFilters, $fieldsInfo);
+                    $this->convertFilterToNative($relation->refFields . ' = ' . $fieldVal, [], $ssFilters, $fieldsInfo);
                 $where = ArrayUtils::get($criteria, 'where');
                 $params = ArrayUtils::get($criteria, 'params', []);
 
-                $relatedRecords = $this->recordQuery($relatedTable, $fields, $where, $params, $bindings, $extras);
+                $relatedRecords = $this->recordQuery($relation->refTable, $fields, $where, $params, $bindings, $extras);
                 if (!empty($relatedRecords)) {
                     return ArrayUtils::get($relatedRecords, 0);
                 }
@@ -1116,7 +976,7 @@ class Table extends BaseDbTableResource
 
                 $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
                 $ssFilters = ArrayUtils::get($extras, 'ss_filters');
-                $fieldsInfo = $this->getFieldsInfo($relatedTable);
+                $fieldsInfo = $this->getFieldsInfo($relation->refTable);
                 $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
                 $bindings = ArrayUtils::get($result, 'bindings');
                 $fields = ArrayUtils::get($result, 'fields');
@@ -1124,62 +984,60 @@ class Table extends BaseDbTableResource
 
                 // build filter string if necessary, add server-side filters if necessary
                 $criteria =
-                    $this->convertFilterToNative("$relatedField = $fieldVal", [], $ssFilters, $fieldsInfo);
+                    $this->convertFilterToNative($relation->refFields . ' = ' . $fieldVal, [], $ssFilters, $fieldsInfo);
                 $where = ArrayUtils::get($criteria, 'where');
                 $params = ArrayUtils::get($criteria, 'params', []);
 
-                return $this->recordQuery($relatedTable, $fields, $where, $params, $bindings, $extras);
+                return $this->recordQuery($relation->refTable, $fields, $where, $params, $bindings, $extras);
                 break;
             case RelationSchema::MANY_MANY:
                 if (empty($fieldVal)) {
                     return [];
                 }
 
-                $join = ArrayUtils::get($relation, 'join', '');
-                $joinTable = substr($join, 0, strpos($join, '('));
-                $other = explode(',', substr($join, strpos($join, '(') + 1, -1));
-                $joinLeftField = trim(ArrayUtils::get($other, 0));
-                $joinRightField = trim(ArrayUtils::get($other, 1));
-                if (!empty($joinLeftField) && !empty($joinRightField)) {
-                    $fieldsInfo = $this->getFieldsInfo($joinTable);
-                    $result = $this->parseFieldsForSqlSelect($joinRightField, $fieldsInfo);
+                if (!empty($relation->junctionField) && !empty($relation->junctionRefField)) {
+                    $fieldsInfo = $this->getFieldsInfo($relation->junctionTable);
+                    $result = $this->parseFieldsForSqlSelect($relation->junctionRefField, $fieldsInfo);
                     $bindings = ArrayUtils::get($result, 'bindings');
                     $fields = ArrayUtils::get($result, 'fields');
                     $fields = (empty($fields)) ? '*' : $fields;
 
                     // build filter string if necessary, add server-side filters if necessary
-                    $junctionFilter = "( $joinRightField IS NOT NULL ) AND ( $joinLeftField = $fieldVal )";
+                    $junctionFilter =
+                        "({$relation->junctionRefField} IS NOT NULL) AND ({$relation->junctionField} = $fieldVal)";
                     $criteria = $this->convertFilterToNative($junctionFilter, [], [], $fieldsInfo);
                     $where = ArrayUtils::get($criteria, 'where');
                     $params = ArrayUtils::get($criteria, 'params', []);
 
-                    $joinData = $this->recordQuery($joinTable, $fields, $where, $params, $bindings, $extras);
+                    $joinData =
+                        $this->recordQuery($relation->junctionTable, $fields, $where, $params, $bindings, $extras);
                     if (empty($joinData)) {
                         return [];
                     }
 
                     $relatedIds = [];
                     foreach ($joinData as $record) {
-                        if (null !== $rightValue = ArrayUtils::get($record, $joinRightField)) {
+                        if (null !== $rightValue = ArrayUtils::get($record, $relation->junctionRefField)) {
                             $relatedIds[] = $rightValue;
                         }
                     }
                     if (!empty($relatedIds)) {
                         $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
-                        $fieldsInfo = $this->getFieldsInfo($relatedTable);
+                        $fieldsInfo = $this->getFieldsInfo($relation->refTable);
                         $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
                         $bindings = ArrayUtils::get($result, 'bindings');
                         $fields = ArrayUtils::get($result, 'fields');
                         $fields = (empty($fields)) ? '*' : $fields;
 
-                        $where = ['in', $relatedField, $relatedIds];
-                        $params = [];
+                        $builder = $this->dbConn->getSchema()->getCommandBuilder();
+                        $criteria = $builder->createCriteria();
+                        $criteria->addInCondition($relation->refFields, $relatedIds);
 
                         return $this->recordQuery(
-                            $relatedTable,
+                            $relation->refTable,
                             $fields,
-                            $where,
-                            $params,
+                            $criteria,
+                            [],
                             $bindings,
                             $extras
                         );
@@ -1288,27 +1146,21 @@ class Table extends BaseDbTableResource
             if (!empty($upsertMany)) {
                 $checkIds = array_keys($upsertMany);
                 // disown/un-relate/unlink linked children
-                $where = [];
-                $params = [];
+                $builder = $this->dbConn->getSchema()->getCommandBuilder();
+                $criteria = $builder->createCriteria();
                 if (1 === count($pksInfo)) {
                     $pkField = $pksInfo[0]->name;
-                    $where[] = ['in', $pkField, $checkIds];
+                    $criteria->addInCondition($pkField, $checkIds);
                 } else {
                     // todo How to handle multiple primary keys?
                     throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                }
-
-                if (count($where) > 1) {
-                    array_unshift($where, 'AND');
-                } else {
-                    $where = $where[0];
                 }
 
                 $result = $this->parseFieldsForSqlSelect($pkField, $manyFields);
                 $bindings = ArrayUtils::get($result, 'bindings');
                 $fields = ArrayUtils::get($result, 'fields');
                 $fields = (empty($fields)) ? '*' : $fields;
-                $matchIds = $this->recordQuery($many_table, $fields, $where, $params, $bindings, null);
+                $matchIds = $this->recordQuery($many_table, $fields, $criteria, [], $bindings, null);
                 unset($matchIds['meta']);
 
                 foreach ($upsertMany as $uId => $record) {
@@ -1343,27 +1195,21 @@ class Table extends BaseDbTableResource
                 // do we have permission to do so?
                 $this->validateTableAccess($many_table, Verbs::DELETE);
                 $ssFilters = []; // TODO Session::getServiceFilters( Verbs::DELETE, $this->name, $many_table );
-                $where = [];
-                $params = [];
+                $builder = $this->dbConn->getSchema()->getCommandBuilder();
+                $criteria = $builder->createCriteria();
                 if (1 === count($pksInfo)) {
                     $pkField = $pksInfo[0]->name;
-                    $where[] = ['in', $pkField, $deleteMany];
+                    $criteria->addInCondition($pkField, $deleteMany);
                 } else {
                     // todo How to handle multiple primary keys?
                     throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                 }
-                $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
+                $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
                 if (!empty($serverFilter)) {
-                    $where[] = $serverFilter;
+                    $criteria->addCondition($serverFilter);
                 }
 
-                if (count($where) > 1) {
-                    array_unshift($where, 'AND');
-                } else {
-                    $where = $where[0];
-                }
-
-                $command->delete($many_table, $where, $params);
+                $command->delete($many_table, $criteria->condition, $criteria->params);
 //                if ( 0 >= $rows )
 //                {
 //                    throw new NotFoundException( "Deleting related $many_table records failed." );
@@ -1377,30 +1223,24 @@ class Table extends BaseDbTableResource
 
                 if (!empty($updateMany)) {
                     // update existing and adopt new children
-                    $where = [];
-                    $params = [];
+                    $builder = $this->dbConn->getSchema()->getCommandBuilder();
+                    $criteria = $builder->createCriteria();
                     if (1 === count($pksInfo)) {
                         $pkField = $pksInfo[0]->name;
-                        $where[] = $this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField";
+                        $criteria->addCondition($this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField");
                     } else {
                         // todo How to handle multiple primary keys?
                         throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                     }
-                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
+                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
                     if (!empty($serverFilter)) {
-                        $where[] = $serverFilter;
-                    }
-
-                    if (count($where) > 1) {
-                        array_unshift($where, 'AND');
-                    } else {
-                        $where = $where[0];
+                        $criteria->addCondition($serverFilter);
                     }
 
                     foreach ($updateMany as $record) {
                         if (1 === count($pksInfo)) {
                             $pkField = $pksInfo[0]->name;
-                            $params[":pk_$pkField"] = ArrayUtils::get($record, $pkField);
+                            $criteria->params[":pk_$pkField"] = ArrayUtils::get($record, $pkField);
                         } else {
                             // todo How to handle multiple primary keys?
                             throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
@@ -1410,7 +1250,7 @@ class Table extends BaseDbTableResource
                             throw new BadRequestException('No valid fields were found in record.');
                         }
 
-                        $command->update($many_table, $parsed, $where, $params);
+                        $command->update($many_table, $parsed, $criteria->condition, $criteria->params);
 //                        if ( 0 >= $rows )
 //                        {
 //                            throw new InternalServerErrorException( "Updating related $many_table records failed." );
@@ -1420,30 +1260,24 @@ class Table extends BaseDbTableResource
 
                 if (!empty($relateMany)) {
                     // adopt/relate/link unlinked children
-                    $where = [];
-                    $params = [];
+                    $builder = $this->dbConn->getSchema()->getCommandBuilder();
+                    $criteria = $builder->createCriteria();
                     if (1 === count($pksInfo)) {
                         $pkField = $pksInfo[0]->name;
-                        $where[] = ['in', $pkField, $relateMany];
+                        $criteria->addInCondition($pkField, $relateMany);
                     } else {
                         // todo How to handle multiple primary keys?
                         throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                     }
-                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
+                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
                     if (!empty($serverFilter)) {
-                        $where[] = $serverFilter;
-                    }
-
-                    if (count($where) > 1) {
-                        array_unshift($where, 'AND');
-                    } else {
-                        $where = $where[0];
+                        $criteria->addCondition($serverFilter);
                     }
 
                     $updates = [$many_field => $one_id];
                     $parsed = $this->parseRecord($updates, $manyFields, $ssFilters, true);
                     if (!empty($parsed)) {
-                        $command->update($many_table, $parsed, $where, $params);
+                        $command->update($many_table, $parsed, $criteria->condition, $criteria->params);
 //                        if ( 0 >= $rows )
 //                        {
 //                            throw new InternalServerErrorException( "Updating related $many_table records failed." );
@@ -1453,30 +1287,24 @@ class Table extends BaseDbTableResource
 
                 if (!empty($disownMany)) {
                     // disown/un-relate/unlink linked children
-                    $where = [];
-                    $params = [];
+                    $builder = $this->dbConn->getSchema()->getCommandBuilder();
+                    $criteria = $builder->createCriteria();
                     if (1 === count($pksInfo)) {
                         $pkField = $pksInfo[0]->name;
-                        $where[] = ['in', $pkField, $disownMany];
+                        $criteria->addInCondition($pkField, $disownMany);
                     } else {
                         // todo How to handle multiple primary keys?
                         throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                     }
-                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
+                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
                     if (!empty($serverFilter)) {
-                        $where[] = $serverFilter;
-                    }
-
-                    if (count($where) > 1) {
-                        array_unshift($where, 'AND');
-                    } else {
-                        $where = $where[0];
+                        $criteria->addCondition($serverFilter);
                     }
 
                     $updates = [$many_field => null];
                     $parsed = $this->parseRecord($updates, $manyFields, $ssFilters, true);
                     if (!empty($parsed)) {
-                        $command->update($many_table, $parsed, $where, $params);
+                        $command->update($many_table, $parsed, $criteria->condition, $criteria->params);
 //                        if ( 0 >= $rows )
 //                        {
 //                            throw new NotFoundException( 'No records were found using the given identifiers.' );
@@ -1527,9 +1355,10 @@ class Table extends BaseDbTableResource
             $bindings = ArrayUtils::get($result, 'bindings');
             $fields = ArrayUtils::get($result, 'fields');
             $fields = (empty($fields)) ? '*' : $fields;
-            $params[":f_$one_field"] = $one_id;
-            $where = $this->dbConn->quoteColumnName($one_field) . " = :f_$one_field";
-            $maps = $this->recordQuery($map_table, $fields, $where, $params, $bindings, null);
+            $builder = $this->dbConn->getSchema()->getCommandBuilder();
+            $criteria = $builder->createCriteria($this->dbConn->quoteColumnName($one_field) . " = :f_$one_field");
+            $criteria->params = [":f_$one_field" => $one_id];
+            $maps = $this->recordQuery($map_table, $fields, $criteria, [], $bindings, null);
             unset($maps['meta']);
 
             $createMap = []; // map records to create
@@ -1591,27 +1420,20 @@ class Table extends BaseDbTableResource
             if (!empty($upsertMany)) {
                 $checkIds = array_keys($upsertMany);
                 // disown/un-relate/unlink linked children
-                $where = [];
-                $params = [];
+                $criteria = $builder->createCriteria();
                 if (1 === count($pksManyInfo)) {
                     $pkField = $pksManyInfo[0]->name;
-                    $where[] = ['in', $pkField, $checkIds];
+                    $criteria->addInCondition($pkField, $checkIds);
                 } else {
                     // todo How to handle multiple primary keys?
                     throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                }
-
-                if (count($where) > 1) {
-                    array_unshift($where, 'AND');
-                } else {
-                    $where = $where[0];
                 }
 
                 $result = $this->parseFieldsForSqlSelect($pkField, $manyFields);
                 $bindings = ArrayUtils::get($result, 'bindings');
                 $fields = ArrayUtils::get($result, 'fields');
                 $fields = (empty($fields)) ? '*' : $fields;
-                $matchIds = $this->recordQuery($many_table, $fields, $where, $params, $bindings, null);
+                $matchIds = $this->recordQuery($many_table, $fields, $criteria, [], $bindings, null);
                 unset($matchIds['meta']);
 
                 foreach ($upsertMany as $uId => $record) {
@@ -1652,35 +1474,28 @@ class Table extends BaseDbTableResource
                 $this->validateTableAccess($many_table, Verbs::PUT);
                 $ssManyFilters = []; // TODO Session::getServiceFilters( Verbs::PUT, $this->apiName, $many_table );
 
-                $where = [];
-                $params = [];
+                $criteria = $builder->createCriteria();
                 if (1 === count($pksManyInfo)) {
                     $pkField = $pksManyInfo[0]->name;
-                    $where[] = $this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField";
+                    $criteria->addCondition($this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField");
                 } else {
                     // todo How to handle multiple primary keys?
                     throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
                 }
 
-                $serverFilter = $this->buildQueryStringFromData($ssManyFilters, $params);
+                $serverFilter = $this->buildQueryStringFromData($ssManyFilters, $criteria->params);
                 if (!empty($serverFilter)) {
-                    $where[] = $serverFilter;
-                }
-
-                if (count($where) > 1) {
-                    array_unshift($where, 'AND');
-                } else {
-                    $where = $where[0];
+                    $criteria->addCondition($serverFilter);
                 }
 
                 foreach ($updateMany as $record) {
-                    $params[":pk_$pkField"] = ArrayUtils::get($record, $pkField);
+                    $criteria->params[":pk_$pkField"] = ArrayUtils::get($record, $pkField);
                     $parsed = $this->parseRecord($record, $manyFields, $ssManyFilters, true);
                     if (empty($parsed)) {
                         throw new BadRequestException('No valid fields were found in record.');
                     }
 
-                    $command->update($many_table, $parsed, $where, $params);
+                    $command->update($many_table, $parsed, $criteria->condition, $criteria->params);
 //                        if ( 0 >= $rows )
 //                        {
 //                            throw new InternalServerErrorException( "Updating related $many_table records failed." );
@@ -1709,22 +1524,15 @@ class Table extends BaseDbTableResource
                 // do we have permission to do so?
                 $this->validateTableAccess($map_table, Verbs::DELETE);
                 $ssMapFilters = []; // TODO Session::getServiceFilters( Verbs::DELETE, $this->apiName, $map_table );
-                $where = [];
-                $params = [];
-                $where[] = $this->dbConn->quoteColumnName($one_field) . " = '$one_id'";
-                $where[] = ['in', $many_field, $deleteMap];
-                $serverFilter = $this->buildQueryStringFromData($ssMapFilters, $params);
+                $criteria = $builder->createCriteria();
+                $criteria->addCondition($this->dbConn->quoteColumnName($one_field) . " = '$one_id'");
+                $criteria->addInCondition($many_field, $deleteMap);
+                $serverFilter = $this->buildQueryStringFromData($ssMapFilters, $criteria->params);
                 if (!empty($serverFilter)) {
-                    $where[] = $serverFilter;
+                    $criteria->addCondition($serverFilter);
                 }
 
-                if (count($where) > 1) {
-                    array_unshift($where, 'AND');
-                } else {
-                    $where = $where[0];
-                }
-
-                $command->delete($map_table, $where, $params);
+                $command->delete($map_table, $criteria->condition, $criteria->params);
 //                if ( 0 >= $rows )
 //                {
 //                    throw new NotFoundException( "Deleting related $map_table records failed." );
@@ -1949,28 +1757,22 @@ class Table extends BaseDbTableResource
         $allowRelatedDelete = ArrayUtils::getBool($extras, 'allow_related_delete', false);
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
-        $where = [];
-        $params = [];
+        $builder = $this->dbConn->getSchema()->getCommandBuilder();
+        $criteria = $builder->createCriteria();
         if (is_array($id)) {
             foreach ($idFields as $name) {
-                $where[] = $this->dbConn->quoteColumnName($name) . " = :pk_$name";
-                $params[":pk_$name"] = ArrayUtils::get($id, $name);
+                $criteria->addCondition($this->dbConn->quoteColumnName($name) . " = :pk_$name");
+                $criteria->params[":pk_$name"] = ArrayUtils::get($id, $name);
             }
         } else {
             $name = ArrayUtils::get($idFields, 0);
-            $where[] = $this->dbConn->quoteColumnName($name) . " = :pk_$name";
-            $params[":pk_$name"] = $id;
+            $criteria->addCondition($this->dbConn->quoteColumnName($name) . " = :pk_$name");
+            $criteria->params[":pk_$name"] = $id;
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
+        $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
         if (!empty($serverFilter)) {
-            $where[] = $serverFilter;
-        }
-
-        if (count($where) > 1) {
-            array_unshift($where, 'AND');
-        } else {
-            $where = ArrayUtils::get($where, 0, null);
+            $criteria->addCondition($serverFilter);
         }
 
         /** @var Command $command */
@@ -2040,7 +1842,7 @@ class Table extends BaseDbTableResource
 //                }
 
                 if (!empty($parsed)) {
-                    $rows = $command->update($this->transactionTable, $parsed, $where, $params);
+                    $rows = $command->update($this->transactionTable, $parsed, $criteria->condition, $criteria->params);
                     if (0 >= $rows) {
                         // could have just not updated anything, or could be bad id
                         $fields = (empty($fields)) ? $idFields : $fields;
@@ -2052,8 +1854,8 @@ class Table extends BaseDbTableResource
                         $result = $this->recordQuery(
                             $this->transactionTable,
                             $fields,
-                            $where,
-                            $params,
+                            $criteria,
+                            [],
                             $bindings,
                             $extras
                         );
@@ -2102,8 +1904,8 @@ class Table extends BaseDbTableResource
                     $result = $this->recordQuery(
                         $this->transactionTable,
                         $fields,
-                        $where,
-                        $params,
+                        $criteria,
+                        [],
                         $bindings,
                         $extras
                     );
@@ -2114,7 +1916,7 @@ class Table extends BaseDbTableResource
                     $out = $result[0];
                 }
 
-                $rows = $command->delete($this->transactionTable, $where, $params);
+                $rows = $command->delete($this->transactionTable, $criteria->condition, $criteria->params);
                 if (0 >= $rows) {
                     if (empty($out)) {
                         // could have just not updated anything, or could be bad id
@@ -2127,8 +1929,8 @@ class Table extends BaseDbTableResource
                         $result = $this->recordQuery(
                             $this->transactionTable,
                             $fields,
-                            $where,
-                            $params,
+                            $criteria,
+                            [],
                             $bindings,
                             $extras
                         );
@@ -2159,8 +1961,7 @@ class Table extends BaseDbTableResource
                 $fields = ArrayUtils::get($result, 'fields');
                 $fields = (empty($fields)) ? '*' : $fields;
 
-                $result =
-                    $this->recordQuery($this->transactionTable, $fields, $where, $params, $bindings, $extras);
+                $result = $this->recordQuery($this->transactionTable, $fields, $criteria, [], $bindings, $extras);
                 if (empty($result)) {
                     throw new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
                 }
@@ -2194,8 +1995,8 @@ class Table extends BaseDbTableResource
         $allowRelatedDelete = ArrayUtils::getBool($extras, 'allow_related_delete', false);
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
-        $where = [];
-        $params = [];
+        $builder = $this->dbConn->getSchema()->getCommandBuilder();
+        $criteria = $builder->createCriteria();
 
         $idName =
             (isset($this->tableIdsInfo, $this->tableIdsInfo[0], $this->tableIdsInfo[0]->name))
@@ -2211,23 +2012,17 @@ class Table extends BaseDbTableResource
                     $temp[] = ArrayUtils::get($record, $idName);
                 }
 
-                $where[] = ['in', $idName, $temp];
+                $criteria->addInCondition($idName, $temp);
             } else {
-                $where[] = ['in', $idName, $this->batchRecords];
+                $criteria->addInCondition($idName, $this->batchRecords);
             }
         } else {
-            $where[] = ['in', $idName, $this->batchIds];
+            $criteria->addInCondition($idName, $this->batchIds);
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
+        $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
         if (!empty($serverFilter)) {
-            $where[] = $serverFilter;
-        }
-
-        if (count($where) > 1) {
-            array_unshift($where, 'AND');
-        } else {
-            $where = $where[0];
+            $criteria->addCondition($serverFilter);
         }
 
         $out = [];
@@ -2242,8 +2037,7 @@ class Table extends BaseDbTableResource
                 $fields = ArrayUtils::get($result, 'fields');
                 $fields = (empty($fields)) ? '*' : $fields;
 
-                $result =
-                    $this->recordQuery($this->transactionTable, $fields, $where, $params, $bindings, $extras);
+                $result = $this->recordQuery($this->transactionTable, $fields, $criteria, [], $bindings, $extras);
                 if (empty($result)) {
                     throw new NotFoundException('No records were found using the given identifiers.');
                 }
@@ -2265,7 +2059,9 @@ class Table extends BaseDbTableResource
                     if (!empty($updates)) {
                         $parsed = $this->parseRecord($updates, $this->tableFieldsInfo, $ssFilters, true);
                         if (!empty($parsed)) {
-                            $rows = $command->update($this->transactionTable, $parsed, $where, $params);
+                            $rows =
+                                $command->update($this->transactionTable, $parsed, $criteria->condition,
+                                    $criteria->params);
                             if (0 >= $rows) {
                                 throw new NotFoundException('No records were found using the given identifiers.');
                             }
@@ -2297,8 +2093,8 @@ class Table extends BaseDbTableResource
                             $result = $this->recordQuery(
                                 $this->transactionTable,
                                 $fields,
-                                $where,
-                                $params,
+                                $criteria,
+                                [],
                                 $bindings,
                                 $extras
                             );
@@ -2322,8 +2118,8 @@ class Table extends BaseDbTableResource
                         $result = $this->recordQuery(
                             $this->transactionTable,
                             $fields,
-                            $where,
-                            $params,
+                            $criteria,
+                            [],
                             $bindings,
                             $extras
                         );
@@ -2350,7 +2146,7 @@ class Table extends BaseDbTableResource
                         }
                     }
 
-                    $rows = $command->delete($this->transactionTable, $where, $params);
+                    $rows = $command->delete($this->transactionTable, $criteria->condition, $criteria->params);
                     if (count($this->batchIds) !== $rows) {
                         throw new BadRequestException('Batch Error: Not all requested records were deleted.');
                     }
@@ -2366,8 +2162,8 @@ class Table extends BaseDbTableResource
                     $result = $this->recordQuery(
                         $this->transactionTable,
                         $fields,
-                        $where,
-                        $params,
+                        $criteria,
+                        [],
                         $bindings,
                         $extras
                     );

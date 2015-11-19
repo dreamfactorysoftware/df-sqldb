@@ -163,6 +163,10 @@ trait TableDescriber
                         'type'        => 'string',
                         'description' => 'Relationship type - belongs_to, has_many, many_many.',
                     ],
+                    'field'     => [
+                        'type'        => 'string',
+                        'description' => 'The current table field that is used in the relationship.',
+                    ],
                     'ref_table' => [
                         'type'        => 'string',
                         'description' => 'The table name that is referenced by the relationship.',
@@ -171,13 +175,17 @@ trait TableDescriber
                         'type'        => 'string',
                         'description' => 'The field name that is referenced by the relationship.',
                     ],
-                    'join'      => [
+                    'junction_table'      => [
                         'type'        => 'string',
-                        'description' => 'The intermediate joining table used for many_many relationships.',
+                        'description' => 'The intermediate junction table used for many_many relationships.',
                     ],
-                    'field'     => [
+                    'junction_field'      => [
                         'type'        => 'string',
-                        'description' => 'The current table field that is used in the relationship.',
+                        'description' => 'The intermediate junction table field used for many_many relationships.',
+                    ],
+                    'junction_ref_field'      => [
+                        'type'        => 'string',
+                        'description' => 'The intermediate joining table referencing field used for many_many relationships.',
                     ],
                 ],
             ],
