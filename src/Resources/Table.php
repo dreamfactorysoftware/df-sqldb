@@ -3,6 +3,7 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use Config;
+use DreamFactory\Core\Components\ExposedApi;
 use DreamFactory\Core\Database\Command;
 use DreamFactory\Core\Database\Criteria;
 use DreamFactory\Core\Database\RelationSchema;
@@ -16,6 +17,7 @@ use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\NotImplementedException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbTableResource;
+use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
 use DreamFactory\Core\Utility\DbUtilities;
@@ -940,16 +942,65 @@ class Table extends BaseDbTableResource
         }
 
         $fieldVal = ArrayUtils::get($data, $relation->field);
+        if (empty($fieldVal)) {
+            switch ($relation->type) {
+                case RelationSchema::BELONGS_TO:
+                    return null;
+                default:
+                    return [];
+            }
+        }
+
+        if ($relation->isVirtual && ($this->serviceId !== $relation->refServiceId)) {
+            // non-native service relation, go get it
+            $serviceName = Service::getCachedNameById($relation->refServiceId);
+            switch ($relation->type) {
+                case RelationSchema::BELONGS_TO:
+                case RelationSchema::HAS_MANY:
+                    $filter = urlencode($relation->refFields . ' = ' . $fieldVal);
+                    $path = "$serviceName/_table/{$relation->refTable}/?filter=$filter";
+                    $result = ExposedApi::inlineRequest(Verbs::GET, $path);
+                    break;
+                case RelationSchema::MANY_MANY:
+                    throw new BadRequestException('Many to many relationship across service boundaries not yet supported.');
+                    break;
+                default:
+                    throw new InternalServerErrorException('Invalid relationship type detected.');
+                    break;
+            }
+            $status = (isset($result['status']) ? $result['status'] : null);
+            switch ($status) {
+                case 200:
+                    if (isset($result['content'])) {
+                        $resources = (isset($result['content']['resource']) ? $result['content']['resource'] : null);
+                        switch ($relation->type) {
+                            case RelationSchema::BELONGS_TO:
+                                return isset($resources[0]) ? $resources[0] : null;
+                            default:
+                                return $resources;
+                        }
+                    }
+
+                    throw new InternalServerErrorException('Virtual related query succeeded but returned invalid format.');
+                    break;
+                default:
+                    if (isset($result['content'], $result['content']['error'])) {
+                        $error = $result['content']['error'];
+                        extract($error);
+                        /** @noinspection PhpUndefinedVariableInspection */
+                        throw new RestException($status, $message, $code);
+                    }
+
+                    throw new RestException($status, 'Virtual related query failed but returned invalid format.');
+            }
+        }
 
         // do we have permission to do so?
         $this->validateTableAccess($relation->refTable, Verbs::GET);
 
         switch ($relation->type) {
             case RelationSchema::BELONGS_TO:
-                if (empty($fieldVal)) {
-                    return null;
-                }
-
+            case RelationSchema::HAS_MANY:
                 $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
                 $ssFilters = ArrayUtils::get($extras, 'ss_filters');
                 $fieldsInfo = $this->getFieldsInfo($relation->refTable);
@@ -965,36 +1016,13 @@ class Table extends BaseDbTableResource
                 $params = ArrayUtils::get($criteria, 'params', []);
 
                 $relatedRecords = $this->recordQuery($relation->refTable, $fields, $where, $params, $bindings, $extras);
-                if (!empty($relatedRecords)) {
-                    return ArrayUtils::get($relatedRecords, 0);
-                }
-                break;
-            case RelationSchema::HAS_MANY:
-                if (empty($fieldVal)) {
-                    return [];
+                if (RelationSchema::BELONGS_TO === $relation->type) {
+                    return (!empty($relatedRecords) ? ArrayUtils::get($relatedRecords, 0) : null);
                 }
 
-                $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
-                $ssFilters = ArrayUtils::get($extras, 'ss_filters');
-                $fieldsInfo = $this->getFieldsInfo($relation->refTable);
-                $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
-                $bindings = ArrayUtils::get($result, 'bindings');
-                $fields = ArrayUtils::get($result, 'fields');
-                $fields = (empty($fields)) ? '*' : $fields;
-
-                // build filter string if necessary, add server-side filters if necessary
-                $criteria =
-                    $this->convertFilterToNative($relation->refFields . ' = ' . $fieldVal, [], $ssFilters, $fieldsInfo);
-                $where = ArrayUtils::get($criteria, 'where');
-                $params = ArrayUtils::get($criteria, 'params', []);
-
-                return $this->recordQuery($relation->refTable, $fields, $where, $params, $bindings, $extras);
+                return $relatedRecords;
                 break;
             case RelationSchema::MANY_MANY:
-                if (empty($fieldVal)) {
-                    return [];
-                }
-
                 if (!empty($relation->junctionField) && !empty($relation->junctionRefField)) {
                     $fieldsInfo = $this->getFieldsInfo($relation->junctionTable);
                     $result = $this->parseFieldsForSqlSelect($relation->junctionRefField, $fieldsInfo);
