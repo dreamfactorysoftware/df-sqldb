@@ -373,7 +373,7 @@ class Table extends BaseDbTableResource
     /**
      * @param $table_name
      *
-     * @return array
+     * @return ColumnSchema[]
      * @throws \Exception
      */
     protected function getFieldsInfo($table_name)
@@ -824,8 +824,7 @@ class Table extends BaseDbTableResource
                         $this->assignManyToOne(
                             $table,
                             $id,
-                            $relationInfo->refTable,
-                            $relationInfo->refFields,
+                            $relationInfo,
                             $relations,
                             $allow_delete
                         );
@@ -834,10 +833,7 @@ class Table extends BaseDbTableResource
                         $this->assignManyToOneByMap(
                             $table,
                             $id,
-                            $relationInfo->refTable,
-                            $relationInfo->junctionTable,
-                            $relationInfo->junctionField,
-                            $relationInfo->junctionRefField,
+                            $relationInfo,
                             $relations
                         );
                         break;
@@ -923,6 +919,34 @@ class Table extends BaseDbTableResource
         return array_merge($data, $relatedData);
     }
 
+    protected function retrieveVirtualRecords($service, $table, $filter, $extras)
+    {
+        $filter = urlencode($filter);
+        $path = "$service/_table/$table/?filter=$filter";
+        $result = ExposedApi::inlineRequest(Verbs::GET, $path);
+        $status = (isset($result['status']) ? $result['status'] : null);
+        switch ($status) {
+            case 200:
+                if (isset($result['content'])) {
+                    $resources = (isset($result['content']['resource']) ? $result['content']['resource'] : null);
+
+                    return $resources;
+                }
+
+                throw new InternalServerErrorException('Virtual related query succeeded but returned invalid format.');
+                break;
+            default:
+                if (isset($result['content'], $result['content']['error'])) {
+                    $error = $result['content']['error'];
+                    extract($error);
+                    /** @noinspection PhpUndefinedVariableInspection */
+                    throw new RestException($status, $message, $code);
+                }
+
+                throw new RestException($status, 'Virtual related query failed but returned invalid format.');
+        }
+    }
+
     /**
      * @param                $data
      * @param RelationSchema $relation
@@ -957,9 +981,14 @@ class Table extends BaseDbTableResource
             switch ($relation->type) {
                 case RelationSchema::BELONGS_TO:
                 case RelationSchema::HAS_MANY:
-                    $filter = urlencode($relation->refFields . ' = ' . $fieldVal);
-                    $path = "$serviceName/_table/{$relation->refTable}/?filter=$filter";
-                    $result = ExposedApi::inlineRequest(Verbs::GET, $path);
+                    $filter = $relation->refFields . ' = ' . $fieldVal;
+                    $resources = $this->retrieveVirtualRecords($serviceName, $relation->refTable, $filter, $extras);
+                    switch ($relation->type) {
+                        case RelationSchema::BELONGS_TO:
+                            return isset($resources[0]) ? $resources[0] : null;
+                        default:
+                            return $resources;
+                    }
                     break;
                 case RelationSchema::MANY_MANY:
                     throw new BadRequestException('Many to many relationship across service boundaries not yet supported.');
@@ -967,31 +996,6 @@ class Table extends BaseDbTableResource
                 default:
                     throw new InternalServerErrorException('Invalid relationship type detected.');
                     break;
-            }
-            $status = (isset($result['status']) ? $result['status'] : null);
-            switch ($status) {
-                case 200:
-                    if (isset($result['content'])) {
-                        $resources = (isset($result['content']['resource']) ? $result['content']['resource'] : null);
-                        switch ($relation->type) {
-                            case RelationSchema::BELONGS_TO:
-                                return isset($resources[0]) ? $resources[0] : null;
-                            default:
-                                return $resources;
-                        }
-                    }
-
-                    throw new InternalServerErrorException('Virtual related query succeeded but returned invalid format.');
-                    break;
-                default:
-                    if (isset($result['content'], $result['content']['error'])) {
-                        $error = $result['content']['error'];
-                        extract($error);
-                        /** @noinspection PhpUndefinedVariableInspection */
-                        throw new RestException($status, $message, $code);
-                    }
-
-                    throw new RestException($status, 'Virtual related query failed but returned invalid format.');
             }
         }
 
@@ -1081,12 +1085,11 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param string $one_table
-     * @param string $one_id
-     * @param string $many_table
-     * @param string $many_field
-     * @param array  $many_records
-     * @param bool   $allow_delete
+     * @param string         $one_table
+     * @param string         $one_id
+     * @param RelationSchema $relation
+     * @param array          $many_records
+     * @param bool           $allow_delete
      *
      * @throws BadRequestException
      * @return void
@@ -1094,8 +1097,7 @@ class Table extends BaseDbTableResource
     protected function assignManyToOne(
         $one_table,
         $one_id,
-        $many_table,
-        $many_field,
+        RelationSchema $relation,
         $many_records = [],
         $allow_delete = false
     ){
@@ -1104,13 +1106,21 @@ class Table extends BaseDbTableResource
         }
 
         try {
-            $manyFields = $this->getFieldsInfo($many_table);
-            $pksInfo = DbUtilities::getPrimaryKeys($manyFields);
+            $manyFields = $this->getFieldsInfo($relation->refTable);
             /** @type ColumnSchema $fieldInfo */
-            if (null === $fieldInfo = ArrayUtils::get($manyFields, strtolower($many_field))) {
-                throw new InternalServerErrorException("Relationship field '$many_field' not found in schema.");
+            if (null === $fieldInfo = ArrayUtils::get($manyFields, strtolower($relation->refFields))) {
+                throw new InternalServerErrorException("Relationship field '{$relation->refFields}' not found in schema.");
             }
 
+            $pksInfo = DbUtilities::getPrimaryKeys($manyFields);
+            if (1 !== count($pksInfo)) {
+                // todo How to handle multiple primary keys?
+                throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+            }
+
+            $pkAutoSet = $pksInfo[0]->autoIncrement;
+            $pkField = $pksInfo[0]->name;
+            $pkFields = [$pkField];
             $deleteRelated = (!$fieldInfo->allowNull && $allow_delete);
             $relateMany = [];
             $disownMany = [];
@@ -1120,76 +1130,53 @@ class Table extends BaseDbTableResource
             $deleteMany = [];
 
             foreach ($many_records as $item) {
-                if (1 === count($pksInfo)) {
-                    $pkAutoSet = $pksInfo[0]->autoIncrement;
-                    $pkField = $pksInfo[0]->name;
-                    $id = ArrayUtils::get($item, $pkField);
-                    if (empty($id)) {
-                        if (!$pkAutoSet) {
-                            throw new BadRequestException("Related record has no primary key value for '$pkField'.");
-                        }
+                $id = ArrayUtils::get($item, $pkField);
+                if (empty($id)) {
+                    if (!$pkAutoSet) {
+                        throw new BadRequestException("Related record has no primary key value for '$pkField'.");
+                    }
 
-                        // create new child record
-                        $item[$many_field] = $one_id; // assign relationship
-                        $insertMany[] = $item;
-                    } else {
-                        if (array_key_exists($many_field, $item)) {
-                            if (null == ArrayUtils::get($item, $many_field, null, true)) {
-                                // disown this child or delete them
-                                if ($deleteRelated) {
-                                    $deleteMany[] = $id;
-                                } elseif (count($item) > 1) {
-                                    $item[$many_field] = null; // assign relationship
-                                    $updateMany[] = $item;
-                                } else {
-                                    $disownMany[] = $id;
-                                }
-
-                                continue;
-                            }
-                        }
-
-                        // update or upsert this child
-                        if (count($item) > 1) {
-                            $item[$many_field] = $one_id; // assign relationship
-                            if ($pkAutoSet) {
+                    // create new child record
+                    $item[$relation->refFields] = $one_id; // assign relationship
+                    $insertMany[] = $item;
+                } else {
+                    if (array_key_exists($relation->refFields, $item)) {
+                        if (null == ArrayUtils::get($item, $relation->refFields, null, true)) {
+                            // disown this child or delete them
+                            if ($deleteRelated) {
+                                $deleteMany[] = $id;
+                            } elseif (count($item) > 1) {
+                                $item[$relation->refFields] = null; // assign relationship
                                 $updateMany[] = $item;
                             } else {
-                                $upsertMany[$id] = $item;
+                                $disownMany[] = $id;
                             }
-                        } else {
-                            $relateMany[] = $id;
+
+                            continue;
                         }
                     }
-                } else {
-                    // todo How to handle multiple primary keys?
-                    throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+
+                    // update or upsert this child
+                    if (count($item) > 1) {
+                        $item[$relation->refFields] = $one_id; // assign relationship
+                        if ($pkAutoSet) {
+                            $updateMany[] = $item;
+                        } else {
+                            $upsertMany[$id] = $item;
+                        }
+                    } else {
+                        $relateMany[] = $id;
+                    }
                 }
             }
-
-            /** @var Command $command */
-            $command = $this->dbConn->createCommand();
 
             // resolve any upsert situations
             if (!empty($upsertMany)) {
                 $checkIds = array_keys($upsertMany);
-                // disown/un-relate/unlink linked children
-                $builder = $this->dbConn->getSchema()->getCommandBuilder();
-                $criteria = $builder->createCriteria();
-                if (1 === count($pksInfo)) {
-                    $pkField = $pksInfo[0]->name;
-                    $criteria->addInCondition($pkField, $checkIds);
-                } else {
-                    // todo How to handle multiple primary keys?
-                    throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                }
-
-                $result = $this->parseFieldsForSqlSelect($pkField, $manyFields);
-                $bindings = ArrayUtils::get($result, 'bindings');
-                $fields = ArrayUtils::get($result, 'fields');
-                $fields = (empty($fields)) ? '*' : $fields;
-                $matchIds = $this->recordQuery($many_table, $fields, $criteria, [], $bindings, null);
-                unset($matchIds['meta']);
+                $filter = $pkField . ' IN (' . implode(',', $checkIds) . ')';
+                // non-native service relation, go get it
+                $serviceName = Service::getCachedNameById($relation->refServiceId);
+                $matchIds = $this->retrieveVirtualRecords($serviceName, $relation->refTable, $filter, null);
 
                 foreach ($upsertMany as $uId => $record) {
                     if ($found = DbUtilities::findRecordByNameValue($matchIds, $pkField, $uId)) {
@@ -1203,17 +1190,20 @@ class Table extends BaseDbTableResource
             if (!empty($insertMany)) {
                 // create new children
                 // do we have permission to do so?
-                $this->validateTableAccess($many_table, Verbs::POST);
-                $ssFilters = []; // TODO Session::getServiceFilters( Verbs::POST, $this->apiName, $many_table );
+                $this->validateTableAccess($relation->refTable, Verbs::POST);
+                $ssFilters = Session::getServiceFilters(Verbs::POST, $this->getServiceName(), $relation->refTable);
+                /** @var Command $command */
+                $command = $this->dbConn->createCommand();
+
                 foreach ($insertMany as $record) {
                     $parsed = $this->parseRecord($record, $manyFields, $ssFilters);
                     if (empty($parsed)) {
                         throw new BadRequestException('No valid fields were found in record.');
                     }
 
-                    $rows = $command->insert($many_table, $parsed);
+                    $rows = $command->insert($relation->refTable, $parsed);
                     if (0 >= $rows) {
-                        throw new InternalServerErrorException("Creating related $many_table records failed.");
+                        throw new InternalServerErrorException("Creating related {$relation->refTable} records failed.");
                     }
                 }
             }
@@ -1221,123 +1211,49 @@ class Table extends BaseDbTableResource
             if (!empty($deleteMany)) {
                 // destroy linked children that can't stand alone - sounds sinister
                 // do we have permission to do so?
-                $this->validateTableAccess($many_table, Verbs::DELETE);
-                $ssFilters = []; // TODO Session::getServiceFilters( Verbs::DELETE, $this->name, $many_table );
-                $builder = $this->dbConn->getSchema()->getCommandBuilder();
-                $criteria = $builder->createCriteria();
-                if (1 === count($pksInfo)) {
-                    $pkField = $pksInfo[0]->name;
-                    $criteria->addInCondition($pkField, $deleteMany);
-                } else {
-                    // todo How to handle multiple primary keys?
-                    throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                }
-                $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
-                if (!empty($serverFilter)) {
-                    $criteria->addCondition($serverFilter);
-                }
-
-                $command->delete($many_table, $criteria->condition, $criteria->params);
-//                if ( 0 >= $rows )
-//                {
-//                    throw new NotFoundException( "Deleting related $many_table records failed." );
-//                }
+                $this->validateTableAccess($relation->refTable, Verbs::DELETE);
+                $ssFilters = Session::getServiceFilters(Verbs::DELETE, $this->getServiceName(), $relation->refTable);
+                $this->deleteForeignRecords($relation->refTable, $pkFields, $deleteMany, $ssFilters);
             }
 
             if (!empty($updateMany) || !empty($relateMany) || !empty($disownMany)) {
                 // do we have permission to do so?
-                $this->validateTableAccess($many_table, Verbs::PUT);
-                $ssFilters = []; // TODO Session::getServiceFilters( Verbs::PUT, $this->apiName, $many_table );
+                $this->validateTableAccess($relation->refTable, Verbs::PUT);
+                $ssFilters = Session::getServiceFilters(Verbs::PUT, $this->getServiceName(), $relation->refTable);
 
                 if (!empty($updateMany)) {
                     // update existing and adopt new children
-                    $builder = $this->dbConn->getSchema()->getCommandBuilder();
-                    $criteria = $builder->createCriteria();
-                    if (1 === count($pksInfo)) {
-                        $pkField = $pksInfo[0]->name;
-                        $criteria->addCondition($this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField");
-                    } else {
-                        // todo How to handle multiple primary keys?
-                        throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                    }
-                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
-                    if (!empty($serverFilter)) {
-                        $criteria->addCondition($serverFilter);
-                    }
-
                     foreach ($updateMany as $record) {
-                        if (1 === count($pksInfo)) {
-                            $pkField = $pksInfo[0]->name;
-                            $criteria->params[":pk_$pkField"] = ArrayUtils::get($record, $pkField);
-                        } else {
-                            // todo How to handle multiple primary keys?
-                            throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                        }
+                        $pk = ArrayUtils::get($record, $pkField);
                         $parsed = $this->parseRecord($record, $manyFields, $ssFilters, true);
                         if (empty($parsed)) {
-                            throw new BadRequestException('No valid fields were found in record.');
+                            throw new BadRequestException('No valid fields were found for foreign link updates.');
                         }
 
-                        $command->update($many_table, $parsed, $criteria->condition, $criteria->params);
-//                        if ( 0 >= $rows )
-//                        {
-//                            throw new InternalServerErrorException( "Updating related $many_table records failed." );
-//                        }
+                        $this->updateForeignRecords($relation->refTable, $pkFields, [$pk], $parsed, $ssFilters);
                     }
                 }
 
                 if (!empty($relateMany)) {
                     // adopt/relate/link unlinked children
-                    $builder = $this->dbConn->getSchema()->getCommandBuilder();
-                    $criteria = $builder->createCriteria();
-                    if (1 === count($pksInfo)) {
-                        $pkField = $pksInfo[0]->name;
-                        $criteria->addInCondition($pkField, $relateMany);
-                    } else {
-                        // todo How to handle multiple primary keys?
-                        throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                    }
-                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
-                    if (!empty($serverFilter)) {
-                        $criteria->addCondition($serverFilter);
+                    $updates = [$relation->refFields => $one_id];
+                    $parsed = $this->parseRecord($updates, $manyFields, $ssFilters, true);
+                    if (empty($parsed)) {
+                        throw new BadRequestException('No valid fields were found for foreign link updates.');
                     }
 
-                    $updates = [$many_field => $one_id];
-                    $parsed = $this->parseRecord($updates, $manyFields, $ssFilters, true);
-                    if (!empty($parsed)) {
-                        $command->update($many_table, $parsed, $criteria->condition, $criteria->params);
-//                        if ( 0 >= $rows )
-//                        {
-//                            throw new InternalServerErrorException( "Updating related $many_table records failed." );
-//                        }
-                    }
+                    $this->updateForeignRecords($relation->refTable, $pkFields, $relateMany, $parsed, $ssFilters);
                 }
 
                 if (!empty($disownMany)) {
                     // disown/un-relate/unlink linked children
-                    $builder = $this->dbConn->getSchema()->getCommandBuilder();
-                    $criteria = $builder->createCriteria();
-                    if (1 === count($pksInfo)) {
-                        $pkField = $pksInfo[0]->name;
-                        $criteria->addInCondition($pkField, $disownMany);
-                    } else {
-                        // todo How to handle multiple primary keys?
-                        throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                    }
-                    $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
-                    if (!empty($serverFilter)) {
-                        $criteria->addCondition($serverFilter);
+                    $updates = [$relation->refFields => null];
+                    $parsed = $this->parseRecord($updates, $manyFields, $ssFilters, true);
+                    if (empty($parsed)) {
+                        throw new BadRequestException('No valid fields were found for foreign link updates.');
                     }
 
-                    $updates = [$many_field => null];
-                    $parsed = $this->parseRecord($updates, $manyFields, $ssFilters, true);
-                    if (!empty($parsed)) {
-                        $command->update($many_table, $parsed, $criteria->condition, $criteria->params);
-//                        if ( 0 >= $rows )
-//                        {
-//                            throw new NotFoundException( 'No records were found using the given identifiers.' );
-//                        }
-                    }
+                    $this->updateForeignRecords($relation->refTable, $pkFields, $disownMany, $parsed, $ssFilters);
                 }
             }
         } catch (\Exception $ex) {
@@ -1345,14 +1261,63 @@ class Table extends BaseDbTableResource
         }
     }
 
+    protected function updateForeignRecords($table, $linkerFields, $linkerIds, $parsed, $ssFilters)
+    {
+        if (empty($parsed)) {
+            throw new BadRequestException('No valid fields were found for foreign record updates.');
+        }
+        $builder = $this->dbConn->getSchema()->getCommandBuilder();
+        $criteria = $builder->createCriteria();
+        if (1 === count($linkerFields)) {
+            $pkField = $linkerFields[0];
+            $criteria->addInCondition($this->dbConn->quoteColumnName($pkField), $linkerIds);
+        } else {
+            // todo How to handle multiple primary keys?
+            throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+        }
+        $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+        if (!empty($serverFilter)) {
+            $criteria->addCondition($serverFilter);
+        }
+
+        $command = $this->dbConn->createCommand();
+        $rows = $command->update($table, $parsed, $criteria->condition, $criteria->params);
+        if (0 >= $rows) {
+//            throw new NotFoundException( 'No foreign linked records were found using the given identifiers.' );
+        }
+    }
+
+    protected function deleteForeignRecords($table, $linkerFields, $linkerIds, $ssFilters, $addCondition = null)
+    {
+        $builder = $this->dbConn->getSchema()->getCommandBuilder();
+        $criteria = $builder->createCriteria();
+        if (1 === count($linkerFields)) {
+            $pkField = $linkerFields[0];
+            $criteria->addInCondition($this->dbConn->quoteColumnName($pkField), $linkerIds);
+        } else {
+            // todo How to handle multiple primary keys?
+            throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+        }
+        $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+        if (!empty($serverFilter)) {
+            $criteria->addCondition($serverFilter);
+        }
+        if (!empty($addCondition)) {
+            $criteria->addCondition($addCondition);
+        }
+
+        $command = $this->dbConn->createCommand();
+        $rows = $command->delete($table, $criteria->condition, $criteria->params);
+        if (0 >= $rows) {
+//            throw new NotFoundException( 'No foreign linked records were found using the given identifiers.' );
+        }
+    }
+
     /**
-     * @param string $one_table
-     * @param mixed  $one_id
-     * @param string $many_table
-     * @param string $map_table
-     * @param string $one_field
-     * @param string $many_field
-     * @param array  $many_records
+     * @param string         $one_table
+     * @param mixed          $one_id
+     * @param RelationSchema $relation
+     * @param array          $many_records
      *
      * @throws InternalServerErrorException
      * @throws BadRequestException
@@ -1361,10 +1326,7 @@ class Table extends BaseDbTableResource
     protected function assignManyToOneByMap(
         $one_table,
         $one_id,
-        $many_table,
-        $map_table,
-        $one_field,
-        $many_field,
+        RelationSchema $relation,
         $many_records = []
     ){
         if (empty($one_id)) {
@@ -1374,70 +1336,66 @@ class Table extends BaseDbTableResource
         try {
             $oneFields = $this->getFieldsInfo($one_table);
             $pkOneField = DbUtilities::getPrimaryKeyFieldFromDescribe($oneFields);
-            $manyFields = $this->getFieldsInfo($many_table);
+            $manyFields = $this->getFieldsInfo($relation->refTable);
             $pksManyInfo = DbUtilities::getPrimaryKeys($manyFields);
-            $mapFields = $this->getFieldsInfo($map_table);
+            $mapFields = $this->getFieldsInfo($relation->junctionTable);
 //			$pkMapField = static::getPrimaryKeyFieldFromDescribe( $mapFields );
 
-            $result = $this->parseFieldsForSqlSelect($many_field, $mapFields);
-            $bindings = ArrayUtils::get($result, 'bindings');
-            $fields = ArrayUtils::get($result, 'fields');
-            $fields = (empty($fields)) ? '*' : $fields;
-            $builder = $this->dbConn->getSchema()->getCommandBuilder();
-            $criteria = $builder->createCriteria($this->dbConn->quoteColumnName($one_field) . " = :f_$one_field");
-            $criteria->params = [":f_$one_field" => $one_id];
-            $maps = $this->recordQuery($map_table, $fields, $criteria, [], $bindings, null);
-            unset($maps['meta']);
+            // non-native service relation, go get it
+            $serviceName = Service::getCachedNameById($relation->refServiceId);
+            $maps =
+                $this->retrieveVirtualRecords($serviceName, $relation->junctionTable,
+                    $relation->junctionField . ' = ' . $one_id, null);
 
             $createMap = []; // map records to create
             $deleteMap = []; // ids of 'many' records to delete from maps
             $insertMany = [];
             $updateMany = [];
             $upsertMany = [];
+            if (1 !== count($pksManyInfo)) {
+                // todo How to handle multiple primary keys?
+                throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+            }
+            $pkAutoSet = $pksManyInfo[0]->autoIncrement;
+            $pkManyField = $pksManyInfo[0]->name;
+            $pkManyFields = [$pkManyField];
             foreach ($many_records as $item) {
-                if (1 === count($pksManyInfo)) {
-                    $pkAutoSet = $pksManyInfo[0]->autoIncrement;
-                    $pkManyField = $pksManyInfo[0]->name;
-                    $id = ArrayUtils::get($item, $pkManyField);
-                    if (empty($id)) {
-                        if (!$pkAutoSet) {
-                            throw new BadRequestException("Related record has no primary key value for '$pkManyField'.");
-                        }
-
-                        // create new child record
-                        $insertMany[] = $item;
-                    } else {
-                        // pk fields exists, must be dealing with existing 'many' record
-                        $oneLookup = "$one_table.$pkOneField";
-                        if (array_key_exists($oneLookup, $item)) {
-                            if (null == ArrayUtils::get($item, $oneLookup, null, true)) {
-                                // delete this relationship
-                                $deleteMap[] = $id;
-                                continue;
-                            }
-                        }
-
-                        // update the 'many' record if more than the above fields
-                        if (count($item) > 1) {
-                            if ($pkAutoSet) {
-                                $updateMany[] = $item;
-                            } else {
-                                $upsertMany[$id] = $item;
-                            }
-                        }
-
-                        // if relationship doesn't exist, create it
-                        foreach ($maps as $map) {
-                            if (ArrayUtils::get($map, $many_field) == $id) {
-                                continue 2; // got what we need from this one
-                            }
-                        }
-
-                        $createMap[] = [$many_field => $id, $one_field => $one_id];
+                $id = ArrayUtils::get($item, $pkManyField);
+                if (empty($id)) {
+                    if (!$pkAutoSet) {
+                        throw new BadRequestException("Related record has no primary key value for '$pkManyField'.");
                     }
+
+                    // create new child record
+                    $insertMany[] = $item;
                 } else {
-                    // todo How to handle multiple primary keys?
-                    throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+                    // pk fields exists, must be dealing with existing 'many' record
+                    $oneLookup = "$one_table.$pkOneField";
+                    if (array_key_exists($oneLookup, $item)) {
+                        if (null == ArrayUtils::get($item, $oneLookup, null, true)) {
+                            // delete this relationship
+                            $deleteMap[] = $id;
+                            continue;
+                        }
+                    }
+
+                    // update the 'many' record if more than the above fields
+                    if (count($item) > 1) {
+                        if ($pkAutoSet) {
+                            $updateMany[] = $item;
+                        } else {
+                            $upsertMany[$id] = $item;
+                        }
+                    }
+
+                    // if relationship doesn't exist, create it
+                    foreach ($maps as $map) {
+                        if (ArrayUtils::get($map, $relation->junctionRefField) == $id) {
+                            continue 2; // got what we need from this one
+                        }
+                    }
+
+                    $createMap[] = [$relation->junctionRefField => $id, $relation->junctionField => $one_id];
                 }
             }
 
@@ -1447,25 +1405,13 @@ class Table extends BaseDbTableResource
             // resolve any upsert situations
             if (!empty($upsertMany)) {
                 $checkIds = array_keys($upsertMany);
-                // disown/un-relate/unlink linked children
-                $criteria = $builder->createCriteria();
-                if (1 === count($pksManyInfo)) {
-                    $pkField = $pksManyInfo[0]->name;
-                    $criteria->addInCondition($pkField, $checkIds);
-                } else {
-                    // todo How to handle multiple primary keys?
-                    throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                }
-
-                $result = $this->parseFieldsForSqlSelect($pkField, $manyFields);
-                $bindings = ArrayUtils::get($result, 'bindings');
-                $fields = ArrayUtils::get($result, 'fields');
-                $fields = (empty($fields)) ? '*' : $fields;
-                $matchIds = $this->recordQuery($many_table, $fields, $criteria, [], $bindings, null);
-                unset($matchIds['meta']);
+                $filter = $pkManyField . ' IN (' . implode(',', $checkIds) . ')';
+                // non-native service relation, go get it
+                $serviceName = Service::getCachedNameById($relation->refServiceId);
+                $matchIds = $this->retrieveVirtualRecords($serviceName, $relation->refTable, $filter, null);
 
                 foreach ($upsertMany as $uId => $record) {
-                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $pkField, $uId)) {
+                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $pkManyField, $uId)) {
                         $updateMany[] = $record;
                     } else {
                         $insertMany[] = $record;
@@ -1475,8 +1421,8 @@ class Table extends BaseDbTableResource
 
             if (!empty($insertMany)) {
                 // do we have permission to do so?
-                $this->validateTableAccess($many_table, Verbs::POST);
-                $ssManyFilters = []; // TDOO Session::getServiceFilters( Verbs::POST, $this->apiName, $many_table );
+                $this->validateTableAccess($relation->refTable, Verbs::POST);
+                $ssManyFilters = Session::getServiceFilters(Verbs::POST, $this->getServiceName(), $relation->refTable);
                 // create new many records
                 foreach ($insertMany as $record) {
                     $parsed = $this->parseRecord($record, $manyFields, $ssManyFilters);
@@ -1484,14 +1430,14 @@ class Table extends BaseDbTableResource
                         throw new BadRequestException('No valid fields were found in record.');
                     }
 
-                    $rows = $command->insert($many_table, $parsed);
+                    $rows = $command->insert($relation->refTable, $parsed);
                     if (0 >= $rows) {
-                        throw new InternalServerErrorException("Creating related $many_table records failed.");
+                        throw new InternalServerErrorException("Creating related {$relation->refTable} records failed.");
                     }
 
                     $manyId = (int)$this->dbConn->lastInsertID;
                     if (!empty($manyId)) {
-                        $createMap[] = [$many_field => $manyId, $one_field => $one_id];
+                        $createMap[] = [$relation->junctionRefField => $manyId, $relation->junctionField => $one_id];
                     }
                 }
             }
@@ -1499,72 +1445,46 @@ class Table extends BaseDbTableResource
             if (!empty($updateMany)) {
                 // update existing many records
                 // do we have permission to do so?
-                $this->validateTableAccess($many_table, Verbs::PUT);
-                $ssManyFilters = []; // TODO Session::getServiceFilters( Verbs::PUT, $this->apiName, $many_table );
-
-                $criteria = $builder->createCriteria();
-                if (1 === count($pksManyInfo)) {
-                    $pkField = $pksManyInfo[0]->name;
-                    $criteria->addCondition($this->dbConn->quoteColumnName($pkField) . " = :pk_$pkField");
-                } else {
-                    // todo How to handle multiple primary keys?
-                    throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-                }
-
-                $serverFilter = $this->buildQueryStringFromData($ssManyFilters, $criteria->params);
-                if (!empty($serverFilter)) {
-                    $criteria->addCondition($serverFilter);
-                }
+                $this->validateTableAccess($relation->refTable, Verbs::PUT);
+                $ssManyFilters = Session::getServiceFilters(Verbs::PUT, $this->getServiceName(), $relation->refTable);
 
                 foreach ($updateMany as $record) {
-                    $criteria->params[":pk_$pkField"] = ArrayUtils::get($record, $pkField);
+                    $pk = ArrayUtils::get($record, $pkManyField);
                     $parsed = $this->parseRecord($record, $manyFields, $ssManyFilters, true);
                     if (empty($parsed)) {
-                        throw new BadRequestException('No valid fields were found in record.');
+                        throw new BadRequestException('No valid fields were found for foreign link updates.');
                     }
 
-                    $command->update($many_table, $parsed, $criteria->condition, $criteria->params);
-//                        if ( 0 >= $rows )
-//                        {
-//                            throw new InternalServerErrorException( "Updating related $many_table records failed." );
-//                        }
+                    $this->updateForeignRecords($relation->refTable, $pkManyFields, [$pk], $parsed, $ssManyFilters);
                 }
             }
 
             if (!empty($createMap)) {
                 // do we have permission to do so?
-                $this->validateTableAccess($map_table, Verbs::POST);
-                $ssMapFilters = []; // TODO Session::getServiceFilters( Verbs::POST, $this->apiName, $map_table );
+                $this->validateTableAccess($relation->junctionTable, Verbs::POST);
+                $ssMapFilters =
+                    Session::getServiceFilters(Verbs::POST, $this->getServiceName(), $relation->junctionTable);
                 foreach ($createMap as $record) {
                     $parsed = $this->parseRecord($record, $mapFields, $ssMapFilters);
                     if (empty($parsed)) {
-                        throw new BadRequestException("No valid fields were found in related $map_table record.");
+                        throw new BadRequestException("No valid fields were found in related {$relation->junctionTable} record.");
                     }
 
-                    $rows = $command->insert($map_table, $parsed);
+                    $rows = $command->insert($relation->junctionTable, $parsed);
                     if (0 >= $rows) {
-                        throw new InternalServerErrorException("Creating related $map_table records failed.");
+                        throw new InternalServerErrorException("Creating related {$relation->junctionTable} records failed.");
                     }
                 }
             }
 
             if (!empty($deleteMap)) {
                 // do we have permission to do so?
-                $this->validateTableAccess($map_table, Verbs::DELETE);
-                $ssMapFilters = []; // TODO Session::getServiceFilters( Verbs::DELETE, $this->apiName, $map_table );
-                $criteria = $builder->createCriteria();
-                $criteria->addCondition($this->dbConn->quoteColumnName($one_field) . " = '$one_id'");
-                $criteria->addInCondition($many_field, $deleteMap);
-                $serverFilter = $this->buildQueryStringFromData($ssMapFilters, $criteria->params);
-                if (!empty($serverFilter)) {
-                    $criteria->addCondition($serverFilter);
-                }
-
-                $command->delete($map_table, $criteria->condition, $criteria->params);
-//                if ( 0 >= $rows )
-//                {
-//                    throw new NotFoundException( "Deleting related $map_table records failed." );
-//                }
+                $this->validateTableAccess($relation->junctionTable, Verbs::DELETE);
+                $ssMapFilters =
+                    Session::getServiceFilters(Verbs::DELETE, $this->getServiceName(), $relation->junctionTable);
+                $addCondition = $this->dbConn->quoteColumnName($relation->junctionField) . " = '$one_id'";
+                $this->deleteForeignRecords($relation->junctionTable, [$relation->junctionRefField], $deleteMap,
+                    $ssMapFilters, $addCondition);
             }
         } catch (\Exception $ex) {
             throw new InternalServerErrorException("Failed to update many to one map assignment.\n{$ex->getMessage()}");
