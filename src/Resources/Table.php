@@ -3,10 +3,11 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use Config;
-use DreamFactory\Core\Components\ExposedApi;
+use DreamFactory\Core\Components\Service2ServiceRequest;
 use DreamFactory\Core\Database\Command;
 use DreamFactory\Core\Database\Criteria;
 use DreamFactory\Core\Database\RelationSchema;
+use DreamFactory\Core\Database\TableSchema;
 use DreamFactory\Core\Database\Transaction;
 use DreamFactory\Core\Database\Expression;
 use DreamFactory\Core\Database\ColumnSchema;
@@ -22,6 +23,7 @@ use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
 use DreamFactory\Core\Utility\DbUtilities;
 use DreamFactory\Core\Utility\ResourcesWrapper;
+use DreamFactory\Core\Utility\ServiceHandler;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Library\Utility\Enums\Verbs;
@@ -73,12 +75,16 @@ class Table extends BaseDbTableResource
                     $relations[strtolower($relative)] =
                         [
                             'name'             => $relative,
-                            ApiOptions::FIELDS => ArrayUtils::get($this->options, $relative . '_' . ApiOptions::FIELDS,
+                            ApiOptions::FIELDS => ArrayUtils::get($this->options,
+                                str_replace('.', '_', $relative . '.' . ApiOptions::FIELDS),
                                 '*'),
-                            ApiOptions::LIMIT  => ArrayUtils::get($this->options, $relative . '_' . ApiOptions::LIMIT,
+                            ApiOptions::LIMIT  => ArrayUtils::get($this->options,
+                                str_replace('.', '_', $relative . '.' . ApiOptions::LIMIT),
                                 static::MAX_RECORDS_RETURNED),
-                            ApiOptions::ORDER  => ArrayUtils::get($this->options, $relative . '_' . ApiOptions::ORDER),
-                            ApiOptions::GROUP  => ArrayUtils::get($this->options, $relative . '_' . ApiOptions::GROUP),
+                            ApiOptions::ORDER  => ArrayUtils::get($this->options,
+                                str_replace('.', '_', $relative . '.' . ApiOptions::ORDER)),
+                            ApiOptions::GROUP  => ArrayUtils::get($this->options,
+                                str_replace('.', '_', $relative . '.' . ApiOptions::GROUP)),
                         ];
                 }
 
@@ -357,9 +363,10 @@ class Table extends BaseDbTableResource
 
         $related = ArrayUtils::get($extras, ApiOptions::RELATED);
         if (!empty($related) || $schema->fetchRequiresRelations) {
-            $relations = $this->describeTableRelated($table);
-            foreach ($data as $key => $temp) {
-                $data[$key] = $this->retrieveRelatedRecords($temp, $relations, $related);
+            if (!empty($relations = $this->describeTableRelated($table))) {
+                foreach ($data as $key => $temp) {
+                    $data[$key] = $this->retrieveRelatedRecords($schema, $relations, $related, $temp);
+                }
             }
         }
 
@@ -886,20 +893,17 @@ class Table extends BaseDbTableResource
     // generic assignments
 
     /**
-     * @param array            $data
+     * @param TableSchema      $schema
      * @param RelationSchema[] $relations
      * @param string|array     $requests
+     * @param array            $data
      *
      * @throws InternalServerErrorException
      * @throws BadRequestException
      * @return array
      */
-    protected function retrieveRelatedRecords($data, $relations, $requests)
+    protected function retrieveRelatedRecords(TableSchema $schema, $relations, $requests, $data)
     {
-        if (empty($relations)) {
-            return $data;
-        }
-
         $relatedData = [];
         $relatedExtras = [ApiOptions::LIMIT => static::MAX_RECORDS_RETURNED, ApiOptions::FIELDS => '*'];
         foreach ($relations as $key => $relation) {
@@ -909,48 +913,96 @@ class Table extends BaseDbTableResource
 
             if (is_array($requests) && array_key_exists($key, $requests)) {
                 $relatedData[$relation->getName(true)] =
-                    $this->retrieveRelationRecords($data, $relation, $requests[$key]);
+                    $this->retrieveRelationRecords($schema, $relation, $data, $requests[$key]);
             } elseif (('*' == $requests) || $relation->alwaysFetch) {
                 $relatedData[$relation->getName(true)] =
-                    $this->retrieveRelationRecords($data, $relation, $relatedExtras);
+                    $this->retrieveRelationRecords($schema, $relation, $data, $relatedExtras);
             }
         }
 
         return array_merge($data, $relatedData);
     }
 
-    protected function retrieveVirtualRecords($service, $table, $filter, $extras)
+    protected function retrieveVirtualRecords($path, $params = null)
     {
-        $filter = urlencode($filter);
-        $path = "$service/_table/$table/?filter=$filter";
-        $result = ExposedApi::inlineRequest(Verbs::GET, $path);
-        $status = (isset($result['status']) ? $result['status'] : null);
+        $result = null;
+        $params = (is_array($params) ? $params : []);
+        if (false !== $pos = strpos($path, '?')) {
+            $paramString = substr($path, $pos + 1);
+            if (!empty($paramString)) {
+                $pArray = explode('&', $paramString);
+                foreach ($pArray as $k => $p) {
+                    if (!empty($p)) {
+                        $tmp = explode('=', $p);
+                        $name = ArrayUtils::get($tmp, 0, $k);
+                        $value = ArrayUtils::get($tmp, 1);
+                        $params[$name] = urldecode($value);
+                    }
+                }
+            }
+            $path = substr($path, 0, $pos);
+        }
+
+        if (false === ($pos = strpos($path, '/'))) {
+            $serviceName = $path;
+            $resource = null;
+        } else {
+            $serviceName = substr($path, 0, $pos);
+            $resource = substr($path, $pos + 1);
+
+            //	Fix removal of trailing slashes from resource
+            if (!empty($resource)) {
+                if ((false === strpos($path, '?') && '/' === substr($path, strlen($path) - 1, 1)) ||
+                    ('/' === substr($path, strpos($path, '?') - 1, 1))
+                ) {
+                    $resource .= '/';
+                }
+            }
+        }
+
+        if (empty($serviceName)) {
+            return null;
+        }
+
+        $request = new Service2ServiceRequest(Verbs::GET, $params);
+
+        //  Now set the request object and go...
+        $service = ServiceHandler::getService($serviceName);
+        $response = $service->handleRequest($request, $resource);
+        $content = $response->getContent();
+        $format = $response->getContentFormat();
+        $status = $response->getStatusCode();
+
+        if (empty($content) && is_null($format)) {
+            // No content and type specified. (File stream already handled by service)
+            return null;
+        }
+
         switch ($status) {
             case 200:
-                if (isset($result['content'])) {
-                    $resources = (isset($result['content']['resource']) ? $result['content']['resource'] : null);
-
-                    return $resources;
+                if (isset($content)) {
+                    return (isset($content['resource']) ? $content['resource'] : $content);
                 }
 
-                throw new InternalServerErrorException('Virtual related query succeeded but returned invalid format.');
+                throw new InternalServerErrorException('Virtual query succeeded but returned invalid format.');
                 break;
             default:
-                if (isset($result['content'], $result['content']['error'])) {
-                    $error = $result['content']['error'];
+                if (isset($content, $content['error'])) {
+                    $error = $content['error'];
                     extract($error);
                     /** @noinspection PhpUndefinedVariableInspection */
                     throw new RestException($status, $message, $code);
                 }
 
-                throw new RestException($status, 'Virtual related query failed but returned invalid format.');
+                throw new RestException($status, 'Virtual query failed but returned invalid format.');
         }
     }
 
     /**
-     * @param                $data
+     * @param TableSchema    $schema
      * @param RelationSchema $relation
-     * @param                $extras
+     * @param array          $data
+     * @param array          $extras
      *
      * @return array|null
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
@@ -959,13 +1011,11 @@ class Table extends BaseDbTableResource
      * @throws \DreamFactory\Core\Exceptions\RestException
      * @throws \Exception
      */
-    protected function retrieveRelationRecords($data, $relation, $extras)
+    protected function retrieveRelationRecords(TableSchema $schema, RelationSchema $relation, $data, $extras)
     {
-        if (empty($relation)) {
-            return null;
-        }
-
-        $fieldVal = ArrayUtils::get($data, $relation->field);
+        $localFieldInfo = $schema->getColumn($relation->field);
+        $localField = $localFieldInfo->getName(true);
+        $fieldVal = ArrayUtils::get($data, $localField);
         if (empty($fieldVal)) {
             switch ($relation->type) {
                 case RelationSchema::BELONGS_TO:
@@ -975,51 +1025,51 @@ class Table extends BaseDbTableResource
             }
         }
 
-        if ($relation->isVirtual && ($this->serviceId !== $relation->refServiceId)) {
-            // non-native service relation, go get it
-            $serviceName = Service::getCachedNameById($relation->refServiceId);
-            switch ($relation->type) {
-                case RelationSchema::BELONGS_TO:
-                case RelationSchema::HAS_MANY:
-                    $filter = $relation->refFields . ' = ' . $fieldVal;
-                    $resources = $this->retrieveVirtualRecords($serviceName, $relation->refTable, $filter, $extras);
-                    switch ($relation->type) {
-                        case RelationSchema::BELONGS_TO:
-                            return isset($resources[0]) ? $resources[0] : null;
-                        default:
-                            return $resources;
-                    }
-                    break;
-                case RelationSchema::MANY_MANY:
-                    throw new BadRequestException('Many to many relationship across service boundaries not yet supported.');
-                    break;
-                default:
-                    throw new InternalServerErrorException('Invalid relationship type detected.');
-                    break;
-            }
-        }
-
-        // do we have permission to do so?
-        $this->validateTableAccess($relation->refTable, Verbs::GET);
-
         switch ($relation->type) {
             case RelationSchema::BELONGS_TO:
             case RelationSchema::HAS_MANY:
-                $fields = ArrayUtils::get($extras, ApiOptions::FIELDS);
-                $ssFilters = ArrayUtils::get($extras, 'ss_filters');
-                $fieldsInfo = $this->getFieldsInfo($relation->refTable);
-                $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
-                $bindings = ArrayUtils::get($result, 'bindings');
-                $fields = ArrayUtils::get($result, 'fields');
-                $fields = (empty($fields)) ? '*' : $fields;
+                $filterTable = $relation->refTable;
+                $filterField = $relation->refFields;
+                // Need schema to get aliases
+                if ($relation->isForeignService) {
+                    // non-native service relation, go get it
+                    $serviceName = Service::getCachedNameById($relation->refServiceId);
+                    // Need schema to get aliases
+                    $path = $serviceName . '/_schema/' . $relation->refTable;
+                    $refSchema = $this->retrieveVirtualRecords($path);
+                    if (isset($refSchema)) {
+                        if (!empty($refSchema['alias'])) {
+                            $filterTable = $refSchema['alias'];
+                        }
+                        if (!empty($refSchema['field']) && is_array($refSchema['field'])) {
+                            foreach ($refSchema['field'] as $fieldInfo) {
+                                if (!empty($fieldInfo['name']) && ($filterField === $fieldInfo['name'])) {
+                                    if (isset($fieldInfo['alias'])) {
+                                        $filterField = $fieldInfo['alias'];
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    $serviceName = $this->getServiceName();
+                    $refSchema = $this->dbConn->getSchema()->getTable($relation->refTable);
+                    $filterTable = $refSchema->getName(true);
+                    if (!empty($temp = $refSchema->getColumn($relation->refFields))) {
+                        $filterField = $temp->getName(true);
+                    }
+                }
 
-                // build filter string if necessary, add server-side filters if necessary
-                $criteria =
-                    $this->convertFilterToNative($relation->refFields . ' = ' . $fieldVal, [], $ssFilters, $fieldsInfo);
-                $where = ArrayUtils::get($criteria, 'where');
-                $params = ArrayUtils::get($criteria, 'params', []);
+                // check for access
+                Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
 
-                $relatedRecords = $this->recordQuery($relation->refTable, $fields, $where, $params, $bindings, $extras);
+                // Get records
+                $filter = $filterField . ' = ' . $fieldVal;
+                $filter = urlencode($filter);
+                $path = $serviceName . '/_table/' . $filterTable . '/?filter=' . $filter;
+
+                $relatedRecords = $this->retrieveVirtualRecords($path, $extras);
                 if (RelationSchema::BELONGS_TO === $relation->type) {
                     return (!empty($relatedRecords) ? ArrayUtils::get($relatedRecords, 0) : null);
                 }
@@ -1027,6 +1077,10 @@ class Table extends BaseDbTableResource
                 return $relatedRecords;
                 break;
             case RelationSchema::MANY_MANY:
+                if ($relation->isForeignService) {
+                    throw new BadRequestException('Many to many relationship across service boundaries not yet supported.');
+                }
+
                 if (!empty($relation->junctionField) && !empty($relation->junctionRefField)) {
                     $fieldsInfo = $this->getFieldsInfo($relation->junctionTable);
                     $result = $this->parseFieldsForSqlSelect($relation->junctionRefField, $fieldsInfo);
@@ -1104,6 +1158,9 @@ class Table extends BaseDbTableResource
         if (empty($one_id)) {
             throw new BadRequestException("The $one_table id can not be empty.");
         }
+        if ($relation->isForeignService) {
+            throw new BadRequestException('Updating relationship across service boundaries not yet supported.');
+        }
 
         try {
             $manyFields = $this->getFieldsInfo($relation->refTable);
@@ -1172,14 +1229,56 @@ class Table extends BaseDbTableResource
 
             // resolve any upsert situations
             if (!empty($upsertMany)) {
-                $checkIds = array_keys($upsertMany);
-                $filter = $pkField . ' IN (' . implode(',', $checkIds) . ')';
                 // non-native service relation, go get it
                 $serviceName = Service::getCachedNameById($relation->refServiceId);
-                $matchIds = $this->retrieveVirtualRecords($serviceName, $relation->refTable, $filter, null);
+                $filterTable = $relation->refTable;
+                $filterField = $pkField;
+                if ($relation->isForeignService) {
+                    // Need schema to get aliases
+                    $path = $serviceName . '/_schema/' . $relation->refTable;
+                    $schema = $this->retrieveVirtualRecords($path);
+                    if (isset($schema)) {
+                        if (!empty($schema['alias'])) {
+                            $filterTable = $schema['alias'];
+                        }
+                        if (!empty($schema['field']) && is_array($schema['field'])) {
+                            foreach ($schema['field'] as $fieldInfo) {
+                                if (!empty($fieldInfo['name']) && ($filterField === $fieldInfo['name'])) {
+                                    if (isset($fieldInfo['alias'])) {
+                                        $filterField = $fieldInfo['alias'];
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if (isset($schema)) {
+                        if (!empty($schema['alias'])) {
+                            $filterTable = $schema['alias'];
+                        }
+                        if (!empty($manyFields['field']) && is_array($schema['field'])) {
+                            foreach ($schema['field'] as $fieldInfo) {
+                                if (isset($fieldInfo['alias'])) {
+                                    $filterField = $fieldInfo['alias'];
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // check for access
+                Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
+
+                // Get records
+                $checkIds = array_keys($upsertMany);
+                $filter = $filterField . ' IN (' . implode(',', $checkIds) . ')';
+                $filter = urlencode($filter);
+                $path = $serviceName . '/_table/' . $filterTable . '/?filter=' . $filter;
+                $matchIds = $this->retrieveVirtualRecords($path);
 
                 foreach ($upsertMany as $uId => $record) {
-                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $pkField, $uId)) {
+                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $filterField, $uId)) {
                         $updateMany[] = $record;
                     } else {
                         $insertMany[] = $record;
@@ -1331,6 +1430,9 @@ class Table extends BaseDbTableResource
     ){
         if (empty($one_id)) {
             throw new BadRequestException("The $one_table id can not be empty.");
+        }
+        if ($relation->isForeignService) {
+            throw new BadRequestException('Updating relationship across service boundaries not yet supported.');
         }
 
         try {
