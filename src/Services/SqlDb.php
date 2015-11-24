@@ -16,7 +16,6 @@ use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
-use DreamFactory\Managed\Support\Managed;
 
 /**
  * Class SqlDb
