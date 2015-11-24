@@ -9,7 +9,20 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Fixed
 
+## [0.1.2] - 2015-11-24
+### Added
+- Usage of df-core's new virtual foreign keys and aliasing for relationships.
+
+### Changed
+- Refactored relationship handling to use local or foreign services.
+
+### Fixed
+- Usage of SQL IN filtering syntax.
+
 ## [0.1.1] - 2015-11-20
+### Added
+- New virtual fields with DB function settings. Aggregate functions applied to fields.
+
 ### Fixed
 - Fixed internal logic to use ColumnSchema from df-core instead of arrays.
 - Fixed reported record creation issue.
@@ -17,5 +30,6 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.1...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.2...HEAD
+[0.1.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.0...0.1.1
