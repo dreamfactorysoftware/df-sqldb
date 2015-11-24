@@ -569,7 +569,9 @@ class Table extends BaseDbTableResource
                             foreach (explode(',', $value) as $each) {
                                 $parsed[] = $this->parseFilterValue($each, $info, $params);
                             }
-                            $value = '(' . implode(',', $parsed) . ')';
+                            // might look like a bug that we are not appending a ')' to the end,
+                            // but the $rightParen below takes care of it.
+                            $value = '(' . implode(',', $parsed);
                             break;
                         default:
                             $value = $this->parseFilterValue($value, $info, $params);
