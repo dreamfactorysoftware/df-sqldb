@@ -12,13 +12,14 @@ use DreamFactory\Core\Database\Transaction;
 use DreamFactory\Core\Database\Expression;
 use DreamFactory\Core\Database\ColumnSchema;
 use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Enums\DbComparisonOperators;
+use DreamFactory\Core\Enums\DbLogicalOperators;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\NotImplementedException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbTableResource;
-use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
 use DreamFactory\Core\Utility\DbUtilities;
@@ -455,7 +456,8 @@ class Table extends BaseDbTableResource
                 if (empty($filterString)) {
                     $filterString = $serverFilter;
                 } else {
-                    $filterString = '(' . $filterString . ') AND (' . $serverFilter . ')';
+                    $filterString =
+                        '(' . $filterString . ') ' . DbLogicalOperators::AND_STR . ' (' . $serverFilter . ')';
                 }
             }
 
@@ -468,7 +470,7 @@ class Table extends BaseDbTableResource
                 if (empty($filter)) {
                     $filterArray = $serverFilter;
                 } else {
-                    $filterArray = ['AND', $filterArray, $serverFilter];
+                    $filterArray = [DbLogicalOperators::AND_STR, $filterArray, $serverFilter];
                 }
             }
 
@@ -491,39 +493,40 @@ class Table extends BaseDbTableResource
             return null;
         }
 
-        $search = [' or ', ' and ', ' nor '];
-        $replace = [' OR ', ' AND ', ' NOR '];
-        $filter = trim(str_ireplace($search, $replace, $filter));
-
+        // todo use smarter regex
         // handle logical operators first
-        $ops = array_map('trim', explode(' OR ', $filter));
-        if (count($ops) > 1) {
-            $parts = [];
-            foreach ($ops as $op) {
-                $parts[] = $this->parseFilterString($op, $params, $fields_info);
+        $logicalOperators = DbLogicalOperators::getDefinedConstants();
+        foreach ($logicalOperators as $logicalOp) {
+            if (DbLogicalOperators::NOT_STR === $logicalOp) {
+                // NOT(a = 1)  or NOT (a = 1)format
+                if ((0 === stripos($filter, $logicalOp . '(')) || (0 === stripos($filter, $logicalOp . '('))) {
+                    $parts = trim(substr($filter, 3));
+                    $parts = $this->parseFilterString($parts, $params, $fields_info);
+
+                    return static::localizeOperator($logicalOp) . $parts;
+                }
+            } else {
+                // (a = 1) AND (b = 2) format
+                $paddedOp = ') ' . $logicalOp . ' (';
+                if (false !== $pos = stripos($filter, $paddedOp)) {
+                    $left = trim(substr($filter, 0, $pos));
+                    $right = trim(substr($filter, $pos + strlen($paddedOp)));
+                    $left = $this->parseFilterString($left, $params, $fields_info);
+                    $right = $this->parseFilterString($right, $params, $fields_info);
+
+                    return $left . ') ' . static::localizeOperator($logicalOp) . ' (' . $right;
+                }
+                // (a = 1)AND(b = 2) format
+                $paddedOp = ')' . $logicalOp . '(';
+                if (false !== $pos = stripos($filter, $paddedOp)) {
+                    $left = trim(substr($filter, 0, $pos));
+                    $right = trim(substr($filter, $pos + strlen($paddedOp)));
+                    $left = $this->parseFilterString($left, $params, $fields_info);
+                    $right = $this->parseFilterString($right, $params, $fields_info);
+
+                    return $left . ') ' . static::localizeOperator($logicalOp) . ' (' . $right;
+                }
             }
-
-            return implode(' OR ', $parts);
-        }
-
-        $ops = array_map('trim', explode(' NOR ', $filter));
-        if (count($ops) > 1) {
-            $parts = [];
-            foreach ($ops as $op) {
-                $parts[] = $this->parseFilterString($op, $params, $fields_info);
-            }
-
-            return implode(' NOR ', $parts);
-        }
-
-        $ops = array_map('trim', explode(' AND ', $filter));
-        if (count($ops) > 1) {
-            $parts = [];
-            foreach ($ops as $op) {
-                $parts[] = $this->parseFilterString($op, $params, $fields_info);
-            }
-
-            return implode(' AND ', $parts);
         }
 
         $pure = trim($filter, '()');
@@ -533,103 +536,57 @@ class Table extends BaseDbTableResource
         $filter = $pure;
 
         // the rest should be comparison operators
-        $search = [' eq ', ' ne ', ' gte ', ' lte ', ' gt ', ' lt ', ' in ', ' all ', ' like ', ' <> '];
-        $replace = ['=', '!=', '>=', '<=', '>', '<', ' IN ', ' ALL ', ' LIKE ', '!='];
-        $filter = trim(str_ireplace($search, $replace, $filter));
-
         // Note: order matters here!
-        $sqlOperators = ['!=', '>=', '<=', '=', '>', '<', ' IN ', ' ALL ', ' LIKE '];
+        $sqlOperators = DbComparisonOperators::getParsingOrder();
         foreach ($sqlOperators as $sqlOp) {
-            $ops = explode($sqlOp, $filter);
-            switch (count($ops)) {
-                case 2:
-                    $field = trim($ops[0]);
-                    $negate = false;
-                    if (false !== strpos($field, ' ')) {
-                        $parts = explode(' ', $field);
-                        if ((count($parts) > 2) || (0 !== strcasecmp($parts[1], 'not'))) {
-                            // invalid field side of operator
-                            throw new BadRequestException('Invalid or unparsable field in filter request.');
-                        }
-                        $field = $parts[0];
-                        $negate = true;
-                    }
-                    /** @type ColumnSchema $info */
-                    if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
-                        // This could be SQL injection attempt or bad field
+            $paddedOp = static::padOperator($sqlOp);
+            if (false !== $pos = stripos($filter, $paddedOp)) {
+                $field = trim(substr($filter, 0, $pos));
+                $negate = false;
+                if (false !== strpos($field, ' ')) {
+                    $parts = explode(' ', $field);
+                    if ((count($parts) > 2) || (0 !== strcasecmp($parts[1], trim(DbLogicalOperators::NOT_STR)))) {
+                        // invalid field side of operator
                         throw new BadRequestException('Invalid or unparsable field in filter request.');
                     }
+                    $field = $parts[0];
+                    $negate = true;
+                }
+                /** @type ColumnSchema $info */
+                if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
+                    // This could be SQL injection attempt or bad field
+                    throw new BadRequestException('Invalid or unparsable field in filter request.');
+                }
 
-                    $value = trim($ops[1]);
-                    switch ($sqlOp) {
-                        case ' IN ':
-                        case ' ALL ':
-                            $value = trim($value, '()[]');
-                            $parsed = [];
-                            foreach (explode(',', $value) as $each) {
-                                $parsed[] = $this->parseFilterValue($each, $info, $params);
-                            }
-                            // might look like a bug that we are not appending a ')' to the end,
-                            // but the $rightParen below takes care of it.
-                            $value = '(' . implode(',', $parsed);
-                            break;
-                        default:
-                            $value = $this->parseFilterValue($value, $info, $params);
-                            break;
+                $value = trim(substr($filter, $pos + strlen($paddedOp)));
+                if (DbComparisonOperators::requiresValueList($sqlOp)) {
+                    $value = trim($value, '()[]');
+                    $parsed = [];
+                    foreach (explode(',', $value) as $each) {
+                        $parsed[] = $this->parseFilterValue($each, $info, $params);
                     }
+                    // might look like a bug that we are not appending a ')' to the end,
+                    // but the $rightParen below takes care of it.
+                    $value = '(' . implode(',', $parsed);
+                } elseif (!DbComparisonOperators::requiresNoValue($sqlOp)) {
+                    $value = $this->parseFilterValue($value, $info, $params);
+                }
 
-                    if ($negate) {
-                        $sqlOp = 'NOT ' . $sqlOp;
-                    }
+                $sqlOp = static::localizeOperator($sqlOp);
+                if ($negate) {
+                    $sqlOp = DbLogicalOperators::NOT_STR . ' ' . $sqlOp;
+                }
 
-                    $out = $info->parseFieldForFilter() . " $sqlOp $value";
-                    if ($leftParen) {
-                        $out = $leftParen . $out;
-                    }
-                    if ($rightParen) {
-                        $out .= $rightParen;
-                    }
+                $out = $info->parseFieldForFilter() . " $sqlOp $value";
+                if ($leftParen) {
+                    $out = $leftParen . $out;
+                }
+                if ($rightParen) {
+                    $out .= $rightParen;
+                }
 
-                    return $out;
+                return $out;
             }
-        }
-
-        if (0 === strcasecmp(' IS NULL', substr($filter, -8))) {
-            $field = trim(substr($filter, 0, -8));
-            /** @type ColumnSchema $info */
-            if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
-                // This could be SQL injection attempt or bad field
-                throw new BadRequestException('Invalid or unparsable field in filter request.');
-            }
-
-            $out = $info->parseFieldForFilter() . ' IS NULL';
-            if ($leftParen) {
-                $out = $leftParen . $out;
-            }
-            if ($rightParen) {
-                $out .= $rightParen;
-            }
-
-            return $out;
-        }
-
-        if (0 === strcasecmp(' IS NOT NULL', substr($filter, -12))) {
-            $field = trim(substr($filter, 0, -12));
-            /** @type ColumnSchema $info */
-            if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
-                // This could be SQL injection attempt or bad field
-                throw new BadRequestException('Invalid or unparsable field in filter request.');
-            }
-
-            $out = $info->parseFieldForFilter() . ' IS NOT NULL';
-            if ($leftParen) {
-                $out = $leftParen . $out;
-            }
-            if ($rightParen) {
-                $out .= $rightParen;
-            }
-
-            return $out;
         }
 
         // This could be SQL injection attempt or unsupported filter arrangement
@@ -925,6 +882,15 @@ class Table extends BaseDbTableResource
         return array_merge($data, $relatedData);
     }
 
+    /**
+     * @param      $path
+     * @param null $params
+     *
+     * @return mixed|null
+     * @throws \DreamFactory\Core\Exceptions\ForbiddenException
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     * @throws \DreamFactory\Core\Exceptions\RestException
+     */
     protected function retrieveVirtualRecords($path, $params = null)
     {
         $result = null;
@@ -1000,14 +966,21 @@ class Table extends BaseDbTableResource
         }
     }
 
-    protected function replaceWithAliases(&$table, array &$fields, $service_id = null)
+    /**
+     * @param string $service
+     * @param string $table
+     * @param array  $fields
+     *
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     * @throws \DreamFactory\Core\Exceptions\RestException
+     */
+    protected function replaceWithAliases($service, &$table, array &$fields)
     {
         // Need schema to get aliases
-        if (isset($service_id)) {
+        if ($service !== $this->getServiceName()) {
             // non-native service relation, go get it
-            $serviceName = Service::getCachedNameById($service_id);
             // Need schema to get aliases
-            $path = $serviceName . '/_schema/' . $table;
+            $path = $service . '/_schema/' . $table;
             $refSchema = $this->retrieveVirtualRecords($path);
             if (isset($refSchema)) {
                 if (!empty($refSchema['alias'])) {
@@ -1028,7 +1001,6 @@ class Table extends BaseDbTableResource
                 }
             }
         } else {
-            $serviceName = $this->getServiceName();
             $refSchema = $this->dbConn->getSchema()->getTable($table);
             $table = $refSchema->getName(true);
             foreach ($fields as &$field) {
@@ -1037,8 +1009,6 @@ class Table extends BaseDbTableResource
                 }
             }
         }
-
-        return $serviceName;
     }
 
     /**
@@ -1073,9 +1043,8 @@ class Table extends BaseDbTableResource
             case RelationSchema::HAS_MANY:
                 $filterTable = $relation->refTable;
                 $filterFields = [$relation->refFields];
-                $serviceName =
-                    $this->replaceWithAliases($filterTable, $filterFields,
-                        ($relation->isForeignService ? $relation->refServiceId : null));
+                $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+                $this->replaceWithAliases($serviceName, $filterTable, $filterFields);
 
                 // check for access
                 Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
@@ -1084,9 +1053,9 @@ class Table extends BaseDbTableResource
                 $filter = '';
                 foreach ($filterFields as $filterField) {
                     if (!empty($filter)) {
-                        $filter .= ' AND ';
+                        $filter .= ' ' . DbLogicalOperators::AND_STR . ' ';
                     }
-                    $filter .= "$filterField = $fieldVal";
+                    $filter .= "($filterField = $fieldVal)";
                 }
                 $filter = urlencode($filter);
                 $path = $serviceName . '/_table/' . $filterTable . '/?filter=' . $filter;
@@ -1109,14 +1078,16 @@ class Table extends BaseDbTableResource
                 $junctionTable = $relation->junctionTable;
                 $junctionFields = [$relation->junctionField, $relation->junctionRefField];
                 $serviceName =
-                    $this->replaceWithAliases($junctionTable, $junctionFields,
-                        ($relation->isForeignJunctionService ? $relation->junctionServiceId : null));
+                    ($relation->isForeignJunctionService ? $relation->junctionService : $this->getServiceName());
+                $this->replaceWithAliases($serviceName, $junctionTable, $junctionFields);
 
                 // check for access
                 Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $junctionTable);
 
                 // Get records
-                $filter = "{$junctionFields[0]} = $fieldVal AND ({$junctionFields[1]} IS NOT NULL)";
+                $filter = '(' . $junctionFields[0] . ' = ' . $fieldVal . ')';
+                $filter .= static::padOperator(DbLogicalOperators::AND_STR);
+                $filter .= '(' . $junctionFields[1] . ' ' . DbComparisonOperators::IS_NOT_NULL . ')';
                 $filter = urlencode($filter);
                 $path = $serviceName . '/_table/' . $junctionTable . '/?filter=' . $filter;
 
@@ -1134,9 +1105,8 @@ class Table extends BaseDbTableResource
                 if (!empty($relatedIds)) {
                     $filterTable = $relation->refTable;
                     $filterFields = [$relation->refFields];
-                    $serviceName =
-                        $this->replaceWithAliases($filterTable, $filterFields,
-                            ($relation->isForeignService ? $relation->refServiceId : null));
+                    $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+                    $this->replaceWithAliases($serviceName, $filterTable, $filterFields);
 
                     // check for access
                     Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
@@ -1255,9 +1225,8 @@ class Table extends BaseDbTableResource
             if (!empty($upsertMany)) {
                 $filterTable = $relation->refTable;
                 $filterFields = [$pkField];
-                $serviceName =
-                    $this->replaceWithAliases($filterTable, $filterFields,
-                        ($relation->isForeignService ? $relation->refServiceId : null));
+                $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+                $this->replaceWithAliases($serviceName, $filterTable, $filterFields);
 
                 // check for access
                 Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
@@ -1356,6 +1325,17 @@ class Table extends BaseDbTableResource
         }
     }
 
+    /**
+     * @param $table
+     * @param $linkerFields
+     * @param $linkerIds
+     * @param $parsed
+     * @param $ssFilters
+     *
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     * @throws \DreamFactory\Core\Exceptions\NotImplementedException
+     */
     protected function updateForeignRecords($table, $linkerFields, $linkerIds, $parsed, $ssFilters)
     {
         if (empty($parsed)) {
@@ -1382,6 +1362,16 @@ class Table extends BaseDbTableResource
         }
     }
 
+    /**
+     * @param      $table
+     * @param      $linkerFields
+     * @param      $linkerIds
+     * @param      $ssFilters
+     * @param null $addCondition
+     *
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     * @throws \DreamFactory\Core\Exceptions\NotImplementedException
+     */
     protected function deleteForeignRecords($table, $linkerFields, $linkerIds, $ssFilters, $addCondition = null)
     {
         $builder = $this->dbConn->getSchema()->getCommandBuilder();
@@ -1449,9 +1439,8 @@ class Table extends BaseDbTableResource
 
             $junctionTable = $relation->junctionTable;
             $junctionFields = [$relation->junctionField, $relation->junctionRefField];
-            $serviceName =
-                $this->replaceWithAliases($junctionTable, $junctionFields,
-                    ($relation->isForeignJunctionService ? $relation->junctionServiceId : null));
+            $serviceName = ($relation->isForeignJunctionService ? $relation->junctionService : $this->getServiceName());
+            $this->replaceWithAliases($serviceName, $junctionTable, $junctionFields);
 
             // check for access
             Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $junctionTable);
@@ -1522,9 +1511,8 @@ class Table extends BaseDbTableResource
             if (!empty($upsertMany)) {
                 $filterTable = $relation->refTable;
                 $filterFields = [$pkManyField];
-                $serviceName =
-                    $this->replaceWithAliases($filterTable, $filterFields,
-                        ($relation->isForeignService ? $relation->refServiceId : null));
+                $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+                $this->replaceWithAliases($serviceName, $filterTable, $filterFields);
 
                 // check for access
                 Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
@@ -1541,7 +1529,7 @@ class Table extends BaseDbTableResource
                 $matchIds = $this->retrieveVirtualRecords($path);
 
                 foreach ($upsertMany as $uId => $record) {
-                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $filterField, $uId)) {
+                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $filterFields[0], $uId)) {
                         $updateMany[] = $record;
                     } else {
                         $insertMany[] = $record;
@@ -1637,7 +1625,7 @@ class Table extends BaseDbTableResource
         }
 
         $sql = '';
-        $combiner = ArrayUtils::get($filter_info, 'filter_op', 'and');
+        $combiner = ArrayUtils::get($filter_info, 'filter_op', DbLogicalOperators::AND_STR);
         foreach ($filters as $key => $filter) {
             if (!empty($sql)) {
                 $sql .= " $combiner ";
@@ -1653,17 +1641,13 @@ class Table extends BaseDbTableResource
                 throw new InternalServerErrorException('Invalid server-side filter configuration detected.');
             }
 
-            switch ($op) {
-                case 'is null':
-                case 'is not null':
-                    $sql .= $this->dbConn->quoteColumnName($name) . " $op";
-                    break;
-                default:
-                    $paramName = ':ssf_' . $name . '_' . $key;
-                    $params[$paramName] = $value;
-                    $value = $paramName;
-                    $sql .= $this->dbConn->quoteColumnName($name) . " $op $value";
-                    break;
+            if (DbComparisonOperators::requiresNoValue($op)) {
+                $sql .= '(' . $this->dbConn->quoteColumnName($name) . " $op)";
+            } else {
+                $paramName = ':ssf_' . $name . '_' . $key;
+                $params[$paramName] = $value;
+                $value = $paramName;
+                $sql .= '(' . $this->dbConn->quoteColumnName($name) . " $op $value)";
             }
         }
 
