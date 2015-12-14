@@ -7,6 +7,7 @@ use DreamFactory\Core\Contracts\CacheInterface;
 use DreamFactory\Core\Database\Connection;
 use DreamFactory\Core\Database\ConnectionFactory;
 use DreamFactory\Core\Database\DbExtrasInterface;
+use DreamFactory\Core\Database\TableSchema;
 use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Services\BaseDbService;
@@ -160,7 +161,7 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
      * @param bool        $refresh
      * @param bool        $use_alias
      *
-     * @return \DreamFactory\Core\Database\TableNameSchema[]
+     * @return TableSchema[]
      * @throws \Exception
      */
     public function getTableNames($schema = null, $refresh = false, $use_alias = false)

@@ -1012,6 +1012,27 @@ class Table extends BaseDbTableResource
     }
 
     /**
+     * @param string $service
+     * @param string $table
+     *
+     * @return array
+     */
+    protected function retrieveSchema($service, &$table)
+    {
+        // Need schema to get aliases
+        if ($service !== $this->getServiceName()) {
+            // non-native service relation, go get it
+            // Need schema to get aliases
+            $path = $service . '/_schema/' . $table;
+            $refSchema = $this->retrieveVirtualRecords($path);
+        } else {
+            $refSchema = $this->dbConn->getSchema()->getTable($table)->toArray();
+        }
+
+        return $refSchema;
+    }
+
+    /**
      * @param TableSchema    $schema
      * @param RelationSchema $relation
      * @param array          $data
@@ -1152,6 +1173,7 @@ class Table extends BaseDbTableResource
         if (empty($one_id)) {
             throw new BadRequestException("The $one_table id can not be empty.");
         }
+
         if ($relation->isForeignService) {
             throw new BadRequestException('Updating relationship across service boundaries not yet supported.');
         }
@@ -1173,13 +1195,20 @@ class Table extends BaseDbTableResource
             $pkField = $pksInfo[0]->name;
             $pkFields = [$pkField];
             $deleteRelated = (!$fieldInfo->allowNull && $allow_delete);
+
+            $aliasedTable = $relation->refTable;
+            $aliasedFields = [$pkField];
+            $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+            $this->replaceWithAliases($serviceName, $aliasedTable, $aliasedFields);
+
+
+            // figure out which batch each related record falls into
             $relateMany = [];
             $disownMany = [];
             $insertMany = [];
             $updateMany = [];
             $upsertMany = [];
             $deleteMany = [];
-
             foreach ($many_records as $item) {
                 $id = ArrayUtils::get($item, $pkField);
                 if (empty($id)) {
@@ -1223,27 +1252,22 @@ class Table extends BaseDbTableResource
 
             // resolve any upsert situations
             if (!empty($upsertMany)) {
-                $filterTable = $relation->refTable;
-                $filterFields = [$pkField];
-                $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
-                $this->replaceWithAliases($serviceName, $filterTable, $filterFields);
-
                 // check for access
-                Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
+                Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $aliasedTable);
 
                 // Get records
                 $checkIds = array_keys($upsertMany);
                 if (count($checkIds) > 1) {
-                    $filter = $filterFields[0] . ' IN (' . implode(',', $checkIds) . ')';
+                    $filter = $aliasedFields[0] . ' IN (' . implode(',', $checkIds) . ')';
                 } else {
-                    $filter = $filterFields[0] . ' = ' . $checkIds[0];
+                    $filter = $aliasedFields[0] . ' = ' . $checkIds[0];
                 }
                 $filter = urlencode($filter);
-                $path = $serviceName . '/_table/' . $filterTable . '/?filter=' . $filter;
+                $path = $serviceName . '/_table/' . $aliasedTable . '/?filter=' . $filter;
                 $matchIds = $this->retrieveVirtualRecords($path);
 
                 foreach ($upsertMany as $uId => $record) {
-                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $filterFields[0], $uId)) {
+                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $aliasedFields[0], $uId)) {
                         $updateMany[] = $record;
                     } else {
                         $insertMany[] = $record;
@@ -1251,11 +1275,12 @@ class Table extends BaseDbTableResource
                 }
             }
 
+            // Now handle the batches
             if (!empty($insertMany)) {
                 // create new children
                 // do we have permission to do so?
-                $this->validateTableAccess($relation->refTable, Verbs::POST);
-                $ssFilters = Session::getServiceFilters(Verbs::POST, $this->getServiceName(), $relation->refTable);
+                Session::checkServicePermission(Verbs::POST, $serviceName, '/_table/' . $aliasedTable);
+                $ssFilters = Session::getServiceFilters(Verbs::POST, $serviceName, $relation->refTable);
                 /** @var Command $command */
                 $command = $this->dbConn->createCommand();
 
@@ -1275,15 +1300,15 @@ class Table extends BaseDbTableResource
             if (!empty($deleteMany)) {
                 // destroy linked children that can't stand alone - sounds sinister
                 // do we have permission to do so?
-                $this->validateTableAccess($relation->refTable, Verbs::DELETE);
-                $ssFilters = Session::getServiceFilters(Verbs::DELETE, $this->getServiceName(), $relation->refTable);
+                Session::checkServicePermission(Verbs::DELETE, $serviceName, '/_table/' . $aliasedTable);
+                $ssFilters = Session::getServiceFilters(Verbs::DELETE, $serviceName, $relation->refTable);
                 $this->deleteForeignRecords($relation->refTable, $pkFields, $deleteMany, $ssFilters);
             }
 
             if (!empty($updateMany) || !empty($relateMany) || !empty($disownMany)) {
                 // do we have permission to do so?
-                $this->validateTableAccess($relation->refTable, Verbs::PUT);
-                $ssFilters = Session::getServiceFilters(Verbs::PUT, $this->getServiceName(), $relation->refTable);
+                Session::checkServicePermission(Verbs::PUT, $serviceName, '/_table/' . $aliasedTable);
+                $ssFilters = Session::getServiceFilters(Verbs::PUT, $serviceName, $relation->refTable);
 
                 if (!empty($updateMany)) {
                     // update existing and adopt new children
