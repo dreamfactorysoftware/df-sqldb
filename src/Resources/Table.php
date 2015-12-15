@@ -778,6 +778,7 @@ class Table extends BaseDbTableResource
             $id = @current($id);
         }
 
+        $schema = $this->getTableSchema(null, $table);
         $record = array_change_key_case($record, CASE_LOWER);
         foreach ($relations as $name => $relationInfo) {
             if (array_key_exists($name, $record)) {
@@ -788,7 +789,7 @@ class Table extends BaseDbTableResource
                         break;
                     case RelationSchema::HAS_MANY:
                         $this->assignManyToOne(
-                            $table,
+                            $schema,
                             $id,
                             $relationInfo,
                             $relatedRecords,
@@ -796,8 +797,8 @@ class Table extends BaseDbTableResource
                         );
                         break;
                     case RelationSchema::MANY_MANY:
-                        $this->assignManyToOneByMap(
-                            $table,
+                        $this->assignManyToOneByJunction(
+                            $schema,
                             $id,
                             $relationInfo,
                             $relatedRecords
@@ -891,46 +892,14 @@ class Table extends BaseDbTableResource
      * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
      * @throws \DreamFactory\Core\Exceptions\RestException
      */
-    protected function retrieveVirtualRecords($path, $params = null)
+    protected function retrieveVirtualRecords($serviceName, $resource, $params = null)
     {
-        $result = null;
-        $params = (is_array($params) ? $params : []);
-        if (false !== $pos = strpos($path, '?')) {
-            $paramString = substr($path, $pos + 1);
-            if (!empty($paramString)) {
-                $pArray = explode('&', $paramString);
-                foreach ($pArray as $k => $p) {
-                    if (!empty($p)) {
-                        $tmp = explode('=', $p);
-                        $name = ArrayUtils::get($tmp, 0, $k);
-                        $value = ArrayUtils::get($tmp, 1);
-                        $params[$name] = urldecode($value);
-                    }
-                }
-            }
-            $path = substr($path, 0, $pos);
-        }
-
-        if (false === ($pos = strpos($path, '/'))) {
-            $serviceName = $path;
-            $resource = null;
-        } else {
-            $serviceName = substr($path, 0, $pos);
-            $resource = substr($path, $pos + 1);
-
-            //	Fix removal of trailing slashes from resource
-            if (!empty($resource)) {
-                if ((false === strpos($path, '?') && '/' === substr($path, strlen($path) - 1, 1)) ||
-                    ('/' === substr($path, strpos($path, '?') - 1, 1))
-                ) {
-                    $resource .= '/';
-                }
-            }
-        }
-
         if (empty($serviceName)) {
             return null;
         }
+
+        $result = null;
+        $params = (is_array($params) ? $params : []);
 
         $request = new Service2ServiceRequest(Verbs::GET, $params);
 
@@ -967,6 +936,81 @@ class Table extends BaseDbTableResource
     }
 
     /**
+     * @param string     $serviceName
+     * @param string     $resource
+     * @param string     $verb
+     * @param null|array $records
+     * @param null|array $params
+     *
+     * @return mixed|null
+     * @throws \DreamFactory\Core\Exceptions\ForbiddenException
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     * @throws \DreamFactory\Core\Exceptions\RestException
+     * @internal param $path
+     */
+    protected function handleVirtualRecords($serviceName, $resource, $verb, $records = null, $params = null)
+    {
+        if (empty($serviceName)) {
+            return null;
+        }
+
+        $result = null;
+        $params = (is_array($params) ? $params : []);
+
+        $request = new Service2ServiceRequest($verb, $params);
+        if (!empty($records)) {
+            $records = ResourcesWrapper::wrapResources($records);
+            $request->setContent($records);
+        }
+
+        //  Now set the request object and go...
+        $service = ServiceHandler::getService($serviceName);
+        $response = $service->handleRequest($request, $resource);
+        $content = $response->getContent();
+        $format = $response->getContentFormat();
+        $status = $response->getStatusCode();
+
+        if (empty($content) && is_null($format)) {
+            // No content and type specified. (File stream already handled by service)
+            return null;
+        }
+
+        switch ($status) {
+            case 200:
+            case 201:
+                if (isset($content)) {
+                    return (isset($content['resource']) ? $content['resource'] : $content);
+                }
+
+                throw new InternalServerErrorException('Virtual query succeeded but returned invalid format.');
+                break;
+            default:
+                if (isset($content, $content['error'])) {
+                    $error = $content['error'];
+                    extract($error);
+                    /** @noinspection PhpUndefinedVariableInspection */
+                    throw new RestException($status, $message, $code);
+                }
+
+                throw new RestException($status, 'Virtual query failed but returned invalid format.');
+        }
+    }
+
+    protected function getTableSchema($service, $table)
+    {
+        if (!empty($service) && ($service !== $this->getServiceName())) {
+            // non-native service relation, go get it
+            if (!empty($result = $this->retrieveVirtualRecords($service, '_schema/' . $table))) {
+                return new TableSchema($result);
+            }
+        } else {
+            return $this->dbConn->getSchema()->getTable($table);
+        }
+
+        return null;
+    }
+
+    /**
      * @param string $service
      * @param string $table
      * @param array  $fields
@@ -976,32 +1020,7 @@ class Table extends BaseDbTableResource
      */
     protected function replaceWithAliases($service, &$table, array &$fields)
     {
-        // Need schema to get aliases
-        if ($service !== $this->getServiceName()) {
-            // non-native service relation, go get it
-            // Need schema to get aliases
-            $path = $service . '/_schema/' . $table;
-            $refSchema = $this->retrieveVirtualRecords($path);
-            if (isset($refSchema)) {
-                if (!empty($refSchema['alias'])) {
-                    $table = $refSchema['alias'];
-                }
-                if (!empty($fields)) {
-                    if (!empty($refSchema['field']) && is_array($refSchema['field'])) {
-                        foreach ($refSchema['field'] as $fieldInfo) {
-                            foreach ($fields as &$field) {
-                                if (!empty($fieldInfo['name']) && ($field === $fieldInfo['name'])) {
-                                    if (isset($fieldInfo['alias'])) {
-                                        $field = $fieldInfo['alias'];
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            $refSchema = $this->dbConn->getSchema()->getTable($table);
+        if (!empty($refSchema = $this->getTableSchema($service, $table))) {
             $table = $refSchema->getName(true);
             foreach ($fields as &$field) {
                 if (!empty($temp = $refSchema->getColumn($field))) {
@@ -1009,27 +1028,6 @@ class Table extends BaseDbTableResource
                 }
             }
         }
-    }
-
-    /**
-     * @param string $service
-     * @param string $table
-     *
-     * @return array
-     */
-    protected function retrieveSchema($service, &$table)
-    {
-        // Need schema to get aliases
-        if ($service !== $this->getServiceName()) {
-            // non-native service relation, go get it
-            // Need schema to get aliases
-            $path = $service . '/_schema/' . $table;
-            $refSchema = $this->retrieveVirtualRecords($path);
-        } else {
-            $refSchema = $this->dbConn->getSchema()->getTable($table)->toArray();
-        }
-
-        return $refSchema;
     }
 
     /**
@@ -1059,29 +1057,23 @@ class Table extends BaseDbTableResource
             }
         }
 
+        $extras = ArrayUtils::clean($extras);
         switch ($relation->type) {
             case RelationSchema::BELONGS_TO:
             case RelationSchema::HAS_MANY:
-                $filterTable = $relation->refTable;
-                $filterFields = [$relation->refFields];
-                $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
-                $this->replaceWithAliases($serviceName, $filterTable, $filterFields);
+                $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+                $refSchema = $this->getTableSchema($relation->refService, $relation->refTable);
+                $refTable = $refSchema->getName(true);
+                if (empty($refField = $refSchema->getColumn($relation->refFields))) {
+                    throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+                }
 
                 // check for access
-                Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
+                Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                 // Get records
-                $filter = '';
-                foreach ($filterFields as $filterField) {
-                    if (!empty($filter)) {
-                        $filter .= ' ' . DbLogicalOperators::AND_STR . ' ';
-                    }
-                    $filter .= "($filterField = $fieldVal)";
-                }
-                $filter = urlencode($filter);
-                $path = $serviceName . '/_table/' . $filterTable . '/?filter=' . $filter;
-
-                $relatedRecords = $this->retrieveVirtualRecords($path, $extras);
+                $extras[ApiOptions::FILTER] = '(' . $refField->getName(true) . ' = ' . $fieldVal . ')';
+                $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
                 if (RelationSchema::BELONGS_TO === $relation->type) {
                     return (!empty($relatedRecords) ? ArrayUtils::get($relatedRecords, 0) : null);
                 }
@@ -1089,58 +1081,57 @@ class Table extends BaseDbTableResource
                 return $relatedRecords;
                 break;
             case RelationSchema::MANY_MANY:
-                if (empty($relation->junctionTable) ||
-                    empty($relation->junctionField) ||
-                    empty($relation->junctionRefField)
+                $junctionService =
+                    ($relation->isForeignJunctionService ? $relation->junctionService : $this->getServiceName());
+                $junctionSchema = $this->getTableSchema($junctionService, $relation->junctionTable);
+                $junctionTable = $junctionSchema->getName(true);
+                $junctionField = $junctionSchema->getColumn($relation->junctionField);
+                $junctionRefField = $junctionSchema->getColumn($relation->junctionRefField);
+                if (empty($junctionTable) ||
+                    empty($junctionField) ||
+                    empty($junctionRefField)
                 ) {
                     throw new InternalServerErrorException('Many to many relationship not configured properly.');
                 }
 
-                $junctionTable = $relation->junctionTable;
-                $junctionFields = [$relation->junctionField, $relation->junctionRefField];
-                $serviceName =
-                    ($relation->isForeignJunctionService ? $relation->junctionService : $this->getServiceName());
-                $this->replaceWithAliases($serviceName, $junctionTable, $junctionFields);
-
                 // check for access
-                Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $junctionTable);
+                Session::checkServicePermission(Verbs::GET, $junctionService, '_table/' . $junctionTable);
 
                 // Get records
-                $filter = '(' . $junctionFields[0] . ' = ' . $fieldVal . ')';
+                $filter = '(' . $junctionField->getName(true) . ' = ' . $fieldVal . ')';
                 $filter .= static::padOperator(DbLogicalOperators::AND_STR);
-                $filter .= '(' . $junctionFields[1] . ' ' . DbComparisonOperators::IS_NOT_NULL . ')';
-                $filter = urlencode($filter);
-                $path = $serviceName . '/_table/' . $junctionTable . '/?filter=' . $filter;
-
-                $joinData = $this->retrieveVirtualRecords($path, [ApiOptions::FIELDS => $junctionFields[1]]);
+                $filter .= '(' . $junctionRefField->getName(true) . ' ' . DbComparisonOperators::IS_NOT_NULL . ')';
+                $temp = [ApiOptions::FILTER => $filter, ApiOptions::FIELDS => $junctionRefField->getName(true)];
+                $joinData = $this->retrieveVirtualRecords($junctionService, '_table/' . $junctionTable, $temp);
                 if (empty($joinData)) {
                     return [];
                 }
 
                 $relatedIds = [];
                 foreach ($joinData as $record) {
-                    if (null !== $rightValue = ArrayUtils::get($record, $junctionFields[1])) {
+                    if (null !== $rightValue = ArrayUtils::get($record, $junctionRefField->getName(true))) {
                         $relatedIds[] = $rightValue;
                     }
                 }
                 if (!empty($relatedIds)) {
-                    $filterTable = $relation->refTable;
-                    $filterFields = [$relation->refFields];
-                    $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
-                    $this->replaceWithAliases($serviceName, $filterTable, $filterFields);
+                    $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+                    $refSchema = $this->getTableSchema($relation->refService, $relation->refTable);
+                    $refTable = $refSchema->getName(true);
+                    if (empty($refField = $refSchema->getColumn($relation->refFields))) {
+                        throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+                    }
 
                     // check for access
-                    Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
+                    Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                     // Get records
                     if (count($relatedIds) > 1) {
-                        $filter = $filterFields[0] . ' IN (' . implode(',', $relatedIds) . ')';
+                        $filter = $refField->getName(true) . ' IN (' . implode(',', $relatedIds) . ')';
                     } else {
-                        $filter = $filterFields[0] . ' = ' . $relatedIds[0];
+                        $filter = $refField->getName(true) . ' = ' . $relatedIds[0];
                     }
-                    $filter = urlencode($filter);
-                    $path = $serviceName . '/_table/' . $filterTable . '/?filter=' . $filter;
-                    $relatedRecords = $this->retrieveVirtualRecords($path, $extras);
+                    $extras[ApiOptions::FILTER] = $filter;
+                    $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
 
                     return $relatedRecords;
                 }
@@ -1154,7 +1145,7 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param string         $one_table
+     * @param TableSchema    $one_table
      * @param string         $one_id
      * @param RelationSchema $relation
      * @param array          $many_records
@@ -1164,43 +1155,40 @@ class Table extends BaseDbTableResource
      * @return void
      */
     protected function assignManyToOne(
-        $one_table,
+        TableSchema $one_table,
         $one_id,
         RelationSchema $relation,
         $many_records = [],
         $allow_delete = false
     ){
         if (empty($one_id)) {
-            throw new BadRequestException("The $one_table id can not be empty.");
-        }
-
-        if ($relation->isForeignService) {
-            throw new BadRequestException('Updating relationship across service boundaries not yet supported.');
+            throw new BadRequestException("The {$one_table->getName(true)} id can not be empty.");
         }
 
         try {
-            $manyFields = $this->getFieldsInfo($relation->refTable);
-            /** @type ColumnSchema $fieldInfo */
-            if (null === $fieldInfo = ArrayUtils::get($manyFields, strtolower($relation->refFields))) {
-                throw new InternalServerErrorException("Relationship field '{$relation->refFields}' not found in schema.");
+            $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+            $refSchema = $this->getTableSchema($refService, $relation->refTable);
+            $refTable = $refSchema->getName(true);
+            if (empty($refField = $refSchema->getColumn($relation->refFields))) {
+                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
             }
 
-            $pksInfo = static::getPrimaryKeys($manyFields);
-            if (1 !== count($pksInfo)) {
-                // todo How to handle multiple primary keys?
-                throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+            if (is_array($refSchema->primaryKey)) {
+                if (1 < count($refSchema->primaryKey)) {
+                    // todo How to handle multiple primary keys?
+                    throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+                } else {
+                    $pkField = $refSchema->primaryKey[0];
+                }
+            } else {
+                $pkField = $refSchema->primaryKey;
             }
+            $pkField = $refSchema->getColumn($pkField);
 
-            $pkAutoSet = $pksInfo[0]->autoIncrement;
-            $pkField = $pksInfo[0]->name;
-            $pkFields = [$pkField];
-            $deleteRelated = (!$fieldInfo->allowNull && $allow_delete);
-
-            $aliasedTable = $relation->refTable;
-            $aliasedFields = [$pkField];
-            $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
-            $this->replaceWithAliases($serviceName, $aliasedTable, $aliasedFields);
-
+            $pkAutoSet = $pkField->autoIncrement;
+            $pkFieldAlias = $pkField->getName(true);
+            $refFieldAlias = $refField->getName(true);
+            $deleteRelated = (!$refField->allowNull && $allow_delete);
 
             // figure out which batch each related record falls into
             $relateMany = [];
@@ -1210,23 +1198,23 @@ class Table extends BaseDbTableResource
             $upsertMany = [];
             $deleteMany = [];
             foreach ($many_records as $item) {
-                $id = ArrayUtils::get($item, $pkField);
+                $id = ArrayUtils::get($item, $pkFieldAlias);
                 if (empty($id)) {
                     if (!$pkAutoSet) {
-                        throw new BadRequestException("Related record has no primary key value for '$pkField'.");
+                        throw new BadRequestException("Related record has no primary key value for '$pkFieldAlias'.");
                     }
 
                     // create new child record
-                    $item[$relation->refFields] = $one_id; // assign relationship
+                    $item[$refFieldAlias] = $one_id; // assign relationship
                     $insertMany[] = $item;
                 } else {
-                    if (array_key_exists($relation->refFields, $item)) {
-                        if (null == ArrayUtils::get($item, $relation->refFields, null, true)) {
+                    if (array_key_exists($refFieldAlias, $item)) {
+                        if (null == ArrayUtils::get($item, $refFieldAlias, null, true)) {
                             // disown this child or delete them
                             if ($deleteRelated) {
                                 $deleteMany[] = $id;
                             } elseif (count($item) > 1) {
-                                $item[$relation->refFields] = null; // assign relationship
+                                $item[$refFieldAlias] = null; // assign relationship
                                 $updateMany[] = $item;
                             } else {
                                 $disownMany[] = $id;
@@ -1238,7 +1226,7 @@ class Table extends BaseDbTableResource
 
                     // update or upsert this child
                     if (count($item) > 1) {
-                        $item[$relation->refFields] = $one_id; // assign relationship
+                        $item[$refFieldAlias] = $one_id; // assign relationship
                         if ($pkAutoSet) {
                             $updateMany[] = $item;
                         } else {
@@ -1253,21 +1241,20 @@ class Table extends BaseDbTableResource
             // resolve any upsert situations
             if (!empty($upsertMany)) {
                 // check for access
-                Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $aliasedTable);
+                Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                 // Get records
                 $checkIds = array_keys($upsertMany);
                 if (count($checkIds) > 1) {
-                    $filter = $aliasedFields[0] . ' IN (' . implode(',', $checkIds) . ')';
+                    $filter = $pkFieldAlias . ' IN (' . implode(',', $checkIds) . ')';
                 } else {
-                    $filter = $aliasedFields[0] . ' = ' . $checkIds[0];
+                    $filter = $pkFieldAlias . ' = ' . $checkIds[0];
                 }
-                $filter = urlencode($filter);
-                $path = $serviceName . '/_table/' . $aliasedTable . '/?filter=' . $filter;
-                $matchIds = $this->retrieveVirtualRecords($path);
+                $temp = [ApiOptions::FILTER => $filter];
+                $matchIds = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $temp);
 
                 foreach ($upsertMany as $uId => $record) {
-                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $aliasedFields[0], $uId)) {
+                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $pkFieldAlias, $uId)) {
                         $updateMany[] = $record;
                     } else {
                         $insertMany[] = $record;
@@ -1278,153 +1265,189 @@ class Table extends BaseDbTableResource
             // Now handle the batches
             if (!empty($insertMany)) {
                 // create new children
-                // do we have permission to do so?
-                Session::checkServicePermission(Verbs::POST, $serviceName, '/_table/' . $aliasedTable);
-                $ssFilters = Session::getServiceFilters(Verbs::POST, $serviceName, $relation->refTable);
-                /** @var Command $command */
-                $command = $this->dbConn->createCommand();
-
-                foreach ($insertMany as $record) {
-                    $parsed = $this->parseRecord($record, $manyFields, $ssFilters);
-                    if (empty($parsed)) {
-                        throw new BadRequestException('No valid fields were found in record.');
-                    }
-
-                    $rows = $command->insert($relation->refTable, $parsed);
-                    if (0 >= $rows) {
-                        throw new InternalServerErrorException("Creating related {$relation->refTable} records failed.");
-                    }
-                }
+                $this->createForeignRecords($refService, $refSchema, $insertMany);
             }
 
             if (!empty($deleteMany)) {
                 // destroy linked children that can't stand alone - sounds sinister
-                // do we have permission to do so?
-                Session::checkServicePermission(Verbs::DELETE, $serviceName, '/_table/' . $aliasedTable);
-                $ssFilters = Session::getServiceFilters(Verbs::DELETE, $serviceName, $relation->refTable);
-                $this->deleteForeignRecords($relation->refTable, $pkFields, $deleteMany, $ssFilters);
+                $this->deleteForeignRecords($refService, $refSchema, $pkField, $deleteMany);
             }
 
-            if (!empty($updateMany) || !empty($relateMany) || !empty($disownMany)) {
-                // do we have permission to do so?
-                Session::checkServicePermission(Verbs::PUT, $serviceName, '/_table/' . $aliasedTable);
-                $ssFilters = Session::getServiceFilters(Verbs::PUT, $serviceName, $relation->refTable);
+            if (!empty($updateMany)) {
+                $this->updateForeignRecords($refService, $refSchema, $pkField, $updateMany);
+            }
 
-                if (!empty($updateMany)) {
-                    // update existing and adopt new children
-                    foreach ($updateMany as $record) {
-                        $pk = ArrayUtils::get($record, $pkField);
-                        $parsed = $this->parseRecord($record, $manyFields, $ssFilters, true);
-                        if (empty($parsed)) {
-                            throw new BadRequestException('No valid fields were found for foreign link updates.');
-                        }
+            if (!empty($relateMany)) {
+                // adopt/relate/link unlinked children
+                $updates = [$refFieldAlias => $one_id];
+                $this->updateForeignRecordsByIds($refService, $refSchema, $pkField, $relateMany, $updates);
+            }
 
-                        $this->updateForeignRecords($relation->refTable, $pkFields, [$pk], $parsed, $ssFilters);
-                    }
-                }
-
-                if (!empty($relateMany)) {
-                    // adopt/relate/link unlinked children
-                    $updates = [$relation->refFields => $one_id];
-                    $parsed = $this->parseRecord($updates, $manyFields, $ssFilters, true);
-                    if (empty($parsed)) {
-                        throw new BadRequestException('No valid fields were found for foreign link updates.');
-                    }
-
-                    $this->updateForeignRecords($relation->refTable, $pkFields, $relateMany, $parsed, $ssFilters);
-                }
-
-                if (!empty($disownMany)) {
-                    // disown/un-relate/unlink linked children
-                    $updates = [$relation->refFields => null];
-                    $parsed = $this->parseRecord($updates, $manyFields, $ssFilters, true);
-                    if (empty($parsed)) {
-                        throw new BadRequestException('No valid fields were found for foreign link updates.');
-                    }
-
-                    $this->updateForeignRecords($relation->refTable, $pkFields, $disownMany, $parsed, $ssFilters);
-                }
+            if (!empty($disownMany)) {
+                // disown/un-relate/unlink linked children
+                $updates = [$refFieldAlias => null];
+                $this->updateForeignRecordsByIds($refService, $refSchema, $pkField, $disownMany, $updates);
             }
         } catch (\Exception $ex) {
             throw new BadRequestException("Failed to update many to one assignment.\n{$ex->getMessage()}");
         }
     }
 
-    /**
-     * @param $table
-     * @param $linkerFields
-     * @param $linkerIds
-     * @param $parsed
-     * @param $ssFilters
-     *
-     * @throws \DreamFactory\Core\Exceptions\BadRequestException
-     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
-     * @throws \DreamFactory\Core\Exceptions\NotImplementedException
-     */
-    protected function updateForeignRecords($table, $linkerFields, $linkerIds, $parsed, $ssFilters)
+    protected function createForeignRecords($service, TableSchema $schema, $records)
     {
-        if (empty($parsed)) {
-            throw new BadRequestException('No valid fields were found for foreign record updates.');
-        }
-        $builder = $this->dbConn->getSchema()->getCommandBuilder();
-        $criteria = $builder->createCriteria();
-        if (1 === count($linkerFields)) {
-            $pkField = $linkerFields[0];
-            $criteria->addInCondition($this->dbConn->quoteColumnName($pkField), $linkerIds);
+        // do we have permission to do so?
+        Session::checkServicePermission(Verbs::POST, $service, '_table/' . $schema->getName(true));
+        if (!empty($service) && ($service !== $this->getServiceName())) {
+            $newIds = $this->handleVirtualRecords($service, '_table/' . $schema->getName(true), Verbs::POST, $records);
         } else {
-            // todo How to handle multiple primary keys?
-            throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-        }
-        $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
-        if (!empty($serverFilter)) {
-            $criteria->addCondition($serverFilter);
+            /** @var Command $command */
+            $command = $this->dbConn->createCommand();
+            $tableName = $schema->getName();
+            $fields = $schema->getColumns(true);
+            $ssFilters = Session::getServiceFilters(Verbs::POST, $service, $schema->getName(true));
+            $newIds = [];
+            foreach ($records as $record) {
+                $parsed = $this->parseRecord($record, $fields, $ssFilters);
+                if (empty($parsed)) {
+                    throw new BadRequestException('No valid fields were found in record.');
+                }
+
+                $rows = $command->insert($tableName, $parsed);
+                if (0 >= $rows) {
+                    throw new InternalServerErrorException("Creating related $tableName records failed.");
+                }
+                $sequenceName = $schema->sequenceName;
+                $newIds[] = (int)$this->dbConn->getLastInsertID($sequenceName);
+            }
         }
 
-        $command = $this->dbConn->createCommand();
-        $rows = $command->update($table, $parsed, $criteria->condition, $criteria->params);
-        if (0 >= $rows) {
+        return $newIds;
+    }
+
+    protected function updateForeignRecords(
+        $service,
+        TableSchema $schema,
+        ColumnSchema $linkerField,
+        $records
+    ){
+        // do we have permission to do so?
+        Session::checkServicePermission(Verbs::PUT, $service, '_table/' . $schema->getName(true));
+        if (!empty($service) && ($service !== $this->getServiceName())) {
+            $this->handleVirtualRecords($service, '_table/' . $schema->getName(true), Verbs::PATCH, $records);
+        } else {
+            $command = $this->dbConn->createCommand();
+            $builder = $this->dbConn->getSchema()->getCommandBuilder();
+            $fields = $schema->getColumns(true);
+            $ssFilters = Session::getServiceFilters(Verbs::PUT, $service, $schema->getName(true));
+            $tableName = $schema->getName();
+            // update existing and adopt new children
+            foreach ($records as $record) {
+                $pk = ArrayUtils::get($record, $linkerField->getName(true));
+                $parsed = $this->parseRecord($record, $fields, $ssFilters, true);
+                if (empty($parsed)) {
+                    throw new BadRequestException('No valid fields were found for foreign link updates.');
+                }
+
+                $criteria = $builder->createCriteria($linkerField->rawName.' = :v1', [':v1' => $pk]);
+                $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+                if (!empty($serverFilter)) {
+                    $criteria->addCondition($serverFilter);
+                }
+
+                $rows = $command->update($tableName, $parsed, $criteria->condition, $criteria->params);
+                if (0 >= $rows) {
 //            throw new NotFoundException( 'No foreign linked records were found using the given identifiers.' );
+                }
+            }
+        }
+    }
+
+    protected function updateForeignRecordsByIds(
+        $service,
+        TableSchema $schema,
+        ColumnSchema $linkerField,
+        $linkerIds,
+        $record
+    ){
+        // do we have permission to do so?
+        Session::checkServicePermission(Verbs::PUT, $service, '_table/' . $schema->getName(true));
+        if (!empty($service) && ($service !== $this->getServiceName())) {
+            $temp = [ApiOptions::IDS => $linkerIds, ApiOptions::ID_FIELD => $linkerField->getName(true)];
+            $this->handleVirtualRecords($service, '_table/' . $schema->getName(true), Verbs::PATCH, $record, $temp);
+        } else {
+            $fields = $schema->getColumns(true);
+            $ssFilters = Session::getServiceFilters(Verbs::PUT, $service, $schema->getName(true));
+            $parsed = $this->parseRecord($record, $fields, $ssFilters, true);
+            if (empty($parsed)) {
+                throw new BadRequestException('No valid fields were found for foreign link updates.');
+            }
+            $builder = $this->dbConn->getSchema()->getCommandBuilder();
+            $criteria = $builder->createCriteria();
+            $criteria->addInCondition($linkerField->rawName, $linkerIds);
+            $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+            if (!empty($serverFilter)) {
+                $criteria->addCondition($serverFilter);
+            }
+
+            $command = $this->dbConn->createCommand();
+            $tableName = $schema->getName();
+            $rows = $command->update($tableName, $parsed, $criteria->condition, $criteria->params);
+            if (0 >= $rows) {
+//            throw new NotFoundException( 'No foreign linked records were found using the given identifiers.' );
+            }
+        }
+    }
+
+    protected function deleteForeignRecords(
+        $service,
+        TableSchema $schema,
+        ColumnSchema $linkerField,
+        $linkerIds,
+        $addCondition = null
+    ){
+        // do we have permission to do so?
+        Session::checkServicePermission(Verbs::DELETE, $service, '_table/' . $schema->getName(true));
+        if (!empty($service) && ($service !== $this->getServiceName())) {
+            if (!empty($addCondition) && is_array($addCondition)) {
+                $filter = '('.$linkerField->getName(true).' IN ('.implode(',', $$linkerIds).'))';
+                foreach ($addCondition as $key => $value) {
+                    $column = $schema->getColumn($key);
+                    $filter .= 'AND ('.$column->getName(true) . ' = ' . $value.')';
+                }
+                $temp = [ApiOptions::FILTER => $filter];
+            } else {
+                $temp = [ApiOptions::IDS => $linkerIds, ApiOptions::ID_FIELD => $linkerField->getName(true)];
+            }
+
+            $this->handleVirtualRecords($service, '_table/' . $schema->getName(true), Verbs::DELETE, null, $temp);
+        } else {
+            $builder = $this->dbConn->getSchema()->getCommandBuilder();
+            $criteria = $builder->createCriteria();
+            $criteria->addInCondition($linkerField->rawName, $linkerIds);
+
+            $ssFilters = Session::getServiceFilters(Verbs::DELETE, $service, $schema->getName(true));
+            $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+            if (!empty($serverFilter)) {
+                $criteria->addCondition($serverFilter);
+            }
+            if (!empty($addCondition) && is_array($addCondition)) {
+                foreach ($addCondition as $key => $value) {
+                    $column = $schema->getColumn($key);
+                    $criteria->addCondition($column->rawName . '=:' . $key);
+                    $criteria->params[':' . $key] = $value;
+                }
+            }
+
+            $command = $this->dbConn->createCommand();
+            $rows = $command->delete($schema->getName(), $criteria->condition, $criteria->params);
+            if (0 >= $rows) {
+//            throw new NotFoundException( 'No foreign linked records were found using the given identifiers.' );
+            }
         }
     }
 
     /**
-     * @param      $table
-     * @param      $linkerFields
-     * @param      $linkerIds
-     * @param      $ssFilters
-     * @param null $addCondition
-     *
-     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
-     * @throws \DreamFactory\Core\Exceptions\NotImplementedException
-     */
-    protected function deleteForeignRecords($table, $linkerFields, $linkerIds, $ssFilters, $addCondition = null)
-    {
-        $builder = $this->dbConn->getSchema()->getCommandBuilder();
-        $criteria = $builder->createCriteria();
-        if (1 === count($linkerFields)) {
-            $pkField = $linkerFields[0];
-            $criteria->addInCondition($this->dbConn->quoteColumnName($pkField), $linkerIds);
-        } else {
-            // todo How to handle multiple primary keys?
-            throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-        }
-        $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
-        if (!empty($serverFilter)) {
-            $criteria->addCondition($serverFilter);
-        }
-        if (!empty($addCondition)) {
-            $criteria->addCondition($addCondition);
-        }
-
-        $command = $this->dbConn->createCommand();
-        $rows = $command->delete($table, $criteria->condition, $criteria->params);
-        if (0 >= $rows) {
-//            throw new NotFoundException( 'No foreign linked records were found using the given identifiers.' );
-        }
-    }
-
-    /**
-     * @param string         $one_table
+     * @param TableSchema    $one_table
      * @param mixed          $one_id
      * @param RelationSchema $relation
      * @param array          $many_records
@@ -1433,74 +1456,92 @@ class Table extends BaseDbTableResource
      * @throws BadRequestException
      * @return void
      */
-    protected function assignManyToOneByMap(
-        $one_table,
+    protected function assignManyToOneByJunction(
+        TableSchema $one_table,
         $one_id,
         RelationSchema $relation,
         $many_records = []
     ){
         if (empty($one_id)) {
-            throw new BadRequestException("The $one_table id can not be empty.");
-        }
-        if ($relation->isForeignService) {
-            throw new BadRequestException('Updating relationship across service boundaries not yet supported.');
+            throw new BadRequestException("The {$one_table->getName(true)} id can not be empty.");
         }
 
         try {
-            $oneFields = $this->getFieldsInfo($one_table);
-            $pkOneField = static::getPrimaryKeyFieldFromDescribe($oneFields);
-            $manyFields = $this->getFieldsInfo($relation->refTable);
-            $pksManyInfo = static::getPrimaryKeys($manyFields);
-            $mapFields = $this->getFieldsInfo($relation->junctionTable);
-//			$pkMapField = static::getPrimaryKeyFieldFromDescribe( $mapFields );
-
-            // non-native service relation, go get it
-            if (empty($relation->junctionTable) ||
-                empty($relation->junctionField) ||
-                empty($relation->junctionRefField)
-            ) {
-                throw new InternalServerErrorException('Many to many relationship not configured properly.');
+            if (is_array($one_table->primaryKey)) {
+                if (1 !== count($one_table->primaryKey)) {
+                    // todo How to handle multiple primary keys?
+                    throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+                } else {
+                    $onePkFieldName = $one_table->primaryKey[0];
+                }
+            } else {
+                $onePkFieldName = $one_table->primaryKey;
+            }
+            if (empty($onePkField = $one_table->getColumn($onePkFieldName))) {
+                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '$onePkFieldName' not found.");
             }
 
-            $junctionTable = $relation->junctionTable;
-            $junctionFields = [$relation->junctionField, $relation->junctionRefField];
-            $serviceName = ($relation->isForeignJunctionService ? $relation->junctionService : $this->getServiceName());
-            $this->replaceWithAliases($serviceName, $junctionTable, $junctionFields);
+            $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+            $refSchema = $this->getTableSchema($refService, $relation->refTable);
+            $refTable = $refSchema->getName(true);
+            if (empty($refField = $refSchema->getColumn($relation->refFields))) {
+                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+            }
+            if (is_array($refSchema->primaryKey)) {
+                if (1 !== count($refSchema->primaryKey)) {
+                    // todo How to handle multiple primary keys?
+                    throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
+                } else {
+                    $refPkFieldName = $refSchema->primaryKey[0];
+                }
+            } else {
+                $refPkFieldName = $refSchema->primaryKey;
+            }
+            if (empty($refPkField = $refSchema->getColumn($refPkFieldName))) {
+                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '$refPkFieldName' not found.");
+            }
+
+            $junctionService =
+                ($relation->isForeignJunctionService ? $relation->junctionService : $this->getServiceName());
+            $junctionSchema = $this->getTableSchema($junctionService, $relation->junctionTable);
+            $junctionTable = $junctionSchema->getName(true);
+            if (empty($junctionField = $junctionSchema->getColumn($relation->junctionField))) {
+                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->junctionField} not found.");
+            }
+            if (empty($junctionRefField = $junctionSchema->getColumn($relation->junctionRefField))) {
+                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->junctionRefField} not found.");
+            }
 
             // check for access
-            Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $junctionTable);
+            Session::checkServicePermission(Verbs::GET, $junctionService, '_table/' . $junctionTable);
 
             // Get records
-            $filter = "{$junctionFields[0]} = $one_id AND ({$junctionFields[1]} IS NOT NULL)";
-            $filter = urlencode($filter);
-            $path = $serviceName . '/_table/' . $junctionTable . '/?filter=' . $filter;
+            $filter =
+                $junctionField->getName(true) . " = $one_id AND (" . $junctionRefField->getName(true) . " IS NOT NULL)";
+            $temp = [ApiOptions::FILTER => $filter, ApiOptions::FIELDS => $junctionRefField->getName(true)];
 
-            $maps = $this->retrieveVirtualRecords($path, [ApiOptions::FIELDS => $junctionFields[1]]);
+            $maps = $this->retrieveVirtualRecords($junctionService, '_table/' . $junctionTable, $temp);
 
             $createMap = []; // map records to create
             $deleteMap = []; // ids of 'many' records to delete from maps
             $insertMany = [];
             $updateMany = [];
             $upsertMany = [];
-            if (1 !== count($pksManyInfo)) {
-                // todo How to handle multiple primary keys?
-                throw new NotImplementedException("Relating records with multiple field primary keys is not currently supported.");
-            }
-            $pkAutoSet = $pksManyInfo[0]->autoIncrement;
-            $pkManyField = $pksManyInfo[0]->name;
-            $pkManyFields = [$pkManyField];
+
+            $pkAutoSet = $refPkField->autoIncrement;
+            $refPkFieldAlias = $refPkField->getName(true);
             foreach ($many_records as $item) {
-                $id = ArrayUtils::get($item, $pkManyField);
+                $id = ArrayUtils::get($item, $refPkFieldAlias);
                 if (empty($id)) {
                     if (!$pkAutoSet) {
-                        throw new BadRequestException("Related record has no primary key value for '$pkManyField'.");
+                        throw new BadRequestException("Related record has no primary key value for '$refPkFieldAlias'.");
                     }
 
                     // create new child record
                     $insertMany[] = $item;
                 } else {
                     // pk fields exists, must be dealing with existing 'many' record
-                    $oneLookup = "$one_table.$pkOneField";
+                    $oneLookup = $one_table->getName(true) . '.' . $onePkField->getName(true);
                     if (array_key_exists($oneLookup, $item)) {
                         if (null == ArrayUtils::get($item, $oneLookup, null, true)) {
                             // delete this relationship
@@ -1520,41 +1561,32 @@ class Table extends BaseDbTableResource
 
                     // if relationship doesn't exist, create it
                     foreach ($maps as $map) {
-                        if (ArrayUtils::get($map, $junctionFields[1]) == $id) {
+                        if (ArrayUtils::get($map, $junctionRefField->getName(true)) == $id) {
                             continue 2; // got what we need from this one
                         }
                     }
 
-                    $createMap[] = [$relation->junctionRefField => $id, $relation->junctionField => $one_id];
+                    $createMap[] = [$junctionRefField->getName(true) => $id, $junctionField->getName(true) => $one_id];
                 }
             }
 
-            /** @var Command $command */
-            $command = $this->dbConn->createCommand();
-
             // resolve any upsert situations
             if (!empty($upsertMany)) {
-                $filterTable = $relation->refTable;
-                $filterFields = [$pkManyField];
-                $serviceName = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
-                $this->replaceWithAliases($serviceName, $filterTable, $filterFields);
-
                 // check for access
-                Session::checkServicePermission(Verbs::GET, $serviceName, '/_table/' . $filterTable);
+                Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                 // Get records
                 $checkIds = array_keys($upsertMany);
                 if (count($checkIds) > 1) {
-                    $filter = $filterFields[0] . ' IN (' . implode(',', $checkIds) . ')';
+                    $filter = $refPkFieldAlias . ' IN (' . implode(',', $checkIds) . ')';
                 } else {
-                    $filter = $filterFields[0] . ' = ' . $checkIds[0];
+                    $filter = $refPkFieldAlias . ' = ' . $checkIds[0];
                 }
-                $filter = urlencode($filter);
-                $path = $serviceName . '/_table/' . $filterTable . '/?filter=' . $filter;
-                $matchIds = $this->retrieveVirtualRecords($path);
+                $temp = [ApiOptions::FILTER => $filter];
+                $matchIds = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $temp);
 
                 foreach ($upsertMany as $uId => $record) {
-                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $filterFields[0], $uId)) {
+                    if ($found = DbUtilities::findRecordByNameValue($matchIds, $refPkFieldAlias, $uId)) {
                         $updateMany[] = $record;
                     } else {
                         $insertMany[] = $record;
@@ -1563,71 +1595,29 @@ class Table extends BaseDbTableResource
             }
 
             if (!empty($insertMany)) {
-                // do we have permission to do so?
-                $this->validateTableAccess($relation->refTable, Verbs::POST);
-                $ssManyFilters = Session::getServiceFilters(Verbs::POST, $this->getServiceName(), $relation->refTable);
+                $refIds = $this->createForeignRecords($refService, $refSchema, $insertMany);
                 // create new many records
-                foreach ($insertMany as $record) {
-                    $parsed = $this->parseRecord($record, $manyFields, $ssManyFilters);
-                    if (empty($parsed)) {
-                        throw new BadRequestException('No valid fields were found in record.');
-                    }
-
-                    $rows = $command->insert($relation->refTable, $parsed);
-                    if (0 >= $rows) {
-                        throw new InternalServerErrorException("Creating related {$relation->refTable} records failed.");
-                    }
-
-                    $manyId = (int)$this->dbConn->lastInsertID;
-                    if (!empty($manyId)) {
-                        $createMap[] = [$relation->junctionRefField => $manyId, $relation->junctionField => $one_id];
+                foreach ($refIds as $refId) {
+                    if (!empty($refId)) {
+                        $createMap[] =
+                            [$junctionRefField->getName(true) => $refId, $junctionField->getName(true) => $one_id];
                     }
                 }
             }
 
             if (!empty($updateMany)) {
                 // update existing many records
-                // do we have permission to do so?
-                $this->validateTableAccess($relation->refTable, Verbs::PUT);
-                $ssManyFilters = Session::getServiceFilters(Verbs::PUT, $this->getServiceName(), $relation->refTable);
-
-                foreach ($updateMany as $record) {
-                    $pk = ArrayUtils::get($record, $pkManyField);
-                    $parsed = $this->parseRecord($record, $manyFields, $ssManyFilters, true);
-                    if (empty($parsed)) {
-                        throw new BadRequestException('No valid fields were found for foreign link updates.');
-                    }
-
-                    $this->updateForeignRecords($relation->refTable, $pkManyFields, [$pk], $parsed, $ssManyFilters);
-                }
+                $this->updateForeignRecords($refService, $refSchema, $refPkField, $updateMany);
             }
 
             if (!empty($createMap)) {
-                // do we have permission to do so?
-                $this->validateTableAccess($junctionTable, Verbs::POST);
-                $ssMapFilters =
-                    Session::getServiceFilters(Verbs::POST, $this->getServiceName(), $relation->junctionTable);
-                foreach ($createMap as $record) {
-                    $parsed = $this->parseRecord($record, $mapFields, $ssMapFilters);
-                    if (empty($parsed)) {
-                        throw new BadRequestException("No valid fields were found in related $junctionTable record.");
-                    }
-
-                    $rows = $command->insert($relation->junctionTable, $parsed);
-                    if (0 >= $rows) {
-                        throw new InternalServerErrorException("Creating related $junctionTable records failed.");
-                    }
-                }
+                $this->createForeignRecords($junctionService, $junctionSchema, $createMap);
             }
 
             if (!empty($deleteMap)) {
-                // do we have permission to do so?
-                $this->validateTableAccess($junctionTable, Verbs::DELETE);
-                $ssMapFilters =
-                    Session::getServiceFilters(Verbs::DELETE, $this->getServiceName(), $relation->junctionTable);
-                $addCondition = $this->dbConn->quoteColumnName($relation->junctionField) . " = '$one_id'";
-                $this->deleteForeignRecords($relation->junctionTable, [$relation->junctionRefField], $deleteMap,
-                    $ssMapFilters, $addCondition);
+                $addCondition = [$junctionField->getName() => $one_id];
+                $this->deleteForeignRecords($junctionService, $junctionSchema, $junctionRefField, $deleteMap,
+                    $addCondition);
             }
         } catch (\Exception $ex) {
             throw new InternalServerErrorException("Failed to update many to one map assignment.\n{$ex->getMessage()}");
