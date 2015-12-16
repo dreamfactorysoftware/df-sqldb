@@ -493,47 +493,40 @@ class Table extends BaseDbTableResource
             return null;
         }
 
+        $filter = trim($filter);
         // todo use smarter regex
         // handle logical operators first
         $logicalOperators = DbLogicalOperators::getDefinedConstants();
         foreach ($logicalOperators as $logicalOp) {
             if (DbLogicalOperators::NOT_STR === $logicalOp) {
                 // NOT(a = 1)  or NOT (a = 1)format
-                if ((0 === stripos($filter, $logicalOp . '(')) || (0 === stripos($filter, $logicalOp . '('))) {
+                if ((0 === stripos($filter, $logicalOp . ' (')) || (0 === stripos($filter, $logicalOp . '('))) {
                     $parts = trim(substr($filter, 3));
                     $parts = $this->parseFilterString($parts, $params, $fields_info);
 
                     return static::localizeOperator($logicalOp) . $parts;
                 }
             } else {
-                // (a = 1) AND (b = 2) format
+                // (a = 1) AND (b = 2) format or (a = 1)AND(b = 2) format
+                $filter = str_ireplace(')' . $logicalOp . '(', ') ' . $logicalOp . ' (', $filter);
                 $paddedOp = ') ' . $logicalOp . ' (';
                 if (false !== $pos = stripos($filter, $paddedOp)) {
-                    $left = trim(substr($filter, 0, $pos));
-                    $right = trim(substr($filter, $pos + strlen($paddedOp)));
+                    $left = trim(substr($filter, 0, $pos)) . ')'; // add back right )
+                    $right = '(' . trim(substr($filter, $pos + strlen($paddedOp))); // adding back left (
                     $left = $this->parseFilterString($left, $params, $fields_info);
                     $right = $this->parseFilterString($right, $params, $fields_info);
 
-                    return $left . ') ' . static::localizeOperator($logicalOp) . ' (' . $right;
-                }
-                // (a = 1)AND(b = 2) format
-                $paddedOp = ')' . $logicalOp . '(';
-                if (false !== $pos = stripos($filter, $paddedOp)) {
-                    $left = trim(substr($filter, 0, $pos));
-                    $right = trim(substr($filter, $pos + strlen($paddedOp)));
-                    $left = $this->parseFilterString($left, $params, $fields_info);
-                    $right = $this->parseFilterString($right, $params, $fields_info);
-
-                    return $left . ') ' . static::localizeOperator($logicalOp) . ' (' . $right;
+                    return $left . ' ' . static::localizeOperator($logicalOp) . ' ' . $right;
                 }
             }
         }
 
-        $pure = trim($filter, '()');
-        $pieces = explode($pure, $filter);
-        $leftParen = (!empty($pieces[0]) ? $pieces[0] : null);
-        $rightParen = (!empty($pieces[1]) ? $pieces[1] : null);
-        $filter = $pure;
+        $wrap = false;
+        if ((0 === strpos($filter, '(')) && ((strlen($filter) - 1) === strrpos($filter, ')'))) {
+            // remove unnecessary wrapping ()
+            $filter = substr($filter, 1, -1);
+            $wrap = true;
+        }
 
         // the rest should be comparison operators
         // Note: order matters here!
@@ -560,15 +553,20 @@ class Table extends BaseDbTableResource
 
                 $value = trim(substr($filter, $pos + strlen($paddedOp)));
                 if (DbComparisonOperators::requiresValueList($sqlOp)) {
-                    $value = trim($value, '()[]');
-                    $parsed = [];
-                    foreach (explode(',', $value) as $each) {
-                        $parsed[] = $this->parseFilterValue($each, $info, $params);
+                    if ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
+                        // remove wrapping ()
+                        $value = substr($value, 1, -1);
+                        $parsed = [];
+                        foreach (explode(',', $value) as $each) {
+                            $parsed[] = $this->parseFilterValue(trim($each), $info, $params);
+                        }
+                        $value = '(' . implode(',', $parsed) . ')';
+                    } else {
+                        throw new BadRequestException('Filter value lists must be wrapped in parenthesis.');
                     }
-                    // might look like a bug that we are not appending a ')' to the end,
-                    // but the $rightParen below takes care of it.
-                    $value = '(' . implode(',', $parsed);
-                } elseif (!DbComparisonOperators::requiresNoValue($sqlOp)) {
+                } elseif (DbComparisonOperators::requiresNoValue($sqlOp)) {
+                    $value = null;
+                } else {
                     $value = $this->parseFilterValue($value, $info, $params);
                 }
 
@@ -577,15 +575,10 @@ class Table extends BaseDbTableResource
                     $sqlOp = DbLogicalOperators::NOT_STR . ' ' . $sqlOp;
                 }
 
-                $out = $info->parseFieldForFilter(true) . " $sqlOp $value";
-                if ($leftParen) {
-                    $out = $leftParen . $out;
-                }
-                if ($rightParen) {
-                    $out .= $rightParen;
-                }
+                $out = $info->parseFieldForFilter(true) . " $sqlOp";
+                $out .= (isset($value) ? " $value" : null);
 
-                return $out;
+                return ($wrap ? '(' . $out . ')' : $out);
             }
         }
 
@@ -605,11 +598,16 @@ class Table extends BaseDbTableResource
     {
         if (0 !== strpos($value, ':')) {
             // remove quoting on strings if used, i.e. 1.x required them
-            if (is_string($value) &&
-                ((0 === strcmp("'" . trim($value, "'") . "'", $value)) ||
-                    (0 === strcmp('"' . trim($value, '"') . '"', $value)))
-            ) {
-                $value = trim($value, '"\'');
+            if (is_string($value)) {
+
+                if ((0 === strcmp("'" . trim($value, "'") . "'", $value)) ||
+                    (0 === strcmp('"' . trim($value, '"') . '"', $value))
+                ) {
+                    $value = substr($value, 1, -1);
+                } elseif ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
+                    // function call
+                    return $value;
+                }
             }
             // if not already a replacement parameter, evaluate it
             $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
@@ -1348,7 +1346,7 @@ class Table extends BaseDbTableResource
                     throw new BadRequestException('No valid fields were found for foreign link updates.');
                 }
 
-                $criteria = $builder->createCriteria($linkerField->rawName.' = :v1', [':v1' => $pk]);
+                $criteria = $builder->createCriteria($linkerField->rawName . ' = :v1', [':v1' => $pk]);
                 $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
                 if (!empty($serverFilter)) {
                     $criteria->addCondition($serverFilter);
@@ -1409,10 +1407,10 @@ class Table extends BaseDbTableResource
         Session::checkServicePermission(Verbs::DELETE, $service, '_table/' . $schema->getName(true));
         if (!empty($service) && ($service !== $this->getServiceName())) {
             if (!empty($addCondition) && is_array($addCondition)) {
-                $filter = '('.$linkerField->getName(true).' IN ('.implode(',', $$linkerIds).'))';
+                $filter = '(' . $linkerField->getName(true) . ' IN (' . implode(',', $$linkerIds) . '))';
                 foreach ($addCondition as $key => $value) {
                     $column = $schema->getColumn($key);
-                    $filter .= 'AND ('.$column->getName(true) . ' = ' . $value.')';
+                    $filter .= 'AND (' . $column->getName(true) . ' = ' . $value . ')';
                 }
                 $temp = [ApiOptions::FILTER => $filter];
             } else {
