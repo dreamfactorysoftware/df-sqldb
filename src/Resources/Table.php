@@ -577,7 +577,7 @@ class Table extends BaseDbTableResource
                     $sqlOp = DbLogicalOperators::NOT_STR . ' ' . $sqlOp;
                 }
 
-                $out = $info->parseFieldForFilter() . " $sqlOp $value";
+                $out = $info->parseFieldForFilter(true) . " $sqlOp $value";
                 if ($leftParen) {
                     $out = $leftParen . $out;
                 }
@@ -835,7 +835,7 @@ class Table extends BaseDbTableResource
 
                 $fieldInfo = $avail_fields[$ndx];
                 $bindArray[] = $fieldInfo->getPdoBinding();
-                $outArray[] = $fieldInfo->parseFieldForSelect();
+                $outArray[] = $fieldInfo->parseFieldForSelect(true);
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
@@ -843,7 +843,7 @@ class Table extends BaseDbTableResource
                     continue;
                 }
                 $bindArray[] = $fieldInfo->getPdoBinding();
-                $outArray[] = $fieldInfo->parseFieldForSelect();
+                $outArray[] = $fieldInfo->parseFieldForSelect(true);
             }
         }
 
@@ -2109,9 +2109,8 @@ class Table extends BaseDbTableResource
         $builder = $this->dbConn->getSchema()->getCommandBuilder();
         $criteria = $builder->createCriteria();
 
-        $idName =
-            (isset($this->tableIdsInfo, $this->tableIdsInfo[0], $this->tableIdsInfo[0]->name))
-                ? $this->tableIdsInfo[0]->name : null;
+        /** @type ColumnSchema $idName */
+        $idName = (isset($this->tableIdsInfo, $this->tableIdsInfo[0])) ? $this->tableIdsInfo[0] : null;
         if (empty($idName)) {
             throw new BadRequestException('No valid identifier found for this table.');
         }
@@ -2120,15 +2119,15 @@ class Table extends BaseDbTableResource
             if (is_array($this->batchRecords[0])) {
                 $temp = [];
                 foreach ($this->batchRecords as $record) {
-                    $temp[] = ArrayUtils::get($record, $idName);
+                    $temp[] = ArrayUtils::get($record, $idName->getName(true));
                 }
 
-                $criteria->addInCondition($idName, $temp);
+                $criteria->addInCondition($idName->rawName, $temp);
             } else {
-                $criteria->addInCondition($idName, $this->batchRecords);
+                $criteria->addInCondition($idName->rawName, $this->batchRecords);
             }
         } else {
-            $criteria->addInCondition($idName, $this->batchIds);
+            $criteria->addInCondition($idName->rawName, $this->batchIds);
         }
 
         $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
@@ -2240,7 +2239,7 @@ class Table extends BaseDbTableResource
                                 $found = false;
                                 if (empty($result)) {
                                     foreach ($result as $record) {
-                                        if ($id == ArrayUtils::get($record, $idName)) {
+                                        if ($id == ArrayUtils::get($record, $idName->getName(true))) {
                                             $out[$index] = $record;
                                             $found = true;
                                             continue;
@@ -2287,7 +2286,7 @@ class Table extends BaseDbTableResource
                         foreach ($this->batchIds as $index => $id) {
                             $found = false;
                             foreach ($result as $record) {
-                                if ($id == ArrayUtils::get($record, $idName)) {
+                                if ($id == ArrayUtils::get($record, $idName->getName(true))) {
                                     $out[$index] = $record;
                                     $found = true;
                                     continue;
@@ -2316,7 +2315,7 @@ class Table extends BaseDbTableResource
             if (empty($out)) {
                 $out = [];
                 foreach ($this->batchIds as $id) {
-                    $out[] = [$idName => $id];
+                    $out[] = [$idName->getName(true) => $id];
                 }
             }
 
