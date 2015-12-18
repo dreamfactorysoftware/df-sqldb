@@ -528,6 +528,13 @@ class Table extends BaseDbTableResource
             $wrap = true;
         }
 
+        // Some scenarios leave extra parens dangling
+        $pure = trim($filter, '()');
+        $pieces = explode($pure, $filter);
+        $leftParen = (!empty($pieces[0]) ? $pieces[0] : null);
+        $rightParen = (!empty($pieces[1]) ? $pieces[1] : null);
+        $filter = $pure;
+
         // the rest should be comparison operators
         // Note: order matters here!
         $sqlOperators = DbComparisonOperators::getParsingOrder();
@@ -551,7 +558,14 @@ class Table extends BaseDbTableResource
                     throw new BadRequestException('Invalid or unparsable field in filter request.');
                 }
 
+                // make sure we haven't chopped off right side too much
                 $value = trim(substr($filter, $pos + strlen($paddedOp)));
+                if ((0 !== strpos($value, "'")) && (0 !== $lpc = substr_count($value, '(')) && ($lpc !== $rpc = substr_count($value, ')'))){
+                    // add back to value from right
+                    $parenPad = str_repeat(')', $lpc - $rpc);
+                    $value .= $parenPad;
+                    $rightParen = preg_replace('/\)/', '', $rightParen, $lpc - $rpc);
+                }
                 if (DbComparisonOperators::requiresValueList($sqlOp)) {
                     if ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
                         // remove wrapping ()
@@ -562,7 +576,7 @@ class Table extends BaseDbTableResource
                         }
                         $value = '(' . implode(',', $parsed) . ')';
                     } else {
-                        throw new BadRequestException('Filter value lists must be wrapped in parenthesis.');
+                        throw new BadRequestException('Filter value lists must be wrapped in parentheses.');
                     }
                 } elseif (DbComparisonOperators::requiresNoValue($sqlOp)) {
                     $value = null;
@@ -577,6 +591,12 @@ class Table extends BaseDbTableResource
 
                 $out = $info->parseFieldForFilter(true) . " $sqlOp";
                 $out .= (isset($value) ? " $value" : null);
+                if ($leftParen) {
+                    $out = $leftParen . $out;
+                }
+                if ($rightParen) {
+                    $out .= $rightParen;
+                }
 
                 return ($wrap ? '(' . $out . ')' : $out);
             }
