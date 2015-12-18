@@ -9,6 +9,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Fixed
 
+## [0.1.3] - 2015-12-18
+### Fixed
+- Filter parsing issues
+- Consolidating schema caching classes, see df-core
+- Rework filter handling of logical and comparison operators
+
 ## [0.1.2] - 2015-11-24
 ### Added
 - Usage of df-core's new virtual foreign keys and aliasing for relationships.
@@ -30,6 +36,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.2...HEAD
-[0.1.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.1...0.1.2
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.3...HEAD
+[0.1.3]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.2...0.1.3
+[0.1.2]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.0...0.1.1
