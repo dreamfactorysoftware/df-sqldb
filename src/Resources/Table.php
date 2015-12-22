@@ -81,7 +81,7 @@ class Table extends BaseDbTableResource
                                 '*'),
                             ApiOptions::LIMIT  => ArrayUtils::get($this->options,
                                 str_replace('.', '_', $relative . '.' . ApiOptions::LIMIT),
-                                static::MAX_RECORDS_RETURNED),
+                                static::getMaxRecordsReturnedLimit()),
                             ApiOptions::ORDER  => ArrayUtils::get($this->options,
                                 str_replace('.', '_', $relative . '.' . ApiOptions::ORDER)),
                             ApiOptions::GROUP  => ArrayUtils::get($this->options,
@@ -883,7 +883,7 @@ class Table extends BaseDbTableResource
     protected function retrieveRelatedRecords(TableSchema $schema, $relations, $requests, $data)
     {
         $relatedData = [];
-        $relatedExtras = [ApiOptions::LIMIT => static::MAX_RECORDS_RETURNED, ApiOptions::FIELDS => '*'];
+        $relatedExtras = [ApiOptions::LIMIT => static::getMaxRecordsReturnedLimit(), ApiOptions::FIELDS => '*'];
         foreach ($relations as $key => $relation) {
             if (empty($relation)) {
                 throw new BadRequestException("Empty relationship found.");
