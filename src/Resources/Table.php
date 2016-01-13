@@ -19,6 +19,7 @@ use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\NotImplementedException;
 use DreamFactory\Core\Exceptions\RestException;
+use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\Resources\BaseDbTableResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
@@ -2359,20 +2360,16 @@ class Table extends BaseDbTableResource
         return true;
     }
 
-    /**
-     * @return array
-     */
-    public function getApiDocInfo()
+    public static function getApiDocInfo(Service $service, array $resource = [])
     {
-        $base = parent::getApiDocInfo();
+        $base = parent::getApiDocInfo($service, $resource);
 
 //        $addTableParameters = [
 //            [
 //                'name'          => 'related',
 //                'description'   => 'Comma-delimited list of relationship names to retrieve for each record, or \'*\' to retrieve all.',
-//                'allowMultiple' => true,
 //                'type'          => 'string',
-//                'paramType'     => 'query',
+//                'in'     => 'query',
 //                'required'      => false,
 //            ]
 //        ];
@@ -2381,7 +2378,7 @@ class Table extends BaseDbTableResource
 //            'Use the <b>related</b> parameter to return related records for each resource. ' .
 //            'By default, no related records are returned.<br/> ';
 
-        $base['models'] = array_merge($base['models'], static::getApiDocCommonModels());
+        $base['definitions'] = array_merge($base['definitions'], static::getApiDocCommonModels());
 
         return $base;
     }

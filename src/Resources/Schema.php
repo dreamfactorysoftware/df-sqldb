@@ -6,6 +6,7 @@ use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
+use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\Resources\BaseDbSchemaResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
@@ -334,11 +335,11 @@ class Schema extends BaseDbSchemaResource
         return $out;
     }
 
-    public function getApiDocInfo()
+    public static function getApiDocInfo(Service $service, array $resource = [])
     {
-        $base = parent::getApiDocInfo();
+        $base = parent::getApiDocInfo($service, $resource);
 
-        $base['models'] = array_merge($base['models'], static::getApiDocCommonModels());
+        $base['definitions'] = array_merge($base['definitions'], static::getApiDocCommonModels());
 
         return $base;
     }
