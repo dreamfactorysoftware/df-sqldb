@@ -1,6 +1,8 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
+use DreamFactory\Core\Events\ResourcePostProcess;
+use DreamFactory\Core\Events\ResourcePreProcess;
 use DreamFactory\Core\Models\Service;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Core\Enums\VerbsMask;
@@ -52,6 +54,77 @@ class StoredFunction extends BaseDbResource
         }
 
         $this->checkPermission($action, $resource);
+    }
+
+    /**
+     * Runs pre process tasks/scripts
+     */
+    protected function preProcess()
+    {
+        switch (count($this->resourceArray)) {
+            case 0:
+                parent::preProcess();
+                break;
+            case 1:
+                // Try the generic table event
+                /** @noinspection PhpUnusedLocalVariableInspection */
+                $results = \Event::fire(
+                    new ResourcePreProcess(
+                        $this->getServiceName(), $this->getFullPathName('.') . '.{function_name}', $this->request,
+                        $this->resourcePath
+                    )
+                );
+                // Try the actual table name event
+                /** @noinspection PhpUnusedLocalVariableInspection */
+                $results = \Event::fire(
+                    new ResourcePreProcess(
+                        $this->getServiceName(), $this->getFullPathName('.') . '.' . $this->resourceArray[0],
+                        $this->request,
+                        $this->resourcePath
+                    )
+                );
+                break;
+            default:
+                // Do nothing is all we got?
+                break;
+        }
+    }
+
+    /**
+     * Runs post process tasks/scripts
+     */
+    protected function postProcess()
+    {
+        switch (count($this->resourceArray)) {
+            case 0:
+                parent::postProcess();
+                break;
+            case 1:
+                $event = new ResourcePostProcess(
+                    $this->getServiceName(), $this->getFullPathName('.') . '.' . $this->resourceArray[0],
+                    $this->request,
+                    $this->response,
+                    $this->resourcePath
+                );
+                /** @noinspection PhpUnusedLocalVariableInspection */
+                $results = \Event::fire($event);
+                // copy the event response back to this response
+                $this->response = $event->response;
+
+                $event = new ResourcePostProcess(
+                    $this->getServiceName(), $this->getFullPathName('.') . '.{function_name}', $this->request,
+                    $this->response,
+                    $this->resourcePath
+                );
+                /** @noinspection PhpUnusedLocalVariableInspection */
+                $results = \Event::fire($event);
+
+                $this->response = $event->response;
+                break;
+            default:
+                // Do nothing is all we got?
+                break;
+        }
     }
 
     /**
