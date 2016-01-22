@@ -15,6 +15,7 @@ use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\DbComparisonOperators;
 use DreamFactory\Core\Enums\DbLogicalOperators;
 use DreamFactory\Core\Exceptions\BadRequestException;
+use DreamFactory\Core\Exceptions\ForbiddenException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\NotImplementedException;
@@ -66,7 +67,7 @@ class Table extends BaseDbTableResource
 
         if (!empty($this->resource)) {
             // All calls can request related data to be returned
-            $related = ArrayUtils::get($this->options, ApiOptions::RELATED);
+            $related = $this->request->getParameter(ApiOptions::RELATED);
             if (!empty($related) && is_string($related) && ('*' !== $related)) {
                 if (!is_array($related)) {
                     $related = array_map('trim', explode(',', $related));
@@ -77,20 +78,20 @@ class Table extends BaseDbTableResource
                     $relations[strtolower($relative)] =
                         [
                             'name'             => $relative,
-                            ApiOptions::FIELDS => ArrayUtils::get($this->options,
+                            ApiOptions::FIELDS => $this->request->getParameter(
                                 str_replace('.', '_', $relative . '.' . ApiOptions::FIELDS),
                                 '*'),
-                            ApiOptions::LIMIT  => ArrayUtils::get($this->options,
+                            ApiOptions::LIMIT  => $this->request->getParameter(
                                 str_replace('.', '_', $relative . '.' . ApiOptions::LIMIT),
                                 static::getMaxRecordsReturnedLimit()),
-                            ApiOptions::ORDER  => ArrayUtils::get($this->options,
+                            ApiOptions::ORDER  => $this->request->getParameter(
                                 str_replace('.', '_', $relative . '.' . ApiOptions::ORDER)),
-                            ApiOptions::GROUP  => ArrayUtils::get($this->options,
+                            ApiOptions::GROUP  => $this->request->getParameter(
                                 str_replace('.', '_', $relative . '.' . ApiOptions::GROUP)),
                         ];
                 }
 
-                $this->options['related'] = $relations;
+                $this->request->setParameter(ApiOptions::RELATED, $relations);
             }
         }
 
@@ -561,7 +562,10 @@ class Table extends BaseDbTableResource
 
                 // make sure we haven't chopped off right side too much
                 $value = trim(substr($filter, $pos + strlen($paddedOp)));
-                if ((0 !== strpos($value, "'")) && (0 !== $lpc = substr_count($value, '(')) && ($lpc !== $rpc = substr_count($value, ')'))){
+                if ((0 !== strpos($value, "'")) &&
+                    (0 !== $lpc = substr_count($value, '(')) &&
+                    ($lpc !== $rpc = substr_count($value, ')'))
+                ) {
                     // add back to value from right
                     $parenPad = str_repeat(')', $lpc - $rpc);
                     $value .= $parenPad;
@@ -631,7 +635,11 @@ class Table extends BaseDbTableResource
                 }
             }
             // if not already a replacement parameter, evaluate it
-            $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
+            try {
+                $value = $this->dbConn->getSchema()->parseValueForSet($value, $info);
+            } catch (ForbiddenException $ex) {
+                // need to prop this up?
+            }
 
             switch ($cnvType = DbUtilities::determinePhpConversionType($info->type)) {
                 case 'int':
@@ -903,8 +911,9 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param      $path
-     * @param null $params
+     * @param string $serviceName
+     * @param string $resource
+     * @param null   $params
      *
      * @return mixed|null
      * @throws \DreamFactory\Core\Exceptions\ForbiddenException
