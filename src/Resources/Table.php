@@ -935,11 +935,10 @@ class Table extends BaseDbTableResource
         $service = ServiceHandler::getService($serviceName);
         $response = $service->handleRequest($request, $resource);
         $content = $response->getContent();
-        $format = $response->getContentFormat();
         $status = $response->getStatusCode();
 
-        if (empty($content) && is_null($format)) {
-            // No content and type specified. (File stream already handled by service)
+        if (empty($content)) {
+            // No content specified.
             return null;
         }
 
@@ -995,11 +994,10 @@ class Table extends BaseDbTableResource
         $service = ServiceHandler::getService($serviceName);
         $response = $service->handleRequest($request, $resource);
         $content = $response->getContent();
-        $format = $response->getContentFormat();
         $status = $response->getStatusCode();
 
-        if (empty($content) && is_null($format)) {
-            // No content and type specified. (File stream already handled by service)
+        if (empty($content)) {
+            // No content specified.
             return null;
         }
 
