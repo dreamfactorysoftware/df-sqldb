@@ -18,7 +18,7 @@ trait TableDescriber
                         'type'        => 'Array',
                         'description' => 'An array of table definitions.',
                         'items'       => [
-                            '$ref' => 'TableSchema',
+                            '$ref' => '#/definitions/TableSchema',
                         ],
                     ],
                 ],
@@ -50,14 +50,14 @@ trait TableDescriber
                         'type'        => 'Array',
                         'description' => 'An array of available fields in each record.',
                         'items'       => [
-                            '$ref' => 'FieldSchema',
+                            '$ref' => '#/definitions/FieldSchema',
                         ],
                     ],
                     'related'     => [
                         'type'        => 'Array',
                         'description' => 'An array of available relationships to other tables.',
                         'items'       => [
-                            '$ref' => 'RelatedSchema',
+                            '$ref' => '#/definitions/RelatedSchema',
                         ],
                     ],
                 ],

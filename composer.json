@@ -38,7 +38,7 @@
   },
   "require":     {
     "dreamfactory/php-utils": "1.1.*",
-    "dreamfactory/df-core":   "~0.1.8"
+    "dreamfactory/df-core":   "~0.2.0"
   },
   "autoload":    {
     "psr-4": {
@@ -47,7 +47,7 @@
   },
   "extra":       {
     "branch-alias": {
-      "dev-develop": "0.1.x-dev"
+      "dev-develop": "0.2.x-dev"
     }
   }
 }

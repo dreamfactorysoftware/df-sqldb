@@ -1,7 +1,9 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
-use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Events\ResourcePostProcess;
+use DreamFactory\Core\Events\ResourcePreProcess;
+use DreamFactory\Core\Models\Service;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
@@ -9,8 +11,8 @@ use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
-use DreamFactory\Core\Utility\ApiDocUtilities;
 use DreamFactory\Core\Utility\DbUtilities;
+use DreamFactory\Library\Utility\Inflector;
 
 class StoredProcedure extends BaseDbResource
 {
@@ -52,6 +54,77 @@ class StoredProcedure extends BaseDbResource
         }
 
         $this->checkPermission($action, $resource);
+    }
+
+    /**
+     * Runs pre process tasks/scripts
+     */
+    protected function preProcess()
+    {
+        switch (count($this->resourceArray)) {
+            case 0:
+                parent::preProcess();
+                break;
+            case 1:
+                // Try the generic table event
+                /** @noinspection PhpUnusedLocalVariableInspection */
+                $results = \Event::fire(
+                    new ResourcePreProcess(
+                        $this->getServiceName(), $this->getFullPathName('.') . '.{procedure_name}', $this->request,
+                        $this->resourcePath
+                    )
+                );
+                // Try the actual table name event
+                /** @noinspection PhpUnusedLocalVariableInspection */
+                $results = \Event::fire(
+                    new ResourcePreProcess(
+                        $this->getServiceName(), $this->getFullPathName('.') . '.' . $this->resourceArray[0],
+                        $this->request,
+                        $this->resourcePath
+                    )
+                );
+                break;
+            default:
+                // Do nothing is all we got?
+                break;
+        }
+    }
+
+    /**
+     * Runs post process tasks/scripts
+     */
+    protected function postProcess()
+    {
+        switch (count($this->resourceArray)) {
+            case 0:
+                parent::postProcess();
+                break;
+            case 1:
+                $event = new ResourcePostProcess(
+                    $this->getServiceName(), $this->getFullPathName('.') . '.' . $this->resourceArray[0],
+                    $this->request,
+                    $this->response,
+                    $this->resourcePath
+                );
+                /** @noinspection PhpUnusedLocalVariableInspection */
+                $results = \Event::fire($event);
+                // copy the event response back to this response
+                $this->response = $event->response;
+
+                $event = new ResourcePostProcess(
+                    $this->getServiceName(), $this->getFullPathName('.') . '.{procedure_name}', $this->request,
+                    $this->response,
+                    $this->resourcePath
+                );
+                /** @noinspection PhpUnusedLocalVariableInspection */
+                $results = \Event::fire($event);
+
+                $this->response = $event->response;
+                break;
+            default:
+                // Do nothing is all we got?
+                break;
+        }
     }
 
     /**
@@ -270,112 +343,121 @@ class StoredProcedure extends BaseDbResource
         }
     }
 
-    public function getApiDocInfo()
+    public static function getApiDocInfo(Service $service, array $resource = [])
     {
-        $path = '/' . $this->getServiceName() . '/' . $this->getFullPathName();
-        $eventPath = $this->getServiceName() . '.' . $this->getFullPathName('.');
-        $base = parent::getApiDocInfo();
+        $serviceName = strtolower($service->name);
+        $capitalized = Inflector::camelize($service->name);
+        $class = trim(strrchr(static::class, '\\'), '\\');
+        $resourceName = strtolower(ArrayUtils::get($resource, 'name', $class));
+        $path = '/' . $serviceName . '/' . $resourceName;
+        $eventPath = $serviceName . '.' . $resourceName;
+        $base = parent::getApiDocInfo($service, $resource);
 
         $apis = [
-            [
-                'path'        => $path . '/{procedure_name}',
-                'operations'  => [
-                    [
-                        'method'           => 'GET',
-                        'summary'          => 'callStoredProc() - Call a stored procedure.',
-                        'nickname'         => 'callStoredProc',
-                        'notes'            =>
-                            'Call a stored procedure with no parameters. ' .
-                            'Set an optional wrapper for the returned data set. ',
-                        'type'             => 'StoredProcResponse',
-                        'event_name'       => [
-                            $eventPath . '.{procedure_name}.call',
-                            $eventPath . '.procedure_called',
-                        ],
-                        'parameters'       => [
-                            [
-                                'name'          => 'procedure_name',
-                                'description'   => 'Name of the stored procedure to call.',
-                                'allowMultiple' => false,
-                                'type'          => 'string',
-                                'paramType'     => 'path',
-                                'required'      => true,
-                            ],
-                            [
-                                'name'          => 'wrapper',
-                                'description'   => 'Add this wrapper around the expected data set before returning.',
-                                'allowMultiple' => false,
-                                'type'          => 'string',
-                                'paramType'     => 'query',
-                                'required'      => false,
-                            ],
-                            [
-                                'name'          => 'returns',
-                                'description'   => 'If returning a single value, use this to set the type of that value.',
-                                'allowMultiple' => false,
-                                'type'          => 'string',
-                                'paramType'     => 'query',
-                                'required'      => false,
-                            ],
-                        ],
-                        'responseMessages' => ApiDocUtilities::getCommonResponses(),
+            $path . '/{procedure_name}' => [
+                'get'  => [
+                    'tags'        => [$serviceName],
+                    'summary'     => 'call'.$capitalized.'StoredProcedure() - Call a stored procedure.',
+                    'operationId' => 'call'.$capitalized.'StoredProcedure',
+                    'description' =>
+                        'Call a stored procedure with no parameters. ' .
+                        'Set an optional wrapper for the returned data set. ',
+                    'event_name'  => [
+                        $eventPath . '.{procedure_name}.call',
+                        $eventPath . '.procedure_called',
                     ],
-                    [
-                        'method'           => 'POST',
-                        'summary'          => 'callStoredProcWithParams() - Call a stored procedure.',
-                        'nickname'         => 'callStoredProcWithParams',
-                        'notes'            =>
-                            'Call a stored procedure with parameters. ' .
-                            'Set an optional wrapper and schema for the returned data set. ',
-                        'type'             => 'StoredProcResponse',
-                        'event_name'       => [
-                            $eventPath . '.{procedure_name}.call',
-                            $eventPath . '.procedure_called',
+                    'parameters'  => [
+                        [
+                            'name'        => 'procedure_name',
+                            'description' => 'Name of the stored procedure to call.',
+                            'type'        => 'string',
+                            'in'          => 'path',
+                            'required'    => true,
                         ],
-                        'parameters'       => [
-                            [
-                                'name'          => 'procedure_name',
-                                'description'   => 'Name of the stored procedure to call.',
-                                'allowMultiple' => false,
-                                'type'          => 'string',
-                                'paramType'     => 'path',
-                                'required'      => true,
-                            ],
-                            [
-                                'name'          => 'body',
-                                'description'   => 'Data containing in and out parameters to pass to procedure.',
-                                'allowMultiple' => false,
-                                'type'          => 'StoredProcRequest',
-                                'paramType'     => 'body',
-                                'required'      => true,
-                            ],
-                            [
-                                'name'          => 'wrapper',
-                                'description'   => 'Add this wrapper around the expected data set before returning.',
-                                'allowMultiple' => false,
-                                'type'          => 'string',
-                                'paramType'     => 'query',
-                                'required'      => false,
-                            ],
-                            [
-                                'name'          => 'returns',
-                                'description'   => 'If returning a single value, use this to set the type of that value.',
-                                'allowMultiple' => false,
-                                'type'          => 'string',
-                                'paramType'     => 'query',
-                                'required'      => false,
-                            ],
+                        [
+                            'name'        => 'wrapper',
+                            'description' => 'Add this wrapper around the expected data set before returning.',
+                            'type'        => 'string',
+                            'in'          => 'query',
+                            'required'    => false,
                         ],
-                        'responseMessages' => ApiDocUtilities::getCommonResponses(),
+                        [
+                            'name'        => 'returns',
+                            'description' => 'If returning a single value, use this to set the type of that value.',
+                            'type'        => 'string',
+                            'in'          => 'query',
+                            'required'    => false,
+                        ],
+                    ],
+                    'responses'   => [
+                        '200'     => [
+                            'description' => 'Success',
+                            'schema'      => ['$ref' => '#/definitions/StoredProcedureResponse']
+                        ],
+                        'default' => [
+                            'description' => 'Error',
+                            'schema'      => ['$ref' => '#/definitions/Error']
+                        ]
                     ],
                 ],
-                'description' => 'Operations for SQL database stored procedures.',
+                'post' => [
+                    'tags'        => [$serviceName],
+                    'summary'     => 'call'.$capitalized.'StoredProcedureWithParams() - Call a stored procedure.',
+                    'operationId' => 'call'.$capitalized.'StoredProcedureWithParams',
+                    'description' =>
+                        'Call a stored procedure with parameters. ' .
+                        'Set an optional wrapper and schema for the returned data set. ',
+                    'event_name'  => [
+                        $eventPath . '.{procedure_name}.call',
+                        $eventPath . '.procedure_called',
+                    ],
+                    'parameters'  => [
+                        [
+                            'name'        => 'procedure_name',
+                            'description' => 'Name of the stored procedure to call.',
+                            'type'        => 'string',
+                            'in'          => 'path',
+                            'required'    => true,
+                        ],
+                        [
+                            'name'        => 'body',
+                            'description' => 'Data containing in and out parameters to pass to procedure.',
+                            'schema'      => ['$ref' => '#/definitions/StoredProcedureRequest'],
+                            'in'          => 'body',
+                            'required'    => true,
+                        ],
+                        [
+                            'name'        => 'wrapper',
+                            'description' => 'Add this wrapper around the expected data set before returning.',
+                            'type'        => 'string',
+                            'in'          => 'query',
+                            'required'    => false,
+                        ],
+                        [
+                            'name'        => 'returns',
+                            'description' => 'If returning a single value, use this to set the type of that value.',
+                            'type'        => 'string',
+                            'in'          => 'query',
+                            'required'    => false,
+                        ],
+                    ],
+                    'responses'   => [
+                        '200'     => [
+                            'description' => 'Success',
+                            'schema'      => ['$ref' => '#/definitions/StoredProcedureResponse']
+                        ],
+                        'default' => [
+                            'description' => 'Error',
+                            'schema'      => ['$ref' => '#/definitions/Error']
+                        ]
+                    ],
+                ],
             ],
         ];
 
         $models = [
-            'StoredProcResponse'     => [
-                'id'         => 'StoredProcResponse',
+            'StoredProcedureResponse'     => [
+                'type'       => 'object',
                 'properties' => [
                     '_wrapper_if_supplied_' => [
                         'type'        => 'Array',
@@ -390,18 +472,18 @@ class StoredProcedure extends BaseDbResource
                     ],
                 ],
             ],
-            'StoredProcRequest'      => [
-                'id'         => 'StoredProcRequest',
+            'StoredProcedureRequest'      => [
+                'type'       => 'object',
                 'properties' => [
                     'params'  => [
                         'type'        => 'array',
                         'description' => 'Optional array of input and output parameters.',
                         'items'       => [
-                            '$ref' => 'StoredProcParam',
+                            '$ref' => '#/definitions/StoredProcedureParam',
                         ],
                     ],
                     'schema'  => [
-                        'type'        => 'StoredProcResultSchema',
+                        'type'        => 'StoredProcedureResultSchema',
                         'description' => 'Optional name to type pairs to be applied to returned data.',
                     ],
                     'wrapper' => [
@@ -414,8 +496,8 @@ class StoredProcedure extends BaseDbResource
                     ],
                 ],
             ],
-            'StoredProcParam'        => [
-                'id'         => 'StoredProcParam',
+            'StoredProcedureParam'        => [
+                'type'       => 'object',
                 'properties' => [
                     'name'       => [
                         'type'        => 'string',
@@ -446,8 +528,8 @@ class StoredProcedure extends BaseDbResource
                     ],
                 ],
             ],
-            'StoredProcResultSchema' => [
-                'id'         => 'StoredProcResultSchema',
+            'StoredProcedureResultSchema' => [
+                'type'       => 'object',
                 'properties' => [
                     '_field_name_' => [
                         'type'        => 'string',
@@ -459,8 +541,8 @@ class StoredProcedure extends BaseDbResource
             ],
         ];
 
-        $base['apis'] = array_merge($base['apis'], $apis);
-        $base['models'] = array_merge($base['models'], $models);
+        $base['paths'] = array_merge($base['paths'], $apis);
+        $base['definitions'] = array_merge($base['definitions'], $models);
 
         return $base;
     }
