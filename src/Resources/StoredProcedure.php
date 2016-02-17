@@ -4,6 +4,7 @@ namespace DreamFactory\Core\SqlDb\Resources;
 use DreamFactory\Core\Events\ResourcePostProcess;
 use DreamFactory\Core\Events\ResourcePreProcess;
 use DreamFactory\Core\Models\Service;
+use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
@@ -243,6 +244,7 @@ class StoredProcedure extends BaseDbResource
             $params = [];
         }
 
+        Session::replaceLookups($params);
         foreach ($params as $key => $param) {
             // overcome shortcomings of passed in data
             if (is_array($param)) {
