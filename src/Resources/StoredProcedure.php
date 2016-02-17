@@ -186,13 +186,7 @@ class StoredProcedure extends BaseDbResource
     }
 
     /**
-     * @param null $schema
-     * @param bool $refresh
-     *
-     * @return array
-     * @throws InternalServerErrorException
-     * @throws RestException
-     * @throws \Exception
+     * {@inheritdoc}
      */
     public function listResources($schema = null, $refresh = false)
     {
@@ -205,6 +199,9 @@ class StoredProcedure extends BaseDbResource
         }
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function getResources($only_handlers = false)
     {
         if ($only_handlers) {
@@ -356,17 +353,17 @@ class StoredProcedure extends BaseDbResource
         $apis = [
             $path . '/{procedure_name}' => [
                 'get'  => [
-                    'tags'        => [$serviceName],
-                    'summary'     => 'call'.$capitalized.'StoredProcedure() - Call a stored procedure.',
-                    'operationId' => 'call'.$capitalized.'StoredProcedure',
-                    'description' =>
+                    'tags'              => [$serviceName],
+                    'summary'           => 'call' . $capitalized . 'StoredProcedure() - Call a stored procedure.',
+                    'operationId'       => 'call' . $capitalized . 'StoredProcedure',
+                    'description'       =>
                         'Call a stored procedure with no parameters. ' .
                         'Set an optional wrapper for the returned data set. ',
-                    'event_name'  => [
+                    'x-publishedEvents' => [
                         $eventPath . '.{procedure_name}.call',
                         $eventPath . '.procedure_called',
                     ],
-                    'parameters'  => [
+                    'parameters'        => [
                         [
                             'name'        => 'procedure_name',
                             'description' => 'Name of the stored procedure to call.',
@@ -389,7 +386,7 @@ class StoredProcedure extends BaseDbResource
                             'required'    => false,
                         ],
                     ],
-                    'responses'   => [
+                    'responses'         => [
                         '200'     => [
                             'description' => 'Success',
                             'schema'      => ['$ref' => '#/definitions/StoredProcedureResponse']
@@ -401,17 +398,19 @@ class StoredProcedure extends BaseDbResource
                     ],
                 ],
                 'post' => [
-                    'tags'        => [$serviceName],
-                    'summary'     => 'call'.$capitalized.'StoredProcedureWithParams() - Call a stored procedure.',
-                    'operationId' => 'call'.$capitalized.'StoredProcedureWithParams',
-                    'description' =>
+                    'tags'              => [$serviceName],
+                    'summary'           => 'call' .
+                        $capitalized .
+                        'StoredProcedureWithParams() - Call a stored procedure.',
+                    'operationId'       => 'call' . $capitalized . 'StoredProcedureWithParams',
+                    'description'       =>
                         'Call a stored procedure with parameters. ' .
                         'Set an optional wrapper and schema for the returned data set. ',
-                    'event_name'  => [
+                    'x-publishedEvents' => [
                         $eventPath . '.{procedure_name}.call',
                         $eventPath . '.procedure_called',
                     ],
-                    'parameters'  => [
+                    'parameters'        => [
                         [
                             'name'        => 'procedure_name',
                             'description' => 'Name of the stored procedure to call.',
@@ -441,7 +440,7 @@ class StoredProcedure extends BaseDbResource
                             'required'    => false,
                         ],
                     ],
-                    'responses'   => [
+                    'responses'         => [
                         '200'     => [
                             'description' => 'Success',
                             'schema'      => ['$ref' => '#/definitions/StoredProcedureResponse']
@@ -460,7 +459,7 @@ class StoredProcedure extends BaseDbResource
                 'type'       => 'object',
                 'properties' => [
                     '_wrapper_if_supplied_' => [
-                        'type'        => 'Array',
+                        'type'        => 'array',
                         'description' => 'Array of returned data.',
                         'items'       => [
                             'type' => 'string'
@@ -483,8 +482,7 @@ class StoredProcedure extends BaseDbResource
                         ],
                     ],
                     'schema'  => [
-                        'type'        => 'StoredProcedureResultSchema',
-                        'description' => 'Optional name to type pairs to be applied to returned data.',
+                        '$ref' => '#/definitions/StoredProcedureResultSchema',
                     ],
                     'wrapper' => [
                         'type'        => 'string',
