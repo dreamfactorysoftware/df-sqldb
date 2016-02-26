@@ -547,12 +547,12 @@ class Table extends BaseDbTableResource
                 $negate = false;
                 if (false !== strpos($field, ' ')) {
                     $parts = explode(' ', $field);
-                    if ((count($parts) > 2) || (0 !== strcasecmp($parts[1], trim(DbLogicalOperators::NOT_STR)))) {
-                        // invalid field side of operator
-                        throw new BadRequestException('Invalid or unparsable field in filter request.');
+                    $partsCount = count($parts);
+                    if (($partsCount > 1) && (0 === strcasecmp($parts[$partsCount - 1], trim(DbLogicalOperators::NOT_STR)))) {
+                        // negation on left side of operator
+                        $field = implode(' ', array_pop($parts));
+                        $negate = true;
                     }
-                    $field = $parts[0];
-                    $negate = true;
                 }
                 /** @type ColumnSchema $info */
                 if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
