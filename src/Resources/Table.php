@@ -550,7 +550,8 @@ class Table extends BaseDbTableResource
                     $partsCount = count($parts);
                     if (($partsCount > 1) && (0 === strcasecmp($parts[$partsCount - 1], trim(DbLogicalOperators::NOT_STR)))) {
                         // negation on left side of operator
-                        $field = implode(' ', array_pop($parts));
+                        array_pop($parts);
+                        $field = implode(' ', $parts);
                         $negate = true;
                     }
                 }
