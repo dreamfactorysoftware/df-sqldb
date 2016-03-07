@@ -558,7 +558,7 @@ class Table extends BaseDbTableResource
                 /** @type ColumnSchema $info */
                 if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
                     // This could be SQL injection attempt or bad field
-                    throw new BadRequestException('Invalid or unparsable field in filter request.');
+                    throw new BadRequestException("Invalid or unparsable field in filter request: '$field'");
                 }
 
                 // make sure we haven't chopped off right side too much
