@@ -4,6 +4,7 @@ namespace DreamFactory\Core\SqlDb\Resources;
 use DreamFactory\Core\Events\ResourcePostProcess;
 use DreamFactory\Core\Events\ResourcePreProcess;
 use DreamFactory\Core\Models\Service;
+use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\ArrayUtils;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
@@ -244,6 +245,7 @@ class StoredFunction extends BaseDbResource
             $params = [];
         }
 
+        Session::replaceLookups($params);
         foreach ($params as $key => $param) {
             // overcome shortcomings of passed in data
             if (is_array($param)) {
@@ -319,14 +321,14 @@ class StoredFunction extends BaseDbResource
         $apis = [
             $path . '/{function_name}' => [
                 'get'  => [
-                    'tags'        => [$serviceName],
-                    'summary'     => 'call'.$capitalized.'StoredFunction() - Call a stored function.',
-                    'operationId' => 'call'.$capitalized.'StoredFunction',
-                    'description' =>
+                    'tags'              => [$serviceName],
+                    'summary'           => 'call' . $capitalized . 'StoredFunction() - Call a stored function.',
+                    'operationId'       => 'call' . $capitalized . 'StoredFunction',
+                    'description'       =>
                         'Call a stored function with no parameters. ' .
                         'Set an optional wrapper for the returned data set. ',
-                    'event_name'  => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
-                    'parameters'  => [
+                    'x-publishedEvents' => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
+                    'parameters'        => [
                         [
                             'name'        => 'function_name',
                             'description' => 'Name of the stored function to call.',
@@ -349,7 +351,7 @@ class StoredFunction extends BaseDbResource
                             'required'    => false,
                         ],
                     ],
-                    'responses'   => [
+                    'responses'         => [
                         '200'     => [
                             'description' => 'Success',
                             'schema'      => ['$ref' => '#/definitions/StoredFunctionResponse']
@@ -361,14 +363,16 @@ class StoredFunction extends BaseDbResource
                     ],
                 ],
                 'post' => [
-                    'tags'        => [$serviceName],
-                    'summary'     => 'call'.$capitalized.'StoredFunctionWithParams() - Call a stored function.',
-                    'operationId' => 'call'.$capitalized.'StoredFunctionWithParams',
-                    'description' =>
+                    'tags'              => [$serviceName],
+                    'summary'           => 'call' .
+                        $capitalized .
+                        'StoredFunctionWithParams() - Call a stored function.',
+                    'operationId'       => 'call' . $capitalized . 'StoredFunctionWithParams',
+                    'description'       =>
                         'Call a stored function with parameters. ' .
                         'Set an optional wrapper and schema for the returned data set. ',
-                    'event_name'  => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
-                    'parameters'  => [
+                    'x-publishedEvents' => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
+                    'parameters'        => [
                         [
                             'name'        => 'function_name',
                             'description' => 'Name of the stored function to call.',
@@ -398,7 +402,7 @@ class StoredFunction extends BaseDbResource
                             'required'    => false,
                         ],
                     ],
-                    'responses'   => [
+                    'responses'         => [
                         '200'     => [
                             'description' => 'Success',
                             'schema'      => ['$ref' => '#/definitions/StoredFunctionResponse']
@@ -417,7 +421,7 @@ class StoredFunction extends BaseDbResource
                 'type'       => 'object',
                 'properties' => [
                     '_wrapper_if_supplied_' => [
-                        'type'        => 'Array',
+                        'type'        => 'array',
                         'description' => 'Array of returned data.',
                         'items'       => [
                             'type' => 'string'
@@ -440,8 +444,7 @@ class StoredFunction extends BaseDbResource
                         ],
                     ],
                     'schema'  => [
-                        'type'        => 'StoredFunctionResultSchema',
-                        'description' => 'Optional name to type pairs to be applied to returned data.',
+                        '$ref' => '#/definitions/StoredFunctionResultSchema',
                     ],
                     'wrapper' => [
                         'type'        => 'string',

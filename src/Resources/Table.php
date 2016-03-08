@@ -174,9 +174,11 @@ class Table extends BaseDbTableResource
             // build filter string if necessary, add server-side filters if necessary
             $ssFilters = ArrayUtils::get($extras, 'ss_filters');
             $params = [];
-            $serverFilter = $this->buildQueryStringFromData($ssFilters, $params);
+            $serverFilter = $this->buildQueryStringFromData($ssFilters);
             if (!empty($serverFilter)) {
-                $this->dbConn->createCommand()->delete($table, $serverFilter, $params);
+                Session::replaceLookups($serverFilter);
+                $filterString = $this->parseFilterString($serverFilter, $params, $this->tableFieldsInfo);
+                $this->dbConn->createCommand()->delete($table, $filterString, $params);
             } else {
                 $this->dbConn->createCommand()->truncateTable($table);
             }
@@ -447,32 +449,30 @@ class Table extends BaseDbTableResource
         $params = ArrayUtils::clean(static::interpretRecordValues($params));
 
         if (!is_array($filter)) {
-            Session::replaceLookups($filter);
-            $filterString = '';
-            $clientFilter = $this->parseFilterString($filter, $params, $avail_fields);
-            if (!empty($clientFilter)) {
-                $filterString = $clientFilter;
-            }
-            $serverFilter = $this->buildQueryStringFromData($ss_filters, $params);
+            $serverFilter = $this->buildQueryStringFromData($ss_filters);
             if (!empty($serverFilter)) {
-                if (empty($filterString)) {
-                    $filterString = $serverFilter;
+                if (empty($filter)) {
+                    $filter = $serverFilter;
                 } else {
-                    $filterString =
-                        '(' . $filterString . ') ' . DbLogicalOperators::AND_STR . ' (' . $serverFilter . ')';
+                    $filter =
+                        '(' . $filter . ') ' . DbLogicalOperators::AND_STR . ' (' . $serverFilter . ')';
                 }
             }
+            Session::replaceLookups($filter);
+            $filterString = $this->parseFilterString($filter, $params, $avail_fields);
 
             return ['where' => $filterString, 'params' => $params];
         } else {
             // todo parse client filter?
             $filterArray = $filter;
-            $serverFilter = $this->buildQueryStringFromData($ss_filters, $params);
+            $serverFilter = $this->buildQueryStringFromData($ss_filters);
             if (!empty($serverFilter)) {
+                Session::replaceLookups($serverFilter);
+                $filterString = $this->parseFilterString($serverFilter, $params, $avail_fields);
                 if (empty($filter)) {
-                    $filterArray = $serverFilter;
+                    $filterArray = $filterString;
                 } else {
-                    $filterArray = [DbLogicalOperators::AND_STR, $filterArray, $serverFilter];
+                    $filterArray = [DbLogicalOperators::AND_STR, $filterArray, $filterString];
                 }
             }
 
@@ -547,17 +547,18 @@ class Table extends BaseDbTableResource
                 $negate = false;
                 if (false !== strpos($field, ' ')) {
                     $parts = explode(' ', $field);
-                    if ((count($parts) > 2) || (0 !== strcasecmp($parts[1], trim(DbLogicalOperators::NOT_STR)))) {
-                        // invalid field side of operator
-                        throw new BadRequestException('Invalid or unparsable field in filter request.');
+                    $partsCount = count($parts);
+                    if (($partsCount > 1) && (0 === strcasecmp($parts[$partsCount - 1], trim(DbLogicalOperators::NOT_STR)))) {
+                        // negation on left side of operator
+                        array_pop($parts);
+                        $field = implode(' ', $parts);
+                        $negate = true;
                     }
-                    $field = $parts[0];
-                    $negate = true;
                 }
                 /** @type ColumnSchema $info */
                 if (null === $info = ArrayUtils::get($fields_info, strtolower($field))) {
                     // This could be SQL injection attempt or bad field
-                    throw new BadRequestException('Invalid or unparsable field in filter request.');
+                    throw new BadRequestException("Invalid or unparsable field in filter request: '$field'");
                 }
 
                 // make sure we haven't chopped off right side too much
@@ -586,6 +587,7 @@ class Table extends BaseDbTableResource
                 } elseif (DbComparisonOperators::requiresNoValue($sqlOp)) {
                     $value = null;
                 } else {
+                    static::modifyValueByOperator($sqlOp, $value);
                     $value = $this->parseFilterValue($value, $info, $params);
                 }
 
@@ -1375,9 +1377,11 @@ class Table extends BaseDbTableResource
                 }
 
                 $criteria = $builder->createCriteria($linkerField->rawName . ' = :v1', [':v1' => $pk]);
-                $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+                $serverFilter = $this->buildQueryStringFromData($ssFilters);
                 if (!empty($serverFilter)) {
-                    $criteria->addCondition($serverFilter);
+                    Session::replaceLookups($serverFilter);
+                    $filterString = $this->parseFilterString($serverFilter, $criteria->params, $this->tableFieldsInfo);
+                    $criteria->addCondition($filterString);
                 }
 
                 $rows = $command->update($tableName, $parsed, $criteria->condition, $criteria->params);
@@ -1410,9 +1414,11 @@ class Table extends BaseDbTableResource
             $builder = $this->dbConn->getSchema()->getCommandBuilder();
             $criteria = $builder->createCriteria();
             $criteria->addInCondition($linkerField->rawName, $linkerIds);
-            $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+            $serverFilter = $this->buildQueryStringFromData($ssFilters);
             if (!empty($serverFilter)) {
-                $criteria->addCondition($serverFilter);
+                Session::replaceLookups($serverFilter);
+                $filterString = $this->parseFilterString($serverFilter, $criteria->params, $this->tableFieldsInfo);
+                $criteria->addCondition($filterString);
             }
 
             $command = $this->dbConn->createCommand();
@@ -1452,10 +1458,13 @@ class Table extends BaseDbTableResource
             $criteria->addInCondition($linkerField->rawName, $linkerIds);
 
             $ssFilters = Session::getServiceFilters(Verbs::DELETE, $service, $schema->getName(true));
-            $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+            $serverFilter = $this->buildQueryStringFromData($ssFilters);
             if (!empty($serverFilter)) {
-                $criteria->addCondition($serverFilter);
+                Session::replaceLookups($serverFilter);
+                $filterString = $this->parseFilterString($serverFilter, $criteria->params, $this->tableFieldsInfo);
+                $criteria->addCondition($filterString);
             }
+
             if (!empty($addCondition) && is_array($addCondition)) {
                 foreach ($addCondition as $key => $value) {
                     $column = $schema->getColumn($key);
@@ -1652,12 +1661,11 @@ class Table extends BaseDbTableResource
 
     /**
      * @param       $filter_info
-     * @param array $params
      *
      * @return null|string
      * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
      */
-    protected function buildQueryStringFromData($filter_info, array &$params)
+    protected function buildQueryStringFromData($filter_info)
     {
         $filter_info = ArrayUtils::clean($filter_info);
         $filters = ArrayUtils::get($filter_info, 'filters');
@@ -1673,22 +1681,17 @@ class Table extends BaseDbTableResource
             }
 
             $name = ArrayUtils::get($filter, 'name');
-            $op = ArrayUtils::get($filter, 'operator');
-            $value = ArrayUtils::get($filter, 'value');
-            $value = static::interpretFilterValue($value);
-
+            $op = strtoupper(ArrayUtils::get($filter, 'operator'));
             if (empty($name) || empty($op)) {
                 // log and bail
                 throw new InternalServerErrorException('Invalid server-side filter configuration detected.');
             }
 
             if (DbComparisonOperators::requiresNoValue($op)) {
-                $sql .= '(' . $this->dbConn->quoteColumnName($name) . " $op)";
+                $sql .= "($name $op)";
             } else {
-                $paramName = ':ssf_' . $name . '_' . $key;
-                $params[$paramName] = $value;
-                $value = $paramName;
-                $sql .= '(' . $this->dbConn->quoteColumnName($name) . " $op $value)";
+                $value = ArrayUtils::get($filter, 'value');
+                $sql .= "($name $op $value)";
             }
         }
 
@@ -1907,9 +1910,11 @@ class Table extends BaseDbTableResource
             $criteria->params[":pk_$name"] = $id;
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+        $serverFilter = $this->buildQueryStringFromData($ssFilters);
         if (!empty($serverFilter)) {
-            $criteria->addCondition($serverFilter);
+            Session::replaceLookups($serverFilter);
+            $filterString = $this->parseFilterString($serverFilter, $criteria->params, $this->tableFieldsInfo);
+            $criteria->addCondition($filterString);
         }
 
         /** @var Command $command */
@@ -2156,9 +2161,11 @@ class Table extends BaseDbTableResource
             $criteria->addInCondition($idName->rawName, $this->batchIds);
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters, $criteria->params);
+        $serverFilter = $this->buildQueryStringFromData($ssFilters);
         if (!empty($serverFilter)) {
-            $criteria->addCondition($serverFilter);
+            Session::replaceLookups($serverFilter);
+            $filterString = $this->parseFilterString($serverFilter, $criteria->params, $this->tableFieldsInfo);
+            $criteria->addCondition($filterString);
         }
 
         $out = [];

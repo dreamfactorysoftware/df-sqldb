@@ -12,10 +12,10 @@ trait TableDescriber
 
         return [
             'TableSchemas'  => [
-                'id'         => 'TableSchemas',
+                'type'       => 'object',
                 'properties' => [
                     $wrapper => [
-                        'type'        => 'Array',
+                        'type'        => 'array',
                         'description' => 'An array of table definitions.',
                         'items'       => [
                             '$ref' => '#/definitions/TableSchema',
@@ -24,7 +24,7 @@ trait TableDescriber
                 ],
             ],
             'TableSchema'   => [
-                'id'         => 'TableSchema',
+                'type'       => 'object',
                 'properties' => [
                     'name'        => [
                         'type'        => 'string',
@@ -47,14 +47,14 @@ trait TableDescriber
                         'description' => 'Field(s), if any, that represent the name of each record.',
                     ],
                     'field'       => [
-                        'type'        => 'Array',
+                        'type'        => 'array',
                         'description' => 'An array of available fields in each record.',
                         'items'       => [
                             '$ref' => '#/definitions/FieldSchema',
                         ],
                     ],
                     'related'     => [
-                        'type'        => 'Array',
+                        'type'        => 'array',
                         'description' => 'An array of available relationships to other tables.',
                         'items'       => [
                             '$ref' => '#/definitions/RelatedSchema',
@@ -63,7 +63,7 @@ trait TableDescriber
                 ],
             ],
             'FieldSchema'   => [
-                'id'         => 'FieldSchema',
+                'type'       => 'object',
                 'properties' => [
                     'name'               => [
                         'type'        => 'string',
@@ -137,14 +137,14 @@ trait TableDescriber
                         'description' => 'For foreign keys, the referenced table field name.',
                     ],
                     'validation'         => [
-                        'type'        => 'Array',
+                        'type'        => 'array',
                         'description' => 'validations to be performed on this field.',
                         'items'       => [
                             'type' => 'string',
                         ],
                     ],
                     'value'              => [
-                        'type'        => 'Array',
+                        'type'        => 'array',
                         'description' => 'Selectable string values for client menus and picklist validation.',
                         'items'       => [
                             'type' => 'string',
@@ -153,37 +153,37 @@ trait TableDescriber
                 ],
             ],
             'RelatedSchema' => [
-                'id'         => 'RelatedSchema',
+                'type'       => 'object',
                 'properties' => [
-                    'name'      => [
+                    'name'               => [
                         'type'        => 'string',
                         'description' => 'Name of the relationship.',
                     ],
-                    'type'      => [
+                    'type'               => [
                         'type'        => 'string',
                         'description' => 'Relationship type - belongs_to, has_many, many_many.',
                     ],
-                    'field'     => [
+                    'field'              => [
                         'type'        => 'string',
                         'description' => 'The current table field that is used in the relationship.',
                     ],
-                    'ref_table' => [
+                    'ref_table'          => [
                         'type'        => 'string',
                         'description' => 'The table name that is referenced by the relationship.',
                     ],
-                    'ref_fields' => [
+                    'ref_fields'         => [
                         'type'        => 'string',
                         'description' => 'The field name that is referenced by the relationship.',
                     ],
-                    'junction_table'      => [
+                    'junction_table'     => [
                         'type'        => 'string',
                         'description' => 'The intermediate junction table used for many_many relationships.',
                     ],
-                    'junction_field'      => [
+                    'junction_field'     => [
                         'type'        => 'string',
                         'description' => 'The intermediate junction table field used for many_many relationships.',
                     ],
-                    'junction_ref_field'      => [
+                    'junction_ref_field' => [
                         'type'        => 'string',
                         'description' => 'The intermediate joining table referencing field used for many_many relationships.',
                     ],
