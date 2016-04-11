@@ -1,18 +1,18 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
+use DreamFactory\Core\Components\DataValidator;
+use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Events\ResourcePostProcess;
 use DreamFactory\Core\Events\ResourcePreProcess;
-use DreamFactory\Core\Models\Service;
-use DreamFactory\Core\Utility\Session;
-use DreamFactory\Library\Utility\ArrayUtils;
-use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\RestException;
+use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\Resources\BaseDbResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
-use DreamFactory\Core\Utility\DbUtilities;
+use DreamFactory\Core\Utility\DataFormatter;
+use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\Inflector;
 
 class StoredFunction extends BaseDbResource
@@ -21,6 +21,7 @@ class StoredFunction extends BaseDbResource
     //	Traits
     //*************************************************************************
 
+    use DataValidator;
     use SqlDbResource;
 
     //*************************************************************************
@@ -142,15 +143,15 @@ class StoredFunction extends BaseDbResource
         if (false !== strpos($this->resource, '(')) {
             $inlineParams = strstr($this->resource, '(');
             $name = rtrim(strstr($this->resource, '(', true));
-            $params = ArrayUtils::get($payload, 'params', trim($inlineParams, '()'));
+            $params = array_get($payload, 'params', trim($inlineParams, '()'));
         } else {
             $name = $this->resource;
-            $params = ArrayUtils::get($payload, 'params', []);
+            $params = array_get($payload, 'params', []);
         }
 
-        $returns = ArrayUtils::get($payload, 'returns');
-        $wrapper = ArrayUtils::get($payload, 'wrapper');
-        $schema = ArrayUtils::get($payload, 'schema');
+        $returns = array_get($payload, 'returns');
+        $wrapper = array_get($payload, 'wrapper');
+        $schema = array_get($payload, 'schema');
 
         return $this->callFunction($name, $params, $returns, $schema, $wrapper);
     }
@@ -165,15 +166,15 @@ class StoredFunction extends BaseDbResource
         if (false !== strpos($this->resource, '(')) {
             $inlineParams = strstr($this->resource, '(');
             $name = rtrim(strstr($this->resource, '(', true));
-            $params = ArrayUtils::get($payload, 'params', trim($inlineParams, '()'));
+            $params = array_get($payload, 'params', trim($inlineParams, '()'));
         } else {
             $name = $this->resource;
-            $params = ArrayUtils::get($payload, 'params', []);
+            $params = array_get($payload, 'params', []);
         }
 
-        $returns = ArrayUtils::get($payload, 'returns');
-        $wrapper = ArrayUtils::get($payload, 'wrapper');
-        $schema = ArrayUtils::get($payload, 'schema');
+        $returns = array_get($payload, 'returns');
+        $wrapper = array_get($payload, 'wrapper');
+        $schema = array_get($payload, 'schema');
 
         return $this->callFunction($name, $params, $returns, $schema, $wrapper);
     }
@@ -192,7 +193,7 @@ class StoredFunction extends BaseDbResource
     public function listResources($schema = null, $refresh = false)
     {
         try {
-            return $this->dbConn->getSchema()->getFunctionNames($schema, $refresh);
+            return $this->schema->getFunctionNames($schema, $refresh);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
@@ -241,7 +242,7 @@ class StoredFunction extends BaseDbResource
             throw new BadRequestException('Stored function name can not be empty.');
         }
 
-        if (false === $params = DbUtilities::validateAsArray($params, ',', true)) {
+        if (false === $params = static::validateAsArray($params, ',', true)) {
             $params = [];
         }
 
@@ -249,7 +250,7 @@ class StoredFunction extends BaseDbResource
         foreach ($params as $key => $param) {
             // overcome shortcomings of passed in data
             if (is_array($param)) {
-                if (null === $pName = ArrayUtils::get($param, 'name', null, false)) {
+                if (null === $pName = array_get($param, 'name')) {
                     $params[$key]['name'] = "p$key";
                 }
             } else {
@@ -258,7 +259,7 @@ class StoredFunction extends BaseDbResource
         }
 
         try {
-            $result = $this->dbConn->getSchema()->callFunction($name, $params);
+            $result = $this->schema->callFunction($name, $params);
 
             if (!empty($returns) && (0 !== strcasecmp('TABLE', $returns))) {
                 // result could be an array of array of one value - i.e. multi-dataset format with just a single value
@@ -268,7 +269,7 @@ class StoredFunction extends BaseDbResource
                         $result = current($result);
                     }
                 }
-                $result = DbUtilities::formatValue($result, $returns);
+                $result = DataFormatter::formatValue($result, $returns);
             }
 
             // convert result field values to types according to schema received
@@ -280,16 +281,16 @@ class StoredFunction extends BaseDbResource
                             foreach ($row as &$sub) {
                                 if (is_array($sub)) {
                                     foreach ($sub as $key => $value) {
-                                        if (null !== $type = ArrayUtils::get($schema, $key, null, false)) {
-                                            $sub[$key] = DbUtilities::formatValue($value, $type);
+                                        if (null !== $type = array_get($schema, $key)) {
+                                            $sub[$key] = DataFormatter::formatValue($value, $type);
                                         }
                                     }
                                 }
                             }
                         } else {
                             foreach ($row as $key => $value) {
-                                if (null !== $type = ArrayUtils::get($schema, $key, null, false)) {
-                                    $row[$key] = DbUtilities::formatValue($value, $type);
+                                if (null !== $type = array_get($schema, $key)) {
+                                    $row[$key] = DataFormatter::formatValue($value, $type);
                                 }
                             }
                         }
@@ -313,7 +314,7 @@ class StoredFunction extends BaseDbResource
         $serviceName = strtolower($service->name);
         $capitalized = Inflector::camelize($service->name);
         $class = trim(strrchr(static::class, '\\'), '\\');
-        $resourceName = strtolower(ArrayUtils::get($resource, 'name', $class));
+        $resourceName = strtolower(array_get($resource, 'name', $class));
         $path = '/' . $serviceName . '/' . $resourceName;
         $eventPath = $serviceName . '.' . $resourceName;
         $base = parent::getApiDocInfo($service, $resource);
