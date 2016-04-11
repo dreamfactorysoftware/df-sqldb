@@ -1086,6 +1086,9 @@ class Table extends BaseDbTableResource
                 Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                 // Get records
+                if ('string' === gettype($fieldVal)) {
+                    $fieldVal = "'$fieldVal'";
+                }
                 $extras[ApiOptions::FILTER] = '(' . $refField->getName(true) . ' = ' . $fieldVal . ')';
                 $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
                 if (RelationSchema::BELONGS_TO === $relation->type) {
