@@ -165,6 +165,7 @@ class SqlDbConfig extends BaseServiceConfigModel
         if ('dblib' === $driver) {
             $driver = 'sqlsrv';
         }
+        $pdoDriver = null;
         switch ($driver) {
             case 'ibm':
                 if (!extension_loaded('ibm_db2')) {
@@ -182,8 +183,6 @@ class SqlDbConfig extends BaseServiceConfigModel
                 if (!extension_loaded('oci8')) {
                     throw new \Exception("Required extension 'oci8' is not detected, but may be compiled in.");
                 }
-                // don't call parent method here, no need for PDO driver
-                $pdoDriver = 'oci';
                 break;
             case 'pgsql':
                 if (!extension_loaded('pgsql')) {
@@ -223,7 +222,7 @@ class SqlDbConfig extends BaseServiceConfigModel
         }
 
         if ($pdoDriver) {
-            static::checkForPdoDriver($driver);
+            static::checkForPdoDriver($pdoDriver);
         }
 
         return true;
