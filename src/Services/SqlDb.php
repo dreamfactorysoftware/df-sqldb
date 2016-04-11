@@ -4,11 +4,10 @@ namespace DreamFactory\Core\SqlDb\Services;
 
 use DreamFactory\Core\Components\DbSchemaExtras;
 use DreamFactory\Core\Contracts\CacheInterface;
-use DreamFactory\Core\Database\Connection;
-use DreamFactory\Core\Database\ConnectionFactory;
-use DreamFactory\Core\Database\DbExtrasInterface;
+use DreamFactory\Core\Contracts\DbExtrasInterface;
+use DreamFactory\Core\Contracts\SchemaInterface;
+use DreamFactory\Core\Database\ConnectionExtension;
 use DreamFactory\Core\Database\TableSchema;
-use DreamFactory\Core\Enums\SqlDbDriverTypes;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Services\BaseDbService;
 use DreamFactory\Core\SqlDb\Resources\Schema;
@@ -16,7 +15,9 @@ use DreamFactory\Core\SqlDb\Resources\StoredFunction;
 use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
 use DreamFactory\Core\Utility\Session;
-use DreamFactory\Library\Utility\ArrayUtils;
+use DreamFactory\Library\Utility\Scalar;
+use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\DatabaseManager;
 
 /**
  * Class SqlDb
@@ -25,20 +26,21 @@ use DreamFactory\Library\Utility\ArrayUtils;
  */
 class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
 {
-    use DbSchemaExtras;
+    use ConnectionExtension, DbSchemaExtras;
 
     //*************************************************************************
     //	Members
     //*************************************************************************
 
     /**
-     * @var Connection
+     * @var ConnectionInterface
      */
     protected $dbConn;
+
     /**
-     * @var integer
+     * @var SchemaInterface
      */
-    protected $driverType = SqlDbDriverTypes::DRV_OTHER;
+    protected $schema;
 
     /**
      * @var array
@@ -70,6 +72,169 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
     //	Methods
     //*************************************************************************
 
+    public static function adaptConfig(array &$config)
+    {
+        $driver = isset($config['driver']) ? $config['driver'] : null;
+        // replace old driver names or setup environment
+        switch ($driver) {
+            case 'dblib':
+            case 'sqlsrv':
+                $config['driver'] = 'sqlsrv';
+                $driver = 'sqlsrv';
+                if (in_array('dblib', \PDO::getAvailableDrivers())) {
+                    if (null !== $dumpLocation = config('df.db.freetds.dump')) {
+                        if (!putenv("TDSDUMP=$dumpLocation")) {
+                            \Log::alert('Could not write environment variable for TDSDUMP location.');
+                        }
+                    }
+                    if (null !== $dumpConfLocation = config('df.db.freetds.dumpconfig')) {
+                        if (!putenv("TDSDUMPCONFIG=$dumpConfLocation")) {
+                            \Log::alert('Could not write environment variable for TDSDUMPCONFIG location.');
+                        }
+                    }
+                    if (null !== $confLocation = config('df.db.freetds.sqlsrv')) {
+                        if (!putenv("FREETDSCONF=$confLocation")) {
+                            \Log::alert('Could not write environment variable for FREETDSCONF location.');
+                        }
+                    }
+                }
+                break;
+            case 'sqlanywhere':
+                if (in_array('dblib', \PDO::getAvailableDrivers())) {
+                    if (null !== $dumpLocation = config('df.db.freetds.dump')) {
+                        if (!putenv("TDSDUMP=$dumpLocation")) {
+                            \Log::alert('Could not write environment variable for TDSDUMP location.');
+                        }
+                    }
+                    if (null !== $dumpConfLocation = config('df.db.freetds.dumpconfig')) {
+                        if (!putenv("TDSDUMPCONFIG=$dumpConfLocation")) {
+                            \Log::alert('Could not write environment variable for TDSDUMPCONFIG location.');
+                        }
+                    }
+                    if (null !== $confLocation = config('df.db.freetds.sqlanywhere')) {
+                        if (!putenv("FREETDSCONF=$confLocation")) {
+                            \Log::alert('Could not write environment variable for FREETDSCONF location.');
+                        }
+                    }
+                }
+                break;
+            case 'oci':
+                $config['driver'] = 'oracle';
+                $driver = 'oracle';
+                break;
+        }
+        $dsn = isset($config['dsn']) ? $config['dsn'] : null;
+        if (!empty($dsn)) {
+            // default PDO DSN pieces
+            $dsn = str_replace(' ', '', $dsn);
+            if ('oracle' !== $driver) { // see below
+                if (!isset($config['port']) && (false !== ($pos = strpos($dsn, 'port=')))) {
+                    $temp = substr($dsn, $pos + 5);
+                    $config['port'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                }
+                if (!isset($config['host']) && (false !== ($pos = strpos($dsn, 'host=')))) {
+                    $temp = substr($dsn, $pos + 5);
+                    $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                    if (!isset($config['port']) && (false !== ($pos = stripos($host, ':')))) {
+                        $temp = substr($host, $pos + 1);
+                        $host = substr($host, 0, $pos);
+                        $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                    }
+                    $config['host'] = $host;
+                }
+                if (!isset($config['database']) && (false !== ($pos = strpos($dsn, 'dbname=')))) {
+                    $temp = substr($dsn, $pos + 7);
+                    $config['database'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                }
+                if (!isset($config['charset'])) {
+                    if (false !== ($pos = strpos($dsn, 'charset='))) {
+                        $temp = substr($dsn, $pos + 8);
+                        $config['charset'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                    } else {
+                        $config['charset'] = 'utf8';
+                    }
+                }
+            }
+
+            // specials
+            switch ($driver) {
+                case 'sqlite':
+                    if (!isset($config['database'])) {
+                        $file = substr($dsn, 7);
+                        if (false === strpos($file, DIRECTORY_SEPARATOR)) {
+                            // no directories involved, store it where we want to store it
+                            $storage = config('df.db.sqlite_storage');
+                            if (!is_dir($storage)) {
+                                // Attempt
+                                @mkdir($storage);
+                            }
+                            if (!is_dir($storage)) {
+                                logger('Failed to access storage path ' . $storage);
+                                throw new InternalServerErrorException('Failed to access storage path.');
+                            }
+
+                            $file = rtrim($storage, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $file;
+                        }
+                        $config['database'] = $file;
+                    }
+                    break;
+                case 'sqlsrv':
+                    // SQL Server native driver specifics
+                    if (!isset($config['host']) && (false !== ($pos = stripos($dsn, 'Server=')))) {
+                        $temp = substr($dsn, $pos + 7);
+                        $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                        if (!isset($config['port']) && (false !== ($pos = stripos($host, ',')))) {
+                            $temp = substr($host, $pos + 1);
+                            $host = substr($host, 0, $pos);
+                            $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                        }
+                        $config['host'] = $host;
+                    }
+                    if (!isset($config['database']) && (false !== ($pos = stripos($dsn, 'Database=')))) {
+                        $temp = substr($dsn, $pos + 9);
+                        $config['database'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                    }
+                    break;
+                case 'oracle':
+                    // traditional connection string uses (), reset find
+                    if (!isset($config['host']) && (false !== ($pos = stripos($dsn, 'host=')))) {
+                        $temp = substr($dsn, $pos + 5);
+                        $config['host'] = (false !== $pos = stripos($temp, ')')) ? substr($temp, 0, $pos) : $temp;
+                    }
+                    if (!isset($config['port']) && (false !== ($pos = stripos($dsn, 'port=')))) {
+                        $temp = substr($dsn, $pos + 5);
+                        $config['port'] = (false !== $pos = stripos($temp, ')')) ? substr($temp, 0, $pos) : $temp;
+                    }
+                    if (!isset($config['database']) && (false !== ($pos = stripos($dsn, 'sid=')))) {
+                        $temp = substr($dsn, $pos + 4);
+                        $config['database'] = (false !== $pos = stripos($temp, ')')) ? substr($temp, 0, $pos) : $temp;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (!isset($config['collation'])) {
+            $config['collation'] = 'utf8_unicode_ci';
+        }
+
+        // must be there
+        if (!array_key_exists('database', $config)) {
+            $config['database'] = null;
+        }
+
+        // must be there
+        if (!array_key_exists('prefix', $config)) {
+            $config['prefix'] = null;
+        }
+
+        // laravel database config requires options to be [], not null
+        if (array_key_exists('options', $config) && is_null($config['options'])) {
+            $config['options'] = [];
+        }
+    }
+
     /**
      * Create a new SqlDbSvc
      *
@@ -82,33 +247,24 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
     {
         parent::__construct($settings);
 
-        $config = ArrayUtils::clean(ArrayUtils::get($settings, 'config'));
+        $config = array_get($settings, 'config', []);
         Session::replaceLookups($config, true);
 
-        $driver = isset($config['driver']) ? $config['driver'] : null;
-        $this->dbConn = ConnectionFactory::createConnection($driver, $config);
-        $this->dbConn->setCache($this);
-        $this->dbConn->setExtraStore($this);
+        static::adaptConfig($config);
 
-        $defaultSchemaOnly = ArrayUtils::getBool($config, 'default_schema_only');
-        $this->dbConn->setDefaultSchemaOnly($defaultSchemaOnly);
+        // add config to global for reuse, todo check existence and update?
+        config(['database.connections.service.' . $this->name => $config]);
+        /** @type DatabaseManager $db */
+        $db = app('db');
+        $this->dbConn = $db->connection('service.' . $this->name);
+        $this->initStatements();
+        
+        $this->schema = $this->getSchema($this->dbConn);
+        $this->schema->setCache($this);
+        $this->schema->setExtraStore($this);
 
-        switch ($this->dbConn->getDBName()) {
-            case SqlDbDriverTypes::MYSQL:
-            case SqlDbDriverTypes::MYSQLI:
-                $this->dbConn->setAttribute(\PDO::ATTR_EMULATE_PREPARES, true);
-                break;
-
-            case SqlDbDriverTypes::DBLIB:
-                $this->dbConn->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-                break;
-        }
-
-        $attributes = ArrayUtils::clean(ArrayUtils::get($settings, 'attributes'));
-
-        if (!empty($attributes)) {
-            $this->dbConn->setAttributes($attributes);
-        }
+        $defaultSchemaOnly = Scalar::boolval(array_get($config, 'default_schema_only'));
+        $this->schema->setDefaultSchemaOnly($defaultSchemaOnly);
     }
 
     /**
@@ -118,10 +274,7 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
     {
         if (isset($this->dbConn)) {
             try {
-                $this->dbConn->setActive(false);
                 $this->dbConn = null;
-            } catch (\PDOException $ex) {
-                error_log("Failed to disconnect from database.\n{$ex->getMessage()}");
             } catch (\Exception $ex) {
                 error_log("Failed to disconnect from database.\n{$ex->getMessage()}");
             }
@@ -129,33 +282,43 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
     }
 
     /**
-     * @return Connection
+     * @throws \Exception
+     * @return ConnectionInterface
      */
     public function getConnection()
-    {
-        $this->checkConnection();
-
-        return $this->dbConn;
-    }
-
-    /**
-     * @throws \Exception
-     */
-    protected function checkConnection()
     {
         if (!isset($this->dbConn)) {
             throw new InternalServerErrorException('Database connection has not been initialized.');
         }
 
-        try {
-            $this->dbConn->setActive(true);
-        } catch (\PDOException $ex) {
-            throw new InternalServerErrorException("Failed to connect to database.\n{$ex->getMessage()}");
-        } catch (\Exception $ex) {
-            throw new InternalServerErrorException("Failed to connect to database.\n{$ex->getMessage()}");
-        }
+        return $this->dbConn;
     }
 
+    protected function initStatements($statements = [])
+    {
+        if (is_string($statements)) {
+            $statements = [$statements];
+        } elseif (!is_array($statements)) {
+            $statements = [];
+        }
+        
+        switch ($this->dbConn->getDriverName()){
+            case 'sqlite':
+                array_unshift($statements, 'PRAGMA foreign_keys=1');
+                break;
+            case 'sqlsrv':
+                // These are on by default for sqlsrv driver, but not dblib.
+                // Also, can't use 'SET ANSI_DEFAULTS ON', seems to return false positives for DROP TABLE etc. todo
+                array_unshift($statements, 'SET QUOTED_IDENTIFIER ON;');
+                array_unshift($statements, 'SET ANSI_WARNINGS ON;');
+                array_unshift($statements, 'SET ANSI_NULLS ON;');
+                break;
+        }
+        foreach ($statements as $statement) {
+            $this->dbConn->statement($statement);
+        }
+    }
+    
     /**
      * @param string|null $schema
      * @param bool        $refresh
@@ -166,7 +329,8 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
      */
     public function getTableNames($schema = null, $refresh = false, $use_alias = false)
     {
-        $tables = $this->dbConn->getSchema()->getTableNames($schema, true, $refresh);
+        /** @type TableSchema[] $tables */
+        $tables = $this->schema->getTableNames($schema, true, $refresh);
         if ($use_alias) {
             $temp = []; // reassign index to alias
             foreach ($tables as $table) {
@@ -181,6 +345,6 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
 
     public function refreshTableCache()
     {
-        $this->dbConn->getSchema()->refresh();
+        $this->schema->refresh();
     }
 }
