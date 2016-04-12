@@ -130,17 +130,17 @@ class Table extends BaseDbTableResource
                 $builder->update($parsed);
             }
 
-            $results = $this->laravelQuery($table, $fields, $builder, $bindings, $extras);
+            $results = $this->runQuery($table, $fields, $builder, $bindings, $extras);
 
             if (!empty($relatedInfo)) {
                 // update related info
                 foreach ($results as $row) {
                     $id = static::checkForIds($row, $idsInfo, $extras);
-                    $this->updatePostRelations($table, $record, $id, $relatedInfo, $allowRelatedDelete);
+                    $this->updatePostRelations($table, array_merge($row, $record), $relatedInfo, $allowRelatedDelete);
                 }
                 // get latest with related changes if requested
                 if (!empty($related)) {
-                    $results = $this->laravelQuery($table, $fields, $builder, $bindings, $extras);
+                    $results = $this->runQuery($table, $fields, $builder, $bindings, $extras);
                 }
             }
 
@@ -218,7 +218,7 @@ class Table extends BaseDbTableResource
             $builder = $this->dbConn->table($table);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
-            $results = $this->laravelQuery($table, $fields, $builder, $bindings, $extras);
+            $results = $this->runQuery($table, $fields, $builder, $bindings, $extras);
 
             $builder->delete();
 
@@ -249,7 +249,7 @@ class Table extends BaseDbTableResource
             $builder = $this->dbConn->table($table);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
-            return $this->laravelQuery($table, $fields, $builder, $bindings, $extras);
+            return $this->runQuery($table, $fields, $builder, $bindings, $extras);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
@@ -259,7 +259,7 @@ class Table extends BaseDbTableResource
 
     // Helper methods
 
-    protected function laravelQuery($table, $select, Builder $builder, $bind_columns, $extras)
+    protected function runQuery($table, $select, Builder $builder, $bind_columns, $extras)
     {
         $schema = $this->schema->getTable($table);
         if (!$schema) {
@@ -271,8 +271,20 @@ class Table extends BaseDbTableResource
         $limit = intval(array_get($extras, ApiOptions::LIMIT, 0));
         $offset = intval(array_get($extras, ApiOptions::OFFSET, 0));
         $includeCount = Scalar::boolval(array_get($extras, ApiOptions::INCLUDE_COUNT));
+        $related = array_get($extras, ApiOptions::RELATED);
+        /** @type RelationSchema[] $availableRelations */
+        $availableRelations = $schema->getRelations(true);
         $maxAllowed = static::getMaxRecordsReturnedLimit();
         $needLimit = false;
+
+        // see if we need to add anymore fields to select for related retrieval
+        if (('*' !== $select) && !empty($availableRelations) && (!empty($related) || $schema->fetchRequiresRelations)) {
+            foreach ($availableRelations as $relation) {
+                if (false === array_search($relation->field, $select)) {
+                    $select[] = $relation->field;
+                }
+            }
+        }
 
         // use query builder
         $builder->select($select);
@@ -331,11 +343,10 @@ class Table extends BaseDbTableResource
             }
         }
 
-        $related = array_get($extras, ApiOptions::RELATED);
         if (!empty($related) || $schema->fetchRequiresRelations) {
-            if (!empty($relations = $this->describeTableRelated($table))) {
+            if (!empty($availableRelations)) {
                 foreach ($data as $key => $temp) {
-                    $data[$key] = $this->retrieveRelatedRecords($schema, $relations, $related, $temp);
+                    $data[$key] = $this->retrieveRelatedRecords($schema, $availableRelations, $related, $temp);
                 }
             }
         }
@@ -383,13 +394,7 @@ class Table extends BaseDbTableResource
             throw new NotFoundException("Table '$table_name' does not exist in the database.");
         }
 
-        $relatives = [];
-        /** @var RelationSchema $relation */
-        foreach ($table->relations as $relation) {
-            $relatives[strtolower($relation->getName(true))] = $relation;
-        }
-
-        return $relatives;
+        return $table->getRelations(true);
     }
 
     /**
@@ -784,31 +789,25 @@ class Table extends BaseDbTableResource
     /**
      * @param string           $table
      * @param array            $record Record containing relationships by name if any
-     * @param array            $id     Array of id field and value, only one supported currently
      * @param RelationSchema[] $relations
      * @param bool             $allow_delete
      *
      * @throws InternalServerErrorException
      * @return void
      */
-    protected function updatePostRelations($table, $record, $id, $relations, $allow_delete = false)
+    protected function updatePostRelations($table, $record, $relations, $allow_delete = false)
     {
-        // update currently only supports one id field
-        if (is_array($id)) {
-            reset($id);
-            $id = @current($id);
-        }
-
         $schema = $this->getTableSchema(null, $table);
         $record = array_change_key_case($record, CASE_LOWER);
         foreach ($relations as $name => $relationInfo) {
             if (array_key_exists($name, $record)) {
                 $relatedRecords = $record[$name];
+                unset($record[$name]);
                 switch ($relationInfo->type) {
                     case RelationSchema::HAS_MANY:
                         $this->assignManyToOne(
                             $schema,
-                            $id,
+                            $record,
                             $relationInfo,
                             $relatedRecords,
                             $allow_delete
@@ -817,13 +816,12 @@ class Table extends BaseDbTableResource
                     case RelationSchema::MANY_MANY:
                         $this->assignManyToOneByJunction(
                             $schema,
-                            $id,
+                            $record,
                             $relationInfo,
                             $relatedRecords
                         );
                         break;
                 }
-                unset($record[$name]);
             }
         }
     }
@@ -1223,7 +1221,11 @@ class Table extends BaseDbTableResource
 
             if (!empty($insertMany)) {
                 if (!empty($newIds = $this->createForeignRecords($refService, $refSchema, $insertMany))) {
-                    $record[$relation->field] = array_get(reset($newIds), $pkFieldAlias);
+                    if ($relation->refFields === $pkFieldAlias) {
+                        $record[$relation->field] = array_get(reset($newIds), $pkFieldAlias);
+                    } else {
+                        $record[$relation->field] = array_get(reset($insertMany), $relation->refFields);
+                    }
                 }
             }
 
@@ -1237,7 +1239,7 @@ class Table extends BaseDbTableResource
 
     /**
      * @param TableSchema    $one_table
-     * @param string         $one_id
+     * @param array          $one_record
      * @param RelationSchema $relation
      * @param array          $many_records
      * @param bool           $allow_delete
@@ -1247,12 +1249,13 @@ class Table extends BaseDbTableResource
      */
     protected function assignManyToOne(
         TableSchema $one_table,
-        $one_id,
+        $one_record,
         RelationSchema $relation,
         $many_records = [],
         $allow_delete = false
     ){
-        if (empty($one_id)) {
+        // update currently only supports one id field
+        if (empty($one_id = array_get($one_record, $relation->field))) {
             throw new BadRequestException("The {$one_table->getName(true)} id can not be empty.");
         }
 
@@ -1535,7 +1538,7 @@ class Table extends BaseDbTableResource
 
     /**
      * @param TableSchema    $one_table
-     * @param mixed          $one_id
+     * @param array          $one_record
      * @param RelationSchema $relation
      * @param array          $many_records
      *
@@ -1545,11 +1548,11 @@ class Table extends BaseDbTableResource
      */
     protected function assignManyToOneByJunction(
         TableSchema $one_table,
-        $one_id,
+        $one_record,
         RelationSchema $relation,
         $many_records = []
     ){
-        if (empty($one_id)) {
+        if (empty($one_id = array_get($one_record, $relation->field))) {
             throw new BadRequestException("The {$one_table->getName(true)} id can not be empty.");
         }
 
@@ -1874,36 +1877,38 @@ class Table extends BaseDbTableResource
         $out = [];
         switch ($this->getAction()) {
             case Verbs::POST:
+                // need the id back in the record
+                if (!empty($id)) {
+                    if (is_array($id)) {
+                        $record = array_merge($record, $id);
+                    } else {
+                        $record[array_get($idFields, 0)] = $id;
+                    }
+                }
+
                 if (!empty($relatedInfo)) {
                     $this->updatePreRelations($record, $relatedInfo);
                 }
+
                 $parsed = $this->parseRecord($record, $this->tableFieldsInfo, $ssFilters);
                 if (empty($parsed)) {
                     throw new BadRequestException('No valid fields were found in record.');
                 }
 
-                if (empty($id)) {
-                    $id = [];
-                    if ((1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
+                    if (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
                         $idName = $this->tableIdsInfo[0]->name;
                         $id[$idName] = $builder->insertGetId($parsed, $idName);
+                        $record[$idName] = $id[$idName];
                     } else {
                         if (!$builder->insert($parsed)) {
                             throw new InternalServerErrorException("Record insert failed.");
                         }
-
-                        foreach ($this->tableIdsInfo as $info) {
-                            $idName = $info->name;
-                            // must have been passed in with request
-                            $id[$idName] = array_get($parsed, $idName);
-                        }
                     }
-                }
+
                 if (!empty($relatedInfo)) {
                     $this->updatePostRelations(
                         $this->transactionTable,
                         $record,
-                        $id,
                         $relatedInfo,
                         $allowRelatedDelete
                     );
@@ -1942,7 +1947,7 @@ class Table extends BaseDbTableResource
                     $rows = $builder->update($parsed);
                     if (0 >= $rows) {
                         // could have just not updated anything, or could be bad id
-                        $result = $this->laravelQuery(
+                        $result = $this->runQuery(
                             $this->transactionTable,
                             $fields,
                             $builder,
@@ -1958,10 +1963,17 @@ class Table extends BaseDbTableResource
                 }
 
                 if (!empty($relatedInfo)) {
+                    // need the id back in the record
+                    if (!empty($id)) {
+                        if (is_array($id)) {
+                            $record = array_merge($record, $id);
+                        } else {
+                            $record[array_get($idFields, 0)] = $id;
+                        }
+                    }
                     $this->updatePostRelations(
                         $this->transactionTable,
                         $record,
-                        $id,
                         $relatedInfo,
                         $allowRelatedDelete
                     );
@@ -1985,7 +1997,7 @@ class Table extends BaseDbTableResource
 
                 // add via record, so batch processing can retrieve extras
                 if ($requireMore) {
-                    $result = $this->laravelQuery(
+                    $result = $this->runQuery(
                         $this->transactionTable,
                         $fields,
                         $builder,
@@ -2003,7 +2015,7 @@ class Table extends BaseDbTableResource
                 if (0 >= $rows) {
                     if (empty($out)) {
                         // could have just not updated anything, or could be bad id
-                        $result = $this->laravelQuery(
+                        $result = $this->runQuery(
                             $this->transactionTable,
                             $fields,
                             $builder,
@@ -2031,7 +2043,7 @@ class Table extends BaseDbTableResource
                     return parent::addToTransaction(null, $id);
                 }
 
-                $result = $this->laravelQuery($this->transactionTable, $fields, $builder, $bindings, $extras);
+                $result = $this->runQuery($this->transactionTable, $fields, $builder, $bindings, $extras);
                 if (empty($result)) {
                     throw new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
                 }
@@ -2108,7 +2120,7 @@ class Table extends BaseDbTableResource
                 $fields = array_get($result, 'fields');
                 $fields = (empty($fields)) ? '*' : $fields;
 
-                $result = $this->laravelQuery($this->transactionTable, $fields, $builder, $bindings, $extras);
+                $result = $this->runQuery($this->transactionTable, $fields, $builder, $bindings, $extras);
                 if (empty($result)) {
                     throw new NotFoundException('No records were found using the given identifiers.');
                 }
@@ -2141,8 +2153,7 @@ class Table extends BaseDbTableResource
                             if (!empty($relatedInfo)) {
                                 $this->updatePostRelations(
                                     $this->transactionTable,
-                                    $updates,
-                                    $id,
+                                    array_merge($updates, [$idName->getName(true) => $id]),
                                     $relatedInfo,
                                     $allowRelatedDelete
                                 );
@@ -2156,7 +2167,7 @@ class Table extends BaseDbTableResource
                             $fields = array_get($result, 'fields');
                             $fields = (empty($fields)) ? '*' : $fields;
 
-                            $result = $this->laravelQuery(
+                            $result = $this->runQuery(
                                 $this->transactionTable,
                                 $fields,
                                 $builder,
@@ -2180,7 +2191,7 @@ class Table extends BaseDbTableResource
                         $fields = array_get($result, 'fields');
                         $fields = (empty($fields)) ? '*' : $fields;
 
-                        $result = $this->laravelQuery(
+                        $result = $this->runQuery(
                             $this->transactionTable,
                             $fields,
                             $builder,
@@ -2223,7 +2234,7 @@ class Table extends BaseDbTableResource
                     $fields = array_get($result, 'fields');
                     $fields = (empty($fields)) ? '*' : $fields;
 
-                    $result = $this->laravelQuery(
+                    $result = $this->runQuery(
                         $this->transactionTable,
                         $fields,
                         $builder,
