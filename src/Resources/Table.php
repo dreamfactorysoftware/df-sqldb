@@ -1086,10 +1086,8 @@ class Table extends BaseDbTableResource
                 Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                 // Get records
-                if ('string' === gettype($fieldVal)) {
-                    $fieldVal = "'$fieldVal'";
-                }
-                $extras[ApiOptions::FILTER] = '(' . $refField->getName(true) . ' = ' . $fieldVal . ')';
+                $filterVal = ('string' === gettype($fieldVal)) ? "'$fieldVal'" : $fieldVal;
+                $extras[ApiOptions::FILTER] = '(' . $refField->getName(true) . ' = ' . $filterVal . ')';
                 $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
                 if (RelationSchema::BELONGS_TO === $relation->type) {
                     return (!empty($relatedRecords) ? array_get($relatedRecords, 0) : null);
@@ -1115,7 +1113,8 @@ class Table extends BaseDbTableResource
                 Session::checkServicePermission(Verbs::GET, $junctionService, '_table/' . $junctionTable);
 
                 // Get records
-                $filter = '(' . $junctionField->getName(true) . ' = ' . $fieldVal . ')';
+                $filterVal = ('string' === gettype($fieldVal)) ? "'$fieldVal'" : $fieldVal;
+                $filter = '(' . $junctionField->getName(true) . ' = ' . $filterVal . ')';
                 $filter .= static::padOperator(DbLogicalOperators::AND_STR);
                 $filter .= '(' . $junctionRefField->getName(true) . ' ' . DbComparisonOperators::IS_NOT_NULL . ')';
                 $temp = [ApiOptions::FILTER => $filter, ApiOptions::FIELDS => $junctionRefField->getName(true)];
@@ -1211,8 +1210,8 @@ class Table extends BaseDbTableResource
                 Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                 // Get records
-                $filter = $pkFieldAlias . ' = ' . $id;
-                $temp = [ApiOptions::FILTER => $filter];
+                $filterVal = ('string' === gettype($id)) ? "'$id'" : $id;
+                $temp = [ApiOptions::FILTER => "$pkFieldAlias = $filterVal"];
                 $matchIds = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $temp);
 
                 if ($found = static::findRecordByNameValue($matchIds, $pkFieldAlias, $id)) {
