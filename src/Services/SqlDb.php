@@ -174,6 +174,9 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
                             }
 
                             $file = rtrim($storage, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $file;
+                            if (!file_exists($file)) {
+                                @touch($file);
+                            }
                         }
                         $config['database'] = $file;
                     }
@@ -258,7 +261,7 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         $db = app('db');
         $this->dbConn = $db->connection('service.' . $this->name);
         $this->initStatements();
-        
+
         $this->schema = $this->getSchema($this->dbConn);
         $this->schema->setCache($this);
         $this->schema->setExtraStore($this);
@@ -301,8 +304,8 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         } elseif (!is_array($statements)) {
             $statements = [];
         }
-        
-        switch ($this->dbConn->getDriverName()){
+
+        switch ($this->dbConn->getDriverName()) {
             case 'sqlite':
                 array_unshift($statements, 'PRAGMA foreign_keys=1');
                 break;
@@ -318,7 +321,7 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
             $this->dbConn->statement($statement);
         }
     }
-    
+
     /**
      * @param string|null $schema
      * @param bool        $refresh
