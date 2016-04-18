@@ -149,8 +149,8 @@ class StoredProcedure extends BaseDbResource
             $params = array_get($payload, 'params', []);
         }
 
-        $returns = array_get($payload, 'returns');
-        $wrapper = array_get($payload, 'wrapper');
+        $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
+        $wrapper = array_get($payload, 'wrapper', $this->request->getParameter('wrapper'));
         $schema = array_get($payload, 'schema');
 
         return $this->callProcedure($name, $params, $returns, $schema, $wrapper);
@@ -172,8 +172,8 @@ class StoredProcedure extends BaseDbResource
             $params = array_get($payload, 'params', []);
         }
 
-        $returns = array_get($payload, 'returns');
-        $wrapper = array_get($payload, 'wrapper');
+        $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
+        $wrapper = array_get($payload, 'wrapper', $this->request->getParameter('wrapper'));
         $schema = array_get($payload, 'schema');
 
         return $this->callProcedure($name, $params, $returns, $schema, $wrapper);
