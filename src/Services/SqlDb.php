@@ -127,75 +127,11 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         if (!empty($dsn)) {
             // default PDO DSN pieces
             $dsn = str_replace(' ', '', $dsn);
-            if ('oracle' !== $driver) { // see below
-                if (!isset($config['port']) && (false !== ($pos = strpos($dsn, 'port=')))) {
-                    $temp = substr($dsn, $pos + 5);
-                    $config['port'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                }
-                if (!isset($config['host']) && (false !== ($pos = strpos($dsn, 'host=')))) {
-                    $temp = substr($dsn, $pos + 5);
-                    $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                    if (!isset($config['port']) && (false !== ($pos = stripos($host, ':')))) {
-                        $temp = substr($host, $pos + 1);
-                        $host = substr($host, 0, $pos);
-                        $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                    }
-                    $config['host'] = $host;
-                }
-                if (!isset($config['database']) && (false !== ($pos = strpos($dsn, 'dbname=')))) {
-                    $temp = substr($dsn, $pos + 7);
-                    $config['database'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                }
-                if (!isset($config['charset'])) {
-                    if (false !== ($pos = strpos($dsn, 'charset='))) {
-                        $temp = substr($dsn, $pos + 8);
-                        $config['charset'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                    } else {
-                        $config['charset'] = 'utf8';
-                    }
-                }
-            }
-
-            // specials
             switch ($driver) {
                 case 'sqlite':
                     if (!isset($config['database'])) {
                         $file = substr($dsn, 7);
-                        if (false === strpos($file, DIRECTORY_SEPARATOR)) {
-                            // no directories involved, store it where we want to store it
-                            $storage = config('df.db.sqlite_storage');
-                            if (!is_dir($storage)) {
-                                // Attempt
-                                @mkdir($storage);
-                            }
-                            if (!is_dir($storage)) {
-                                logger('Failed to access storage path ' . $storage);
-                                throw new InternalServerErrorException('Failed to access storage path.');
-                            }
-
-                            $file = rtrim($storage, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $file;
-                            if (!file_exists($file)) {
-                                @touch($file);
-                            }
-                        }
                         $config['database'] = $file;
-                    }
-                    break;
-                case 'sqlsrv':
-                    // SQL Server native driver specifics
-                    if (!isset($config['host']) && (false !== ($pos = stripos($dsn, 'Server=')))) {
-                        $temp = substr($dsn, $pos + 7);
-                        $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                        if (!isset($config['port']) && (false !== ($pos = stripos($host, ',')))) {
-                            $temp = substr($host, $pos + 1);
-                            $host = substr($host, 0, $pos);
-                            $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                        }
-                        $config['host'] = $host;
-                    }
-                    if (!isset($config['database']) && (false !== ($pos = stripos($dsn, 'Database=')))) {
-                        $temp = substr($dsn, $pos + 9);
-                        $config['database'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
                     }
                     break;
                 case 'oracle':
@@ -214,6 +150,49 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
                     }
                     break;
                 default:
+                    if (!isset($config['port']) && (false !== ($pos = strpos($dsn, 'port=')))) {
+                        $temp = substr($dsn, $pos + 5);
+                        $config['port'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                    }
+                    if (!isset($config['host']) && (false !== ($pos = strpos($dsn, 'host=')))) {
+                        $temp = substr($dsn, $pos + 5);
+                        $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                        if (!isset($config['port']) && (false !== ($pos = stripos($host, ':')))) {
+                            $temp = substr($host, $pos + 1);
+                            $host = substr($host, 0, $pos);
+                            $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                        }
+                        $config['host'] = $host;
+                    }
+                    if (!isset($config['database']) && (false !== ($pos = strpos($dsn, 'dbname=')))) {
+                        $temp = substr($dsn, $pos + 7);
+                        $config['database'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                    }
+                    if (!isset($config['charset'])) {
+                        if (false !== ($pos = strpos($dsn, 'charset='))) {
+                            $temp = substr($dsn, $pos + 8);
+                            $config['charset'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                        } else {
+                            $config['charset'] = 'utf8';
+                        }
+                    }
+                    if ('sqlsrv' === $driver) {
+                        // SQL Server native driver specifics
+                        if (!isset($config['host']) && (false !== ($pos = stripos($dsn, 'Server=')))) {
+                            $temp = substr($dsn, $pos + 7);
+                            $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                            if (!isset($config['port']) && (false !== ($pos = stripos($host, ',')))) {
+                                $temp = substr($host, $pos + 1);
+                                $host = substr($host, 0, $pos);
+                                $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                            }
+                            $config['host'] = $host;
+                        }
+                        if (!isset($config['database']) && (false !== ($pos = stripos($dsn, 'Database=')))) {
+                            $temp = substr($dsn, $pos + 9);
+                            $config['database'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                        }
+                    }
                     break;
             }
         }
