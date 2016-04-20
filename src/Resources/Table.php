@@ -1423,7 +1423,6 @@ class Table extends BaseDbTableResource
         if (!empty($service) && ($service !== $this->getServiceName())) {
             $this->handleVirtualRecords($service, '_table/' . $schema->getName(true), Verbs::PATCH, $records);
         } else {
-            $builder = $this->dbConn->table($schema->getName());
             $fields = $schema->getColumns(true);
             $ssFilters = Session::getServiceFilters(Verbs::PUT, $service, $schema->getName(true));
             // update existing and adopt new children
@@ -1434,6 +1433,7 @@ class Table extends BaseDbTableResource
                     throw new BadRequestException('No valid fields were found for foreign link updates.');
                 }
 
+                $builder = $this->dbConn->table($schema->getName());
                 $builder->where($linkerField->name, $pk);
                 $serverFilter = $this->buildQueryStringFromData($ssFilters);
                 if (!empty($serverFilter)) {
