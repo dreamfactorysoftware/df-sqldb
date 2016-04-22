@@ -10,8 +10,6 @@ use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\Resources\BaseDbSchemaResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
-use DreamFactory\Core\Utility\DbUtilities;
-use DreamFactory\Library\Utility\ArrayUtils;
 
 class Schema extends BaseDbSchemaResource
 {
@@ -31,13 +29,13 @@ class Schema extends BaseDbSchemaResource
      */
     public function describeTable($name, $refresh = false)
     {
-        $name = (is_array($name)) ? ArrayUtils::get($name, 'name') : $name;
+        $name = (is_array($name) ? array_get($name, 'name') :  $name);
         if (empty($name)) {
             throw new BadRequestException('Table name can not be empty.');
         }
 
         try {
-            $table = $this->dbConn->getSchema()->getTable($name, $refresh);
+            $table = $this->schema->getTable($name, $refresh);
             if (!$table) {
                 throw new NotFoundException("Table '$name' does not exist in the database.");
             }
@@ -65,7 +63,7 @@ class Schema extends BaseDbSchemaResource
         try {
             $result = $this->describeTableFields($table, $field);
 
-            return ArrayUtils::get($result, 0);
+            return array_get($result, 0);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
@@ -79,15 +77,15 @@ class Schema extends BaseDbSchemaResource
      */
     public function createTables($tables, $check_exist = false, $return_schema = false)
     {
-        $tables = DbUtilities::validateAsArray($tables, null, true, 'There are no table sets in the request.');
+        $tables = static::validateAsArray($tables, null, true, 'There are no table sets in the request.');
 
         foreach ($tables as $table) {
-            if (null === ($name = ArrayUtils::get($table, 'name'))) {
+            if (null === ($name = array_get($table, 'name'))) {
                 throw new BadRequestException("Table schema received does not have a valid name.");
             }
         }
 
-        $result = $this->dbConn->updateSchema($tables);
+        $result = $this->schema->updateSchema($tables);
 
         //  Any changes here should refresh cached schema
         $this->refreshCachedTables();
@@ -104,12 +102,12 @@ class Schema extends BaseDbSchemaResource
      */
     public function createTable($table, $properties = [], $check_exist = false, $return_schema = false)
     {
-        $properties = ArrayUtils::clean($properties);
+        $properties = (is_array($properties) ? $properties : []);
         $properties['name'] = $table;
 
-        $tables = DbUtilities::validateAsArray($properties, null, true, 'Bad data format in request.');
-        $result = $this->dbConn->updateSchema($tables);
-        $result = ArrayUtils::get($result, 0, []);
+        $tables = static::validateAsArray($properties, null, true, 'Bad data format in request.');
+        $result = $this->schema->updateSchema($tables);
+        $result = array_get($result, 0, []);
 
         //  Any changes here should refresh cached schema
         $this->refreshCachedTables();
@@ -126,12 +124,12 @@ class Schema extends BaseDbSchemaResource
      */
     public function createField($table, $field, $properties = [], $check_exist = false, $return_schema = false)
     {
-        $properties = ArrayUtils::clean($properties);
+        $properties = (is_array($properties) ? $properties : []);
         $properties['name'] = $field;
 
-        $fields = DbUtilities::validateAsArray($properties, null, true, 'Bad data format in request.');
+        $fields = static::validateAsArray($properties, null, true, 'Bad data format in request.');
 
-        $result = $this->dbConn->updateFields($table, $fields);
+        $result = $this->schema->updateFields($table, $fields);
 
         //  Any changes here should refresh cached schema
         $this->refreshCachedTables();
@@ -148,15 +146,15 @@ class Schema extends BaseDbSchemaResource
      */
     public function updateTables($tables, $allow_delete_fields = false, $return_schema = false)
     {
-        $tables = DbUtilities::validateAsArray($tables, null, true, 'There are no table sets in the request.');
+        $tables = static::validateAsArray($tables, null, true, 'There are no table sets in the request.');
 
         foreach ($tables as $table) {
-            if (null === ($name = ArrayUtils::get($table, 'name'))) {
+            if (null === ($name = array_get($table, 'name'))) {
                 throw new BadRequestException("Table schema received does not have a valid name.");
             }
         }
 
-        $result = $this->dbConn->updateSchema($tables, true, $allow_delete_fields);
+        $result = $this->schema->updateSchema($tables, true, $allow_delete_fields);
 
         //  Any changes here should refresh cached schema
         $this->refreshCachedTables();
@@ -173,13 +171,13 @@ class Schema extends BaseDbSchemaResource
      */
     public function updateTable($table, $properties, $allow_delete_fields = false, $return_schema = false)
     {
-        $properties = ArrayUtils::clean($properties);
+        $properties = (is_array($properties) ? $properties : []);
         $properties['name'] = $table;
 
-        $tables = DbUtilities::validateAsArray($properties, null, true, 'Bad data format in request.');
+        $tables = static::validateAsArray($properties, null, true, 'Bad data format in request.');
 
-        $result = $this->dbConn->updateSchema($tables, true, $allow_delete_fields);
-        $result = ArrayUtils::get($result, 0, []);
+        $result = $this->schema->updateSchema($tables, true, $allow_delete_fields);
+        $result = array_get($result, 0, []);
 
         //  Any changes here should refresh cached schema
         $this->refreshCachedTables();
@@ -200,12 +198,12 @@ class Schema extends BaseDbSchemaResource
             throw new BadRequestException('Table name can not be empty.');
         }
 
-        $properties = ArrayUtils::clean($properties);
+        $properties = (is_array($properties) ? $properties : []);
         $properties['name'] = $field;
 
-        $fields = DbUtilities::validateAsArray($properties, null, true, 'Bad data format in request.');
+        $fields = static::validateAsArray($properties, null, true, 'Bad data format in request.');
 
-        $result = $this->dbConn->updateFields($table, $fields, true);
+        $result = $this->schema->updateFields($table, $fields, true);
 
         //  Any changes here should refresh cached schema
         $this->refreshCachedTables();
@@ -228,11 +226,11 @@ class Schema extends BaseDbSchemaResource
 
         //  Does it exist
         if (!$this->doesTableExist($table)) {
-            throw new NotFoundException('Table "' . $table . '" not found.');
+            throw new NotFoundException("Table '$table' not found.");
         }
 
         try {
-            $this->dbConn->dropTable($table);
+            $this->schema->dropTable($table);
         } catch (\Exception $ex) {
             \Log::error('Exception dropping table: ' . $ex->getMessage());
 
@@ -258,7 +256,7 @@ class Schema extends BaseDbSchemaResource
         }
 
         try {
-            $this->dbConn->dropColumn($table, $field);
+            $this->schema->dropColumn($table, $field);
         } catch (\Exception $ex) {
             error_log($ex->getMessage());
             throw $ex;
@@ -293,7 +291,7 @@ class Schema extends BaseDbSchemaResource
      */
     public function doesTableExist($name, $returnName = false)
     {
-        return $this->dbConn->getSchema()->doesTableExist($name, $returnName);
+        return $this->schema->doesTableExist($name, $returnName);
     }
 
     /**
@@ -307,13 +305,13 @@ class Schema extends BaseDbSchemaResource
      */
     public function describeTableFields($table_name, $field_names = null, $refresh = false)
     {
-        $table = $this->dbConn->getSchema()->getTable($table_name, $refresh);
+        $table = $this->schema->getTable($table_name, $refresh);
         if (!$table) {
             throw new NotFoundException("Table '$table_name' does not exist in the database.");
         }
 
         if (!empty($field_names)) {
-            $field_names = DbUtilities::validateAsArray($field_names, ',', true, 'No valid field names given.');
+            $field_names = static::validateAsArray($field_names, ',', true, 'No valid field names given.');
         }
 
         $out = [];

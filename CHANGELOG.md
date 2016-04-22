@@ -9,7 +9,25 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Fixed
 
-## [0.2.0]
+## [0.2.2] - 2016-04-22
+### Changed
+- Major change for df-core rework of database connections.
+
+### Fixed
+- Look for params as well as payload 
+- Insert scenario when id provided for record
+- Quote filter value in case the other service is NoSQL 
+
+## [0.2.1] - 2016-03-08
+### Added
+- Filter support for contains, starts with and ends with.
+- Lookup support for stored procedures and functions parameters.
+
+### Fixed
+- Better catch for negation in filter support.
+- Updates for Swagger spec.
+
+## [0.2.0] - 2016-01-29
 ### Added
 - Events now supported for Stored Procedures and Functions
 
@@ -50,7 +68,9 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.2.2...HEAD
+[0.2.2]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.2.1...0.2.2
+[0.2.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.4...0.2.0
 [0.1.4]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.3...0.1.4
 [0.1.3]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.1.2...0.1.3
