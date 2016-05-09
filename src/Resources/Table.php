@@ -4,9 +4,9 @@ namespace DreamFactory\Core\SqlDb\Resources;
 
 use Config;
 use DreamFactory\Core\Components\Service2ServiceRequest;
-use DreamFactory\Core\Database\ColumnSchema;
-use DreamFactory\Core\Database\RelationSchema;
-use DreamFactory\Core\Database\TableSchema;
+use DreamFactory\Core\Database\Schema\ColumnSchema;
+use DreamFactory\Core\Database\Schema\RelationSchema;
+use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Database\Expression;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\DbComparisonOperators;
@@ -17,17 +17,16 @@ use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\NotImplementedException;
 use DreamFactory\Core\Exceptions\RestException;
-use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\Resources\BaseDbTableResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
-use DreamFactory\Core\Utility\ServiceHandler;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Scalar;
 use Illuminate\Database\Query\Builder;
+use ServiceManager;
 
 /**
  * Class Table
@@ -445,6 +444,44 @@ class Table extends BaseDbTableResource
         if (!empty($filterString)) {
             $builder->whereRaw($filterString, $outParams);
         }
+    }
+
+    /**
+     * @param       $filter_info
+     *
+     * @return null|string
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     */
+    protected function buildQueryStringFromData($filter_info)
+    {
+        $filters = array_get($filter_info, 'filters');
+        if (empty($filters)) {
+            return null;
+        }
+
+        $sql = '';
+        $combiner = array_get($filter_info, 'filter_op', DbLogicalOperators::AND_STR);
+        foreach ($filters as $key => $filter) {
+            if (!empty($sql)) {
+                $sql .= " $combiner ";
+            }
+
+            $name = array_get($filter, 'name');
+            $op = strtoupper(array_get($filter, 'operator'));
+            if (empty($name) || empty($op)) {
+                // log and bail
+                throw new InternalServerErrorException('Invalid server-side filter configuration detected.');
+            }
+
+            if (DbComparisonOperators::requiresNoValue($op)) {
+                $sql .= "($name $op)";
+            } else {
+                $value = array_get($filter, 'value');
+                $sql .= "($name $op $value)";
+            }
+        }
+
+        return $sql;
     }
 
     /**
@@ -918,7 +955,7 @@ class Table extends BaseDbTableResource
         $request = new Service2ServiceRequest(Verbs::GET, $params);
 
         //  Now set the request object and go...
-        $service = ServiceHandler::getService($serviceName);
+        $service = ServiceManager::getService($serviceName);
         $response = $service->handleRequest($request, $resource);
         $content = $response->getContent();
         $status = $response->getStatusCode();
@@ -977,7 +1014,7 @@ class Table extends BaseDbTableResource
         }
 
         //  Now set the request object and go...
-        $service = ServiceHandler::getService($serviceName);
+        $service = ServiceManager::getService($serviceName);
         $response = $service->handleRequest($request, $resource);
         $content = $response->getContent();
         $status = $response->getStatusCode();
@@ -1715,50 +1752,12 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param       $filter_info
-     *
-     * @return null|string
-     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
-     */
-    protected function buildQueryStringFromData($filter_info)
-    {
-        $filters = array_get($filter_info, 'filters');
-        if (empty($filters)) {
-            return null;
-        }
-
-        $sql = '';
-        $combiner = array_get($filter_info, 'filter_op', DbLogicalOperators::AND_STR);
-        foreach ($filters as $key => $filter) {
-            if (!empty($sql)) {
-                $sql .= " $combiner ";
-            }
-
-            $name = array_get($filter, 'name');
-            $op = strtoupper(array_get($filter, 'operator'));
-            if (empty($name) || empty($op)) {
-                // log and bail
-                throw new InternalServerErrorException('Invalid server-side filter configuration detected.');
-            }
-
-            if (DbComparisonOperators::requiresNoValue($op)) {
-                $sql .= "($name $op)";
-            } else {
-                $value = array_get($filter, 'value');
-                $sql .= "($name $op $value)";
-            }
-        }
-
-        return $sql;
-    }
-
-    /**
      * @param      $table
      * @param null $fields_info
      * @param null $requested_fields
      * @param null $requested_types
      *
-     * @return array|\DreamFactory\Core\Database\ColumnSchema[]
+     * @return array|\DreamFactory\Core\Database\Schema\ColumnSchema[]
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
      */
     protected function getIdsInfo($table, $fields_info = null, &$requested_fields = null, $requested_types = null)
@@ -2316,7 +2315,7 @@ class Table extends BaseDbTableResource
         return null;
     }
 
-    public static function getApiDocInfo(Service $service, array $resource = [])
+    public static function getApiDocInfo($service, array $resource = [])
     {
         $base = parent::getApiDocInfo($service, $resource);
 

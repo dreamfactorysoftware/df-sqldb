@@ -7,7 +7,7 @@ use DreamFactory\Core\Contracts\CacheInterface;
 use DreamFactory\Core\Contracts\DbExtrasInterface;
 use DreamFactory\Core\Contracts\SchemaInterface;
 use DreamFactory\Core\Database\ConnectionExtension;
-use DreamFactory\Core\Database\TableSchema;
+use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Services\BaseDbService;
 use DreamFactory\Core\SqlDb\Resources\Schema;
@@ -74,126 +74,35 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
 
     public static function adaptConfig(array &$config)
     {
-        $driver = isset($config['driver']) ? $config['driver'] : null;
-        // replace old driver names or setup environment
-        switch ($driver) {
-            case 'dblib':
-            case 'sqlsrv':
-                $config['driver'] = 'sqlsrv';
-                $driver = 'sqlsrv';
-                if (in_array('dblib', \PDO::getAvailableDrivers())) {
-                    if (null !== $dumpLocation = config('df.db.freetds.dump')) {
-                        if (!putenv("TDSDUMP=$dumpLocation")) {
-                            \Log::alert('Could not write environment variable for TDSDUMP location.');
-                        }
-                    }
-                    if (null !== $dumpConfLocation = config('df.db.freetds.dumpconfig')) {
-                        if (!putenv("TDSDUMPCONFIG=$dumpConfLocation")) {
-                            \Log::alert('Could not write environment variable for TDSDUMPCONFIG location.');
-                        }
-                    }
-                    if (null !== $confLocation = config('df.db.freetds.sqlsrv')) {
-                        if (!putenv("FREETDSCONF=$confLocation")) {
-                            \Log::alert('Could not write environment variable for FREETDSCONF location.');
-                        }
-                    }
-                }
-                break;
-            case 'sqlanywhere':
-                if (in_array('dblib', \PDO::getAvailableDrivers())) {
-                    if (null !== $dumpLocation = config('df.db.freetds.dump')) {
-                        if (!putenv("TDSDUMP=$dumpLocation")) {
-                            \Log::alert('Could not write environment variable for TDSDUMP location.');
-                        }
-                    }
-                    if (null !== $dumpConfLocation = config('df.db.freetds.dumpconfig')) {
-                        if (!putenv("TDSDUMPCONFIG=$dumpConfLocation")) {
-                            \Log::alert('Could not write environment variable for TDSDUMPCONFIG location.');
-                        }
-                    }
-                    if (null !== $confLocation = config('df.db.freetds.sqlanywhere')) {
-                        if (!putenv("FREETDSCONF=$confLocation")) {
-                            \Log::alert('Could not write environment variable for FREETDSCONF location.');
-                        }
-                    }
-                }
-                break;
-            case 'oci':
-                $config['driver'] = 'oracle';
-                $driver = 'oracle';
-                break;
-        }
         $dsn = isset($config['dsn']) ? $config['dsn'] : null;
         if (!empty($dsn)) {
             // default PDO DSN pieces
             $dsn = str_replace(' ', '', $dsn);
-            switch ($driver) {
-                case 'sqlite':
-                    if (!isset($config['database'])) {
-                        $file = substr($dsn, 7);
-                        $config['database'] = $file;
-                    }
-                    break;
-                case 'oracle':
-                    // traditional connection string uses (), reset find
-                    if (!isset($config['host']) && (false !== ($pos = stripos($dsn, 'host=')))) {
-                        $temp = substr($dsn, $pos + 5);
-                        $config['host'] = (false !== $pos = stripos($temp, ')')) ? substr($temp, 0, $pos) : $temp;
-                    }
-                    if (!isset($config['port']) && (false !== ($pos = stripos($dsn, 'port=')))) {
-                        $temp = substr($dsn, $pos + 5);
-                        $config['port'] = (false !== $pos = stripos($temp, ')')) ? substr($temp, 0, $pos) : $temp;
-                    }
-                    if (!isset($config['database']) && (false !== ($pos = stripos($dsn, 'sid=')))) {
-                        $temp = substr($dsn, $pos + 4);
-                        $config['database'] = (false !== $pos = stripos($temp, ')')) ? substr($temp, 0, $pos) : $temp;
-                    }
-                    break;
-                default:
-                    if (!isset($config['port']) && (false !== ($pos = strpos($dsn, 'port=')))) {
-                        $temp = substr($dsn, $pos + 5);
-                        $config['port'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                    }
-                    if (!isset($config['host']) && (false !== ($pos = strpos($dsn, 'host=')))) {
-                        $temp = substr($dsn, $pos + 5);
-                        $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                        if (!isset($config['port']) && (false !== ($pos = stripos($host, ':')))) {
-                            $temp = substr($host, $pos + 1);
-                            $host = substr($host, 0, $pos);
-                            $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                        }
-                        $config['host'] = $host;
-                    }
-                    if (!isset($config['database']) && (false !== ($pos = strpos($dsn, 'dbname=')))) {
-                        $temp = substr($dsn, $pos + 7);
-                        $config['database'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                    }
-                    if (!isset($config['charset'])) {
-                        if (false !== ($pos = strpos($dsn, 'charset='))) {
-                            $temp = substr($dsn, $pos + 8);
-                            $config['charset'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                        } else {
-                            $config['charset'] = 'utf8';
-                        }
-                    }
-                    if ('sqlsrv' === $driver) {
-                        // SQL Server native driver specifics
-                        if (!isset($config['host']) && (false !== ($pos = stripos($dsn, 'Server=')))) {
-                            $temp = substr($dsn, $pos + 7);
-                            $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                            if (!isset($config['port']) && (false !== ($pos = stripos($host, ',')))) {
-                                $temp = substr($host, $pos + 1);
-                                $host = substr($host, 0, $pos);
-                                $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                            }
-                            $config['host'] = $host;
-                        }
-                        if (!isset($config['database']) && (false !== ($pos = stripos($dsn, 'Database=')))) {
-                            $temp = substr($dsn, $pos + 9);
-                            $config['database'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                        }
-                    }
-                    break;
+            if (!isset($config['port']) && (false !== ($pos = strpos($dsn, 'port=')))) {
+                $temp = substr($dsn, $pos + 5);
+                $config['port'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+            }
+            if (!isset($config['host']) && (false !== ($pos = strpos($dsn, 'host=')))) {
+                $temp = substr($dsn, $pos + 5);
+                $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                if (!isset($config['port']) && (false !== ($pos = stripos($host, ':')))) {
+                    $temp = substr($host, $pos + 1);
+                    $host = substr($host, 0, $pos);
+                    $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                }
+                $config['host'] = $host;
+            }
+            if (!isset($config['database']) && (false !== ($pos = strpos($dsn, 'dbname=')))) {
+                $temp = substr($dsn, $pos + 7);
+                $config['database'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+            }
+            if (!isset($config['charset'])) {
+                if (false !== ($pos = strpos($dsn, 'charset='))) {
+                    $temp = substr($dsn, $pos + 8);
+                    $config['charset'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
+                } else {
+                    $config['charset'] = 'utf8';
+                }
             }
         }
 
@@ -284,18 +193,6 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
             $statements = [];
         }
 
-        switch ($this->dbConn->getDriverName()) {
-            case 'sqlite':
-                array_unshift($statements, 'PRAGMA foreign_keys=1');
-                break;
-            case 'sqlsrv':
-                // These are on by default for sqlsrv driver, but not dblib.
-                // Also, can't use 'SET ANSI_DEFAULTS ON', seems to return false positives for DROP TABLE etc. todo
-                array_unshift($statements, 'SET QUOTED_IDENTIFIER ON;');
-                array_unshift($statements, 'SET ANSI_WARNINGS ON;');
-                array_unshift($statements, 'SET ANSI_NULLS ON;');
-                break;
-        }
         foreach ($statements as $statement) {
             $this->dbConn->statement($statement);
         }
