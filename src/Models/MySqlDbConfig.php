@@ -17,4 +17,9 @@ class MySqlDbConfig extends SqlDbConfig
         // http://php.net/manual/en/ref.pdo-mysql.connection.php
         return 'mysql:host=localhost;port=3306;dbname=db;charset=utf8';
     }
+
+    public static function getDefaultPort()
+    {
+        return 3306;
+    }
 }

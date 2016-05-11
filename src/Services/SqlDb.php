@@ -106,6 +106,10 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
             }
         }
 
+        if (!isset($config['charset'])) {
+            $config['charset'] = 'utf8';
+        }
+
         if (!isset($config['collation'])) {
             $config['collation'] = 'utf8_unicode_ci';
         }

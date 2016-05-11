@@ -17,4 +17,9 @@ class PgSqlDbConfig extends SqlDbConfig
         // http://php.net/manual/en/ref.pdo-pgsql.connection.php
         return 'pgsql:host=localhost;port=5432;dbname=db;user=name;password=pwd';
     }
+
+    public static function getDefaultPort()
+    {
+        return 5432;
+    }
 }

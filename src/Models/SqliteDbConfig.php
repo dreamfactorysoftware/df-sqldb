@@ -17,4 +17,9 @@ class SqliteDbConfig extends SqlDbConfig
         // http://php.net/manual/en/ref.pdo-sqlite.connection.php
         return 'sqlite:db.sq3';
     }
+
+    public static function getDefaultPort()
+    {
+        return null;
+    }
 }

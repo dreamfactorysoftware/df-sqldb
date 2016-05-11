@@ -79,6 +79,11 @@ class SqlDbConfig extends BaseServiceConfigModel
         return '<driver>:host=localhost;port=1234;dbname=database';
     }
 
+    public static function getDefaultPort()
+    {
+        return 1234;
+    }
+
     /**
      * @param string $driver
      *
@@ -200,9 +205,6 @@ class SqlDbConfig extends BaseServiceConfigModel
             throw new BadRequestException('Database connection string (DSN) or host and database name must be provided.');
         }
 
-        $driver = isset($config['driver']) ? $config['driver'] : null;
-        static::requireDriver($driver);
-
         return true;
     }
 
@@ -224,7 +226,6 @@ class SqlDbConfig extends BaseServiceConfigModel
             ServiceCacheConfig::setConfig($id, $cache);
         }
 
-        $config['driver'] = static::getDriverName();
         parent::setConfig($id, $config);
     }
 
@@ -247,35 +248,23 @@ class SqlDbConfig extends BaseServiceConfigModel
         parent::prepareConfigSchemaField($schema);
 
         switch ($schema['name']) {
-            case 'driver':
-                $schema['type'] = 'string';
-                $schema['default'] = static::getDriverName();
-                $schema['description'] =
-                    'The driver that matches the database type for which this service type.' .
-                    ' For further information, see http://php.net/manual/en/pdo.drivers.php.';
-                break;
             case 'dsn':
                 $schema['label'] = 'Connection String (DSN)';
-                $schema['default'] = static::getDefaultDsn();
                 $schema['description'] =
-                    'The Data Source Name, or DSN, contains the information required to connect to the database.' .
-                    ' For further information, see http://php.net/manual/en/pdo.construct.php.';
+                    'Enter the full DSN or use the fields below to complete the connection information.' .
+                    ' For example, DSN could be ' . static::getDefaultDsn();
                 break;
             case 'host':
                 $schema['type'] = 'string';
-                $schema['description'] = 'The name of the database host.';
+                $schema['description'] = 'The name of the database host, i.e. localhost, 192.168.1.1, etc..';
                 break;
             case 'port':
                 $schema['type'] = 'integer';
-                $schema['description'] = 'The number of the database host port.';
+                $schema['description'] = 'The number of the database host port, i.e. ' . static::getDefaultPort();
                 break;
             case 'database':
                 $schema['type'] = 'string';
-                $schema['description'] = 'The name of the database. This can be a lookup key.';
-                break;
-            case 'prefix':
-                $schema['type'] = 'string';
-                $schema['description'] = 'The name of the database table prefix.';
+                $schema['description'] = 'The name of the database to connect to on the given server. This can be a lookup key.';
                 break;
             case 'username':
                 $schema['type'] = 'string';
@@ -284,6 +273,10 @@ class SqlDbConfig extends BaseServiceConfigModel
             case 'password':
                 $schema['type'] = 'password';
                 $schema['description'] = 'The password for the database user. This can be a lookup key.';
+                break;
+            case 'prefix':
+                $schema['type'] = 'string';
+                $schema['description'] = 'The name of the database table prefix.';
                 break;
             case 'options':
                 $schema['label'] = 'Driver Options';
