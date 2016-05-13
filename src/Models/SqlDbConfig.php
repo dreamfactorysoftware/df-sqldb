@@ -41,6 +41,9 @@ class SqlDbConfig extends BaseServiceConfigModel
         'default_schema_only'
     ];
 
+    // deprecated, service has type designation now
+    protected $hidden = ['driver'];
+
     protected $casts = [
         'options'             => 'array',
         'attributes'          => 'array',
