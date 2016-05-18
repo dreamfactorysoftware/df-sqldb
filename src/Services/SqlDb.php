@@ -74,38 +74,6 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
 
     public static function adaptConfig(array &$config)
     {
-        $dsn = isset($config['dsn']) ? $config['dsn'] : null;
-        if (!empty($dsn)) {
-            // default PDO DSN pieces
-            $dsn = str_replace(' ', '', $dsn);
-            if (!isset($config['port']) && (false !== ($pos = strpos($dsn, 'port=')))) {
-                $temp = substr($dsn, $pos + 5);
-                $config['port'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-            }
-            if (!isset($config['host']) && (false !== ($pos = strpos($dsn, 'host=')))) {
-                $temp = substr($dsn, $pos + 5);
-                $host = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                if (!isset($config['port']) && (false !== ($pos = stripos($host, ':')))) {
-                    $temp = substr($host, $pos + 1);
-                    $host = substr($host, 0, $pos);
-                    $config['port'] = (false !== $pos = stripos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                }
-                $config['host'] = $host;
-            }
-            if (!isset($config['database']) && (false !== ($pos = strpos($dsn, 'dbname=')))) {
-                $temp = substr($dsn, $pos + 7);
-                $config['database'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-            }
-            if (!isset($config['charset'])) {
-                if (false !== ($pos = strpos($dsn, 'charset='))) {
-                    $temp = substr($dsn, $pos + 8);
-                    $config['charset'] = (false !== $pos = strpos($temp, ';')) ? substr($temp, 0, $pos) : $temp;
-                } else {
-                    $config['charset'] = 'utf8';
-                }
-            }
-        }
-
         if (!isset($config['charset'])) {
             $config['charset'] = 'utf8';
         }
@@ -122,11 +90,6 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         // must be there
         if (!array_key_exists('prefix', $config)) {
             $config['prefix'] = null;
-        }
-
-        // laravel database config requires options to be [], not null
-        if (array_key_exists('options', $config) && is_null($config['options'])) {
-            $config['options'] = [];
         }
     }
 
@@ -146,13 +109,20 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         Session::replaceLookups($config, true);
 
         static::adaptConfig($config);
+        
+        $options = array_get($config, 'options', []);
+        if (!is_array($options)) {
+            // laravel database config requires options to be [], not null
+            $config['options'] = [];
+        }
 
         // add config to global for reuse, todo check existence and update?
         config(['database.connections.service.' . $this->name => $config]);
         /** @type DatabaseManager $db */
         $db = app('db');
         $this->dbConn = $db->connection('service.' . $this->name);
-        $this->initStatements();
+
+        $this->initStatements(array_get($config, 'statements', []));
 
         $this->schema = $this->getSchema($this->dbConn);
         $this->schema->setCache($this);
@@ -160,6 +130,8 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
 
         $defaultSchemaOnly = Scalar::boolval(array_get($config, 'default_schema_only'));
         $this->schema->setDefaultSchemaOnly($defaultSchemaOnly);
+        $schema = array_get($config, 'schema');
+        $this->schema->setUserSchema($schema);
     }
 
     /**

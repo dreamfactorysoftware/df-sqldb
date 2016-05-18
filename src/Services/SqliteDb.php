@@ -35,34 +35,7 @@ class SqliteDb extends SqlDb
     public static function adaptConfig(array &$config)
     {
         $config['driver'] = 'sqlite';
-        $dsn = isset($config['dsn']) ? $config['dsn'] : null;
-        if (!empty($dsn)) {
-            // default PDO DSN pieces
-            $dsn = str_replace(' ', '', $dsn);
-            if (!isset($config['database'])) {
-                $file = substr($dsn, 7);
-                $config['database'] = $file;
-            }
-        }
-
-        if (!isset($config['collation'])) {
-            $config['collation'] = 'utf8_unicode_ci';
-        }
-
-        // must be there
-        if (!array_key_exists('database', $config)) {
-            $config['database'] = null;
-        }
-
-        // must be there
-        if (!array_key_exists('prefix', $config)) {
-            $config['prefix'] = null;
-        }
-
-        // laravel database config requires options to be [], not null
-        if (array_key_exists('options', $config) && is_null($config['options'])) {
-            $config['options'] = [];
-        }
+        parent::adaptConfig($config);
     }
 
     protected function initStatements($statements = [])

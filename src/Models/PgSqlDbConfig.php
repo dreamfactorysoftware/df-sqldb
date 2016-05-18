@@ -12,14 +12,39 @@ class PgSqlDbConfig extends SqlDbConfig
         return 'pgsql';
     }
 
-    public static function getDefaultDsn()
-    {
-        // http://php.net/manual/en/ref.pdo-pgsql.connection.php
-        return 'pgsql:host=localhost;port=5432;dbname=db;user=name;password=pwd';
-    }
-
     public static function getDefaultPort()
     {
         return 5432;
+    }
+
+    public static function getDefaultConnectionInfo()
+    {
+        $defaults = parent::getDefaultConnectionInfo();
+        $defaults[] = [
+            'name'        => 'charset',
+            'label'       => 'Character Set',
+            'type'        => 'string',
+            'description' => 'The character set to use for this connection, i.e. ' . static::getDefaultCharset()
+        ];
+        $defaults[] = [
+            'name'        => 'sslmode',
+            'label'       => 'SSL Mode',
+            'type'        => 'string',
+            'description' => 'Enable SSL mode for this connection.'
+        ];
+        $defaults[] = [
+            'name'        => 'timezone',
+            'label'       => 'Timezone',
+            'type'        => 'string',
+            'description' => 'Set the timezone for this connection.'
+        ];
+        $defaults[] = [
+            'name'        => 'application_name',
+            'label'       => 'Application Name',
+            'type'        => 'string',
+            'description' => 'The application used to for monitoring the application with pg_stat_activity.'
+        ];
+
+        return $defaults;
     }
 }
