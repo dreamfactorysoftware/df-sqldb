@@ -167,7 +167,7 @@ class SqlDbConfig extends BaseServiceConfigModel
                 'name'        => 'host',
                 'label'       => 'Host',
                 'type'        => 'string',
-                'description' => 'The name of the database host, i.e. localhost, 192.168.1.1, etc..'
+                'description' => 'The name of the database host, i.e. localhost, 192.168.1.1, etc.'
             ],
             [
                 'name'        => 'port',
@@ -250,7 +250,7 @@ class SqlDbConfig extends BaseServiceConfigModel
         $host = isset($config['host']) ? $config['host'] : null;
         $db = isset($config['database']) ? $config['database'] : null;
         if (empty($host) || empty($db)) {
-            throw new BadRequestException('Database connection information must contain host and database name must be provided.');
+            throw new BadRequestException("Database connection information must contain host and database name must be provided.");
         }
 
         return true;
