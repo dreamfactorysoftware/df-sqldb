@@ -141,6 +141,9 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
     {
         if (isset($this->dbConn)) {
             try {
+                /** @type DatabaseManager $db */
+                $db = app('db');
+                $db->disconnect('service.' . $this->name);
                 $this->dbConn = null;
             } catch (\Exception $ex) {
                 error_log("Failed to disconnect from database.\n{$ex->getMessage()}");

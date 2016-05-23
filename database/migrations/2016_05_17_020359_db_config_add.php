@@ -36,7 +36,7 @@ class DbConfigAdd extends Migration
             Schema::table('sql_db_config', function (Blueprint $t){
                 $t->string('driver')->nullable(false)->change();
                 $t->string('dsn')->nullable(false)->change();
-                $t->dropColumn('config');
+                $t->dropColumn('connection');
                 $t->dropColumn('statements');
             }
             );
