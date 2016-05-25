@@ -124,7 +124,7 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
 
         $this->initStatements(array_get($config, 'statements', []));
 
-        $this->schema = $this->getSchema($this->dbConn);
+        $this->schema = $this->getSchemaExtension($this->dbConn);
         $this->schema->setCache($this);
         $this->schema->setExtraStore($this);
 

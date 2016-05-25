@@ -37,6 +37,6 @@ trait SqlDbResource
         $this->dbConn = $parent->getConnection();
 
         /** @var SqlDb $parent */
-        $this->schema = $parent->getSchema($this->dbConn);
+        $this->schema = $parent->getSchemaExtension($this->dbConn);
     }
 }

@@ -129,7 +129,7 @@ class Table extends BaseDbTableResource
             if (!empty($relatedInfo)) {
                 // update related info
                 foreach ($results as $row) {
-                    $id = static::checkForIds($row, $idsInfo, $extras);
+                    static::checkForIds($row, $idsInfo, $extras);
                     $this->updatePostRelations($table, array_merge($row, $record), $relatedInfo, $allowRelatedDelete);
                 }
                 // get latest with related changes if requested
@@ -608,7 +608,7 @@ class Table extends BaseDbTableResource
                     $sqlOp = DbLogicalOperators::NOT_STR . ' ' . $sqlOp;
                 }
 
-                $out = $info->parseFieldForFilter(true) . " $sqlOp";
+                $out = $this->schema->parseFieldForFilter($info, true) . " $sqlOp";
                 $out .= (isset($value) ? " $value" : null);
                 if ($leftParen) {
                     $out = $leftParen . $out;
@@ -889,16 +889,16 @@ class Table extends BaseDbTableResource
                 }
 
                 $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = $fieldInfo->getPdoBinding();
-                $outArray[] = $fieldInfo->parseFieldForSelect(false);
+                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
+                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
                 if ($fieldInfo->isAggregate()) {
                     continue;
                 }
-                $bindArray[] = $fieldInfo->getPdoBinding();
-                $outArray[] = $fieldInfo->parseFieldForSelect(false);
+                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
+                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
             }
         }
 
@@ -926,16 +926,16 @@ class Table extends BaseDbTableResource
                 }
 
                 $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = $fieldInfo->getPdoBinding();
-                $outArray[] = $fieldInfo->parseFieldForSelect(false);
+                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
+                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
                 if ($fieldInfo->isAggregate()) {
                     continue;
                 }
-                $bindArray[] = $fieldInfo->getPdoBinding();
-                $outArray[] = $fieldInfo->parseFieldForSelect(false);
+                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
+                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
             }
         }
 
