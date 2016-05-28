@@ -22,10 +22,6 @@
       "email": "arifislam@dreamfactory.com"
     },
     {
-      "name":  "Jerry Ablan",
-      "email": "jerryablan@dreamfactory.com"
-    },
-    {
       "name":  "Lee Hicks",
       "email": "leehicks@dreamfactory.com"
     }
@@ -37,8 +33,7 @@
     "wiki":   "https://wiki.dreamfactory.com"
   },
   "require":     {
-    "dreamfactory/php-utils": "1.1.*",
-    "dreamfactory/df-core":   "~0.2.8"
+    "dreamfactory/df-core":   "~0.3.0"
   },
   "autoload":    {
     "psr-4": {
@@ -47,7 +42,7 @@
   },
   "extra":       {
     "branch-alias": {
-      "dev-develop": "0.2.x-dev"
+      "dev-develop": "0.3.x-dev"
     }
   }
 }
