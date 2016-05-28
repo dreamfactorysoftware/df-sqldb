@@ -18,12 +18,10 @@ class CreateSqlDbTables extends Migration
             function (Blueprint $t){
                 $t->integer('service_id')->unsigned()->primary();
                 $t->foreign('service_id')->references('id')->on('service')->onDelete('cascade');
-                $t->string('driver', 32);
-                $t->string('dsn');
-                $t->longText('username')->nullable(); //encrypted
-                $t->longText('password')->nullable(); //encrypted
+                $t->text('connection')->nullable();
                 $t->text('options')->nullable();
                 $t->text('attributes')->nullable();
+                $t->text('statements')->nullable();
             }
         );
     }

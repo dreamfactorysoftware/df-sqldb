@@ -4,9 +4,9 @@ namespace DreamFactory\Core\SqlDb\Resources;
 
 use Config;
 use DreamFactory\Core\Components\Service2ServiceRequest;
-use DreamFactory\Core\Database\ColumnSchema;
-use DreamFactory\Core\Database\RelationSchema;
-use DreamFactory\Core\Database\TableSchema;
+use DreamFactory\Core\Database\Schema\ColumnSchema;
+use DreamFactory\Core\Database\Schema\RelationSchema;
+use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Database\Expression;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\DbComparisonOperators;
@@ -17,17 +17,16 @@ use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\NotImplementedException;
 use DreamFactory\Core\Exceptions\RestException;
-use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\Resources\BaseDbTableResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
-use DreamFactory\Core\Utility\ServiceHandler;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Scalar;
 use Illuminate\Database\Query\Builder;
+use ServiceManager;
 
 /**
  * Class Table
@@ -115,11 +114,6 @@ class Table extends BaseDbTableResource
             $idsInfo = $this->getIdsInfo($table, $fieldsInfo, $idFields, $idTypes);
             $relatedInfo = $this->describeTableRelated($table);
             $fields = (empty($fields)) ? $idFields : $fields;
-            $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
-            $bindings = array_get($result, 'bindings');
-            $fields = array_get($result, 'fields');
-            $fields = (empty($fields)) ? '*' : $fields;
-
             $parsed = $this->parseRecord($record, $fieldsInfo, $ssFilters, true);
 
             // build filter string if necessary, add server-side filters if necessary
@@ -130,17 +124,17 @@ class Table extends BaseDbTableResource
                 $builder->update($parsed);
             }
 
-            $results = $this->runQuery($table, $fields, $builder, $bindings, $extras);
+            $results = $this->runQuery($table, $fields, $builder, $extras);
 
             if (!empty($relatedInfo)) {
                 // update related info
                 foreach ($results as $row) {
-                    $id = static::checkForIds($row, $idsInfo, $extras);
+                    static::checkForIds($row, $idsInfo, $extras);
                     $this->updatePostRelations($table, array_merge($row, $record), $relatedInfo, $allowRelatedDelete);
                 }
                 // get latest with related changes if requested
                 if (!empty($related)) {
-                    $results = $this->runQuery($table, $fields, $builder, $bindings, $extras);
+                    $results = $this->runQuery($table, $fields, $builder, $extras);
                 }
             }
 
@@ -209,16 +203,12 @@ class Table extends BaseDbTableResource
             /*$idsInfo = */
             $this->getIdsInfo($table, $fieldsInfo, $idFields, $idTypes);
             $fields = (empty($fields)) ? $idFields : $fields;
-            $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
-            $bindings = array_get($result, 'bindings');
-            $fields = array_get($result, 'fields');
-            $fields = (empty($fields)) ? '*' : $fields;
 
             // build filter string if necessary, add server-side filters if necessary
             $builder = $this->dbConn->table($table);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
-            $results = $this->runQuery($table, $fields, $builder, $bindings, $extras);
+            $results = $this->runQuery($table, $fields, $builder, $extras);
 
             $builder->delete();
 
@@ -240,16 +230,12 @@ class Table extends BaseDbTableResource
 
         try {
             $fieldsInfo = $this->getFieldsInfo($table);
-            $result = $this->parseFieldsForSqlSelect($fields, $fieldsInfo);
-            $bindings = array_get($result, 'bindings');
-            $fields = array_get($result, 'fields');
-            $fields = (empty($fields)) ? '*' : $fields;
 
             // build filter string if necessary, add server-side filters if necessary
             $builder = $this->dbConn->table($table);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
-            return $this->runQuery($table, $fields, $builder, $bindings, $extras);
+            return $this->runQuery($table, $fields, $builder, $extras);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
@@ -259,15 +245,15 @@ class Table extends BaseDbTableResource
 
     // Helper methods
 
-    protected function runQuery($table, $select, Builder $builder, $bind_columns, $extras)
+    protected function runQuery($table, $select, Builder $builder, $extras)
     {
         $schema = $this->schema->getTable($table);
         if (!$schema) {
             throw new NotFoundException("Table '$table' does not exist in the database.");
         }
 
-        $order = array_get($extras, ApiOptions::ORDER);
-        $group = array_get($extras, ApiOptions::GROUP);
+        $order = trim(array_get($extras, ApiOptions::ORDER));
+        $group = trim(array_get($extras, ApiOptions::GROUP));
         $limit = intval(array_get($extras, ApiOptions::LIMIT, 0));
         $offset = intval(array_get($extras, ApiOptions::OFFSET, 0));
         $includeCount = Scalar::boolval(array_get($extras, ApiOptions::INCLUDE_COUNT));
@@ -277,6 +263,10 @@ class Table extends BaseDbTableResource
         $maxAllowed = static::getMaxRecordsReturnedLimit();
         $needLimit = false;
 
+        $result = $this->parseSelect($select, $schema->getColumns(true));
+        $bindings = array_get($result, 'bindings');
+        $select = array_get($result, 'fields');
+        $select = (empty($select)) ? '*' : $select;
         // see if we need to add anymore fields to select for related retrieval
         if (('*' !== $select) && !empty($availableRelations) && (!empty($related) || $schema->fetchRequiresRelations)) {
             foreach ($availableRelations as $relation) {
@@ -286,14 +276,6 @@ class Table extends BaseDbTableResource
             }
         }
 
-        // use query builder
-        $builder->select($select);
-        if (!empty($order)) {
-            $builder->orderBy($order);
-        }
-        if (!empty($group)) {
-            $builder->groupBy($group);
-        }
         if (($limit < 1) || ($limit > $maxAllowed)) {
             // impose a limit to protect server
             $limit = $maxAllowed;
@@ -303,6 +285,35 @@ class Table extends BaseDbTableResource
         // count total records
         $count = ($includeCount || $needLimit) ? $builder->count() : 0;
 
+        // apply the rest of the parameters
+        $builder->select($select);
+
+        if (!empty($order)) {
+            if (false !== strpos($order, ';')) {
+                throw new BadRequestException('Invalid order by clause in request.');
+            }
+            $commas = explode(',', $order);
+            switch (count($commas)) {
+                case 0:
+                    break;
+                case 1:
+                    $spaces = explode(' ', $commas[0]);
+                    $orderField = $spaces[0];
+                    $direction = (isset($spaces[1]) ? $spaces[1] : 'asc');
+                    $builder->orderBy($orderField, $direction);
+                    break;
+                default:
+                    // todo need to validate format here first
+                    $builder->orderByRaw($order);
+                    break;
+            }
+        }
+        if (!empty($group)) {
+            if (false !== strpos($order, ';')) {
+                throw new BadRequestException('Invalid group by clause in request.');
+            }
+            $builder->groupBy($group);
+        }
         $builder->take($limit);
         $builder->skip($offset);
 
@@ -311,7 +322,7 @@ class Table extends BaseDbTableResource
         $row = 0;
         foreach ($result as $record) {
             $temp = (array)$record;
-            foreach ($bind_columns as $binding) {
+            foreach ($bindings as $binding) {
                 $name = array_get($binding, 'name');
                 $type = array_get($binding, 'php_type');
                 if (isset($temp[$name])) {
@@ -371,14 +382,7 @@ class Table extends BaseDbTableResource
             throw new NotFoundException("Table '$table_name' does not exist in the database.");
         }
 
-        // re-index for alias usage, easier to find requested fields from client
-        $columns = [];
-        /** @var ColumnSchema $column */
-        foreach ($table->columns as $column) {
-            $columns[strtolower($column->getName(true))] = $column;
-        }
-
-        return $columns;
+        return $table->getColumns(true);
     }
 
     /**
@@ -445,6 +449,44 @@ class Table extends BaseDbTableResource
         if (!empty($filterString)) {
             $builder->whereRaw($filterString, $outParams);
         }
+    }
+
+    /**
+     * @param       $filter_info
+     *
+     * @return null|string
+     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
+     */
+    protected function buildQueryStringFromData($filter_info)
+    {
+        $filters = array_get($filter_info, 'filters');
+        if (empty($filters)) {
+            return null;
+        }
+
+        $sql = '';
+        $combiner = array_get($filter_info, 'filter_op', DbLogicalOperators::AND_STR);
+        foreach ($filters as $key => $filter) {
+            if (!empty($sql)) {
+                $sql .= " $combiner ";
+            }
+
+            $name = array_get($filter, 'name');
+            $op = strtoupper(array_get($filter, 'operator'));
+            if (empty($name) || empty($op)) {
+                // log and bail
+                throw new InternalServerErrorException('Invalid server-side filter configuration detected.');
+            }
+
+            if (DbComparisonOperators::requiresNoValue($op)) {
+                $sql .= "($name $op)";
+            } else {
+                $value = array_get($filter, 'value');
+                $sql .= "($name $op $value)";
+            }
+        }
+
+        return $sql;
     }
 
     /**
@@ -566,7 +608,7 @@ class Table extends BaseDbTableResource
                     $sqlOp = DbLogicalOperators::NOT_STR . ' ' . $sqlOp;
                 }
 
-                $out = $info->parseFieldForFilter(true) . " $sqlOp";
+                $out = $this->schema->parseFieldForFilter($info, true) . " $sqlOp";
                 $out .= (isset($value) ? " $value" : null);
                 if ($leftParen) {
                     $out = $leftParen . $out;
@@ -834,7 +876,7 @@ class Table extends BaseDbTableResource
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
      * @throws \Exception
      */
-    protected function parseFieldsForSqlSelect($fields, $avail_fields)
+    protected function parseSelect($fields, $avail_fields)
     {
         $outArray = [];
         $bindArray = [];
@@ -847,16 +889,53 @@ class Table extends BaseDbTableResource
                 }
 
                 $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = $fieldInfo->getPdoBinding();
-                $outArray[] = $fieldInfo->parseFieldForSelect(false);
+                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
+                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
                 if ($fieldInfo->isAggregate()) {
                     continue;
                 }
-                $bindArray[] = $fieldInfo->getPdoBinding();
-                $outArray[] = $fieldInfo->parseFieldForSelect(false);
+                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
+                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
+            }
+        }
+
+        return ['fields' => $outArray, 'bindings' => $bindArray];
+    }
+
+    /**
+     * @param  string|array   $fields
+     * @param  ColumnSchema[] $avail_fields
+     *
+     * @return array
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
+    protected function parseOrderBy($fields, $avail_fields)
+    {
+        $outArray = [];
+        $bindArray = [];
+        if (!(empty($fields) || (ApiOptions::FIELDS_ALL === $fields))) {
+            $fields = (!is_array($fields)) ? array_map('trim', explode(',', trim($fields, ','))) : $fields;
+            foreach ($fields as $field) {
+                $ndx = strtolower($field);
+                if (!isset($avail_fields[$ndx])) {
+                    throw new BadRequestException('Invalid field requested: ' . $field);
+                }
+
+                $fieldInfo = $avail_fields[$ndx];
+                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
+                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
+            }
+        } else {
+            foreach ($avail_fields as $fieldInfo) {
+                if ($fieldInfo->isAggregate()) {
+                    continue;
+                }
+                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
+                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
             }
         }
 
@@ -918,7 +997,7 @@ class Table extends BaseDbTableResource
         $request = new Service2ServiceRequest(Verbs::GET, $params);
 
         //  Now set the request object and go...
-        $service = ServiceHandler::getService($serviceName);
+        $service = ServiceManager::getService($serviceName);
         $response = $service->handleRequest($request, $resource);
         $content = $response->getContent();
         $status = $response->getStatusCode();
@@ -977,7 +1056,7 @@ class Table extends BaseDbTableResource
         }
 
         //  Now set the request object and go...
-        $service = ServiceHandler::getService($serviceName);
+        $service = ServiceManager::getService($serviceName);
         $response = $service->handleRequest($request, $resource);
         $content = $response->getContent();
         $status = $response->getStatusCode();
@@ -1715,50 +1794,12 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param       $filter_info
-     *
-     * @return null|string
-     * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
-     */
-    protected function buildQueryStringFromData($filter_info)
-    {
-        $filters = array_get($filter_info, 'filters');
-        if (empty($filters)) {
-            return null;
-        }
-
-        $sql = '';
-        $combiner = array_get($filter_info, 'filter_op', DbLogicalOperators::AND_STR);
-        foreach ($filters as $key => $filter) {
-            if (!empty($sql)) {
-                $sql .= " $combiner ";
-            }
-
-            $name = array_get($filter, 'name');
-            $op = strtoupper(array_get($filter, 'operator'));
-            if (empty($name) || empty($op)) {
-                // log and bail
-                throw new InternalServerErrorException('Invalid server-side filter configuration detected.');
-            }
-
-            if (DbComparisonOperators::requiresNoValue($op)) {
-                $sql .= "($name $op)";
-            } else {
-                $value = array_get($filter, 'value');
-                $sql .= "($name $op $value)";
-            }
-        }
-
-        return $sql;
-    }
-
-    /**
      * @param      $table
      * @param null $fields_info
      * @param null $requested_fields
      * @param null $requested_types
      *
-     * @return array|\DreamFactory\Core\Database\ColumnSchema[]
+     * @return array|\DreamFactory\Core\Database\Schema\ColumnSchema[]
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
      */
     protected function getIdsInfo($table, $fields_info = null, &$requested_fields = null, $requested_types = null)
@@ -1837,7 +1878,6 @@ class Table extends BaseDbTableResource
             }
         }
 
-        $fields = array_get($extras, ApiOptions::FIELDS);
         $ssFilters = array_get($extras, 'ss_filters');
         $updates = array_get($extras, 'updates');
         $idFields = array_get($extras, 'id_fields');
@@ -1860,11 +1900,8 @@ class Table extends BaseDbTableResource
             }
         }
 
+        $fields = array_get($extras, ApiOptions::FIELDS);
         $fields = (empty($fields)) ? $idFields : $fields;
-        $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
-        $bindings = array_get($result, 'bindings');
-        $fields = array_get($result, 'fields');
-        $fields = (empty($fields)) ? '*' : $fields;
 
         $serverFilter = $this->buildQueryStringFromData($ssFilters);
         if (!empty($serverFilter)) {
@@ -1951,7 +1988,6 @@ class Table extends BaseDbTableResource
                             $this->transactionTable,
                             $fields,
                             $builder,
-                            $bindings,
                             $extras
                         );
                         if (empty($result)) {
@@ -2001,7 +2037,6 @@ class Table extends BaseDbTableResource
                         $this->transactionTable,
                         $fields,
                         $builder,
-                        $bindings,
                         $extras
                     );
                     if (empty($result)) {
@@ -2019,7 +2054,6 @@ class Table extends BaseDbTableResource
                             $this->transactionTable,
                             $fields,
                             $builder,
-                            $bindings,
                             $extras
                         );
                         if (empty($result)) {
@@ -2043,7 +2077,7 @@ class Table extends BaseDbTableResource
                     return parent::addToTransaction(null, $id);
                 }
 
-                $result = $this->runQuery($this->transactionTable, $fields, $builder, $bindings, $extras);
+                $result = $this->runQuery($this->transactionTable, $fields, $builder, $extras);
                 if (empty($result)) {
                     throw new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
                 }
@@ -2115,12 +2149,7 @@ class Table extends BaseDbTableResource
                 // records are used to retrieve extras
                 // ids array are now more like records
                 $fields = (empty($fields)) ? $idFields : $fields;
-                $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
-                $bindings = array_get($result, 'bindings');
-                $fields = array_get($result, 'fields');
-                $fields = (empty($fields)) ? '*' : $fields;
-
-                $result = $this->runQuery($this->transactionTable, $fields, $builder, $bindings, $extras);
+                $result = $this->runQuery($this->transactionTable, $fields, $builder, $extras);
                 if (empty($result)) {
                     throw new NotFoundException('No records were found using the given identifiers.');
                 }
@@ -2162,16 +2191,10 @@ class Table extends BaseDbTableResource
 
                         if ($requireMore) {
                             $fields = (empty($fields)) ? $idFields : $fields;
-                            $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
-                            $bindings = array_get($result, 'bindings');
-                            $fields = array_get($result, 'fields');
-                            $fields = (empty($fields)) ? '*' : $fields;
-
                             $result = $this->runQuery(
                                 $this->transactionTable,
                                 $fields,
                                 $builder,
-                                $bindings,
                                 $extras
                             );
                             if (empty($result)) {
@@ -2186,16 +2209,10 @@ class Table extends BaseDbTableResource
                 case Verbs::DELETE:
                     if ($requireMore) {
                         $fields = (empty($fields)) ? $idFields : $fields;
-                        $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
-                        $bindings = array_get($result, 'bindings');
-                        $fields = array_get($result, 'fields');
-                        $fields = (empty($fields)) ? '*' : $fields;
-
                         $result = $this->runQuery(
                             $this->transactionTable,
                             $fields,
                             $builder,
-                            $bindings,
                             $extras
                         );
                         if (count($this->batchIds) !== count($result)) {
@@ -2229,16 +2246,10 @@ class Table extends BaseDbTableResource
 
                 case Verbs::GET:
                     $fields = (empty($fields)) ? $idFields : $fields;
-                    $result = $this->parseFieldsForSqlSelect($fields, $this->tableFieldsInfo);
-                    $bindings = array_get($result, 'bindings');
-                    $fields = array_get($result, 'fields');
-                    $fields = (empty($fields)) ? '*' : $fields;
-
                     $result = $this->runQuery(
                         $this->transactionTable,
                         $fields,
                         $builder,
-                        $bindings,
                         $extras
                     );
                     if (empty($result)) {
@@ -2316,7 +2327,7 @@ class Table extends BaseDbTableResource
         return null;
     }
 
-    public static function getApiDocInfo(Service $service, array $resource = [])
+    public static function getApiDocInfo($service, array $resource = [])
     {
         $base = parent::getApiDocInfo($service, $resource);
 

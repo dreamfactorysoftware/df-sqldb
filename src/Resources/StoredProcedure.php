@@ -8,7 +8,6 @@ use DreamFactory\Core\Events\ResourcePreProcess;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\RestException;
-use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\Resources\BaseDbResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\Utility\DataFormatter;
@@ -343,10 +342,10 @@ class StoredProcedure extends BaseDbResource
         }
     }
 
-    public static function getApiDocInfo(Service $service, array $resource = [])
+    public static function getApiDocInfo($service, array $resource = [])
     {
-        $serviceName = strtolower($service->name);
-        $capitalized = Inflector::camelize($service->name);
+        $serviceName = strtolower($service);
+        $capitalized = Inflector::camelize($service);
         $class = trim(strrchr(static::class, '\\'), '\\');
         $resourceName = strtolower(array_get($resource, 'name', $class));
         $path = '/' . $serviceName . '/' . $resourceName;

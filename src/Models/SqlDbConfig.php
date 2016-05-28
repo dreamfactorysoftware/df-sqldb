@@ -2,20 +2,20 @@
 namespace DreamFactory\Core\SqlDb\Models;
 
 use DreamFactory\Core\Components\RequireExtensions;
+use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Models\BaseServiceConfigModel;
 use DreamFactory\Core\Models\ServiceCacheConfig;
+use Crypt;
 
 /**
  * SqlDbConfig
  *
  * @property integer $service_id
- * @property string  $dsn
- * @property string  $username
- * @property string  $password
- * @property string  $db
- * @property string  $options
- * @property string  $attributes
+ * @property array   $connection
+ * @property array   $options
+ * @property array   $attributes
+ * @property array   $statements
  * @method static SqlDbConfig whereServiceId($value)
  */
 class SqlDbConfig extends BaseServiceConfigModel
@@ -26,127 +26,41 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     protected $fillable = [
         'service_id',
-        'driver',
-        'dsn',
-        'username',
-        'password',
+        'connection',
         'options',
         'attributes',
-        'default_schema_only'
+        'statements',
     ];
+
+    // deprecated, service has type designation now
+    protected $hidden = ['driver', 'dsn', 'username', 'password', 'default_schema_only'];
 
     protected $casts = [
-        'options'             => 'array',
-        'attributes'          => 'array',
-        'service_id'          => 'integer',
-        'default_schema_only' => 'boolean'
+        'service_id' => 'integer',
+        'connection' => 'array',
+        'options'    => 'array',
+        'attributes' => 'array',
+        'statements' => 'array',
     ];
 
-    protected $encrypted = ['username', 'password'];
-
-    /**
-     * @var array mapping between database driver and connection class name.
-     */
-    public static $driverConnectorMap = [
-        // PostgreSQL
-        'pgsql'       => 'pgsql',
-        // MySQL
-        'mysql'       => 'mysql',
-        // SQLite
-        'sqlite'      => 'sqlite',
-        // Oracle driver
-        'oracle'      => 'oci',
-        // IBM DB2 driver
-        'ibm'         => 'ibm',
-        // MS SQL Server on Windows hosts, alias for dblib on Linux, Mac OS X, and maybe others
-        'sqlsrv'      => 'sqlsrv',
-        // SAP SQL Anywhere alias for dblib on Linux, Mac OS X, and maybe others
-        'sqlanywhere' => 'dblib',
-    ];
-
-    /**
-     * Returns the name of the DB driver from a connection string
-     *
-     * @param string $dsn The connection string
-     *
-     * @return string name of the DB driver
-     */
-    public static function getDriverFromDSN($dsn)
+    public static function getDriverName()
     {
-        if (is_string($dsn)) {
-            if (($pos = strpos($dsn, ':')) !== false) {
-                return strtolower(substr($dsn, 0, $pos));
-            }
-        }
-
-        return null;
+        return 'Unknown';
     }
 
-    /**
-     * Returns a list of available PDO drivers.
-     *
-     * @return array list of available PDO drivers
-     * @see http://www.php.net/manual/en/function.PDO-getAvailableDBs.php
-     */
-    public static function getAllDrivers()
+    public static function getDefaultPort()
     {
-        $values = [];
-        $supported = \PDO::getAvailableDrivers();
+        return 1234;
+    }
 
-        foreach (static::$driverConnectorMap as $driver => $pdoDriver) {
-            switch ($driver) {
-                case 'ibm':
-                    // http://php.net/manual/en/ref.pdo-ibm.connection.php
-                    $dsn = 'ibm:DRIVER={IBM DB2 ODBC DRIVER};DATABASE=db;HOSTNAME=localhost;PORT=56789;PROTOCOL=TCPIP;';
-                    $label = 'IBM DB2';
-                    break;
-                case 'mysql':
-                    // http://php.net/manual/en/ref.pdo-mysql.connection.php
-                    $dsn = 'mysql:host=localhost;port=3306;dbname=db;charset=utf8';
-                    $label = 'MySQL';
-                    break;
-                case 'oracle':
-                    // http://php.net/manual/en/ref.pdo-oci.connection.php
-                    $dsn =
-                        'oci:dbname=(DESCRIPTION = (ADDRESS_LIST = (ADDRESS = (PROTOCOL = TCP)(HOST = 192.168.1.1)(PORT = 1521))) (CONNECT_DATA = (SID = db)))';
-                    $label = 'Oracle Database';
-                    break;
-                case 'pgsql':
-                    // http://php.net/manual/en/ref.pdo-pgsql.connection.php
-                    $dsn = 'pgsql:host=localhost;port=5432;dbname=db;user=name;password=pwd';
-                    $label = 'PostgreSQL';
-                    break;
-                case 'sqlanywhere':
-                    // http://php.net/manual/en/ref.pdo-dblib.connection.php
-                    $dsn = 'dblib:host=localhost:2638;dbname=database';
-                    $label = 'SAP SQL Anywhere';
-                    break;
-                case 'sqlite':
-                    // http://php.net/manual/en/ref.pdo-sqlite.connection.php
-                    $dsn = 'sqlite:db.sq3';
-                    $label = 'SQLite';
-                    break;
-                case 'sqlsrv':
-                    if (substr(PHP_OS, 0, 3) == 'WIN') {
-                        // http://php.net/manual/en/ref.pdo-sqlsrv.connection.php
-                        $dsn = 'sqlsrv:Server=localhost,1433;Database=db';
-                        $pdoDriver = 'sqlsrv';
-                    } else {
-                        // http://php.net/manual/en/ref.pdo-dblib.connection.php
-                        $dsn = 'dblib:host=localhost:1433;dbname=database;charset=UTF-8';
-                        $pdoDriver = 'dblib';
-                    }
-                    $label = 'SQL Server';
-                    break;
-                default:
-                    $label = 'Unknown';
-                    $dsn = '<driver>:host=localhost;port=1234;dbname=database';
-            }
-            $disable = !in_array($pdoDriver, $supported);
-            $values[] = ['name' => $driver, 'label' => $label, 'disable' => $disable, 'dsn' => $dsn];
-        }
+    public static function getDefaultCharset()
+    {
+        return 'utf8';
+    }
 
-        return $values;
+    public static function getDefaultCollation()
+    {
+        return 'utf8_unicode_ci';
     }
 
     /**
@@ -246,6 +160,65 @@ class SqlDbConfig extends BaseServiceConfigModel
         }
     }
 
+    public static function getDefaultConnectionInfo()
+    {
+        $defaults = [
+            [
+                'name'        => 'host',
+                'label'       => 'Host',
+                'type'        => 'string',
+                'description' => 'The name of the database host, i.e. localhost, 192.168.1.1, etc.'
+            ],
+            [
+                'name'        => 'port',
+                'label'       => 'Port Number',
+                'type'        => 'integer',
+                'description' => 'The number of the database host port, i.e. ' . static::getDefaultPort()
+            ],
+            [
+                'name'        => 'database',
+                'label'       => 'Database',
+                'type'        => 'string',
+                'description' =>
+                    'The name of the database to connect to on the given server. This can be a lookup key.'
+            ],
+            [
+                'name'        => 'username',
+                'label'       => 'Username',
+                'type'        => 'string',
+                'description' => 'The name of the database user. This can be a lookup key.'
+            ],
+            [
+                'name'        => 'password',
+                'label'       => 'Password',
+                'type'        => 'password',
+                'description' => 'The password for the database user. This can be a lookup key.'
+            ],
+//            [
+//                'name'        => 'prefix',
+//                'label'       => 'Table Prefix',
+//                'type'        => 'string',
+//                'description' => 'The name of the database table prefix.'
+//            ],
+//            [
+//                'name'        => 'schema',
+//                'label'       => 'Schema',
+//                'type'        => 'string',
+//                'description' => 'Do not include other schemas/databases on this server ' .
+//                    'regardless of permissions given to the supplied credentials.'
+//            ],
+            [
+                'name'        => 'default_schema_only',
+                'label'       => 'Use Default Schema Only',
+                'type'        => 'boolean',
+                'description' => 'Do not include other schemas/databases on this server ' .
+                    'regardless of permissions given to the supplied credentials.'
+            ]
+        ];
+
+        return $defaults;
+    }
+
     /**
      * @param int $id
      *
@@ -254,6 +227,16 @@ class SqlDbConfig extends BaseServiceConfigModel
     public static function getConfig($id)
     {
         $config = parent::getConfig($id);
+        // merge up the connection parameters
+        $connection = array_get($config, 'connection', []);
+        unset($config['connection']);
+        if (!empty($username = array_get($connection, 'username'))) {
+            $connection['username'] = Crypt::decrypt($username);
+        }
+        if (!empty($password = array_get($connection, 'password'))) {
+            $connection['password'] = Crypt::decrypt($password);
+        }
+        $config = array_merge($config, $connection);
 
         $cacheConfig = ServiceCacheConfig::whereServiceId($id)->first();
         $config['cache_enabled'] = (empty($cacheConfig)) ? false : $cacheConfig->getAttribute('cache_enabled');
@@ -264,13 +247,11 @@ class SqlDbConfig extends BaseServiceConfigModel
 
     public static function validateConfig($config, $create = true)
     {
-        $dsn = isset($config['dsn']) ? $config['dsn'] : null;
-        if (empty($dsn)) {
-            throw new BadRequestException('Database connection string (DSN) can not be empty.');
+        $host = isset($config['host']) ? $config['host'] : null;
+        $db = isset($config['database']) ? $config['database'] : null;
+        if (empty($host) || empty($db)) {
+            throw new BadRequestException("Database connection information must contain host and database name must be provided.");
         }
-
-        $driver = isset($config['driver']) ? $config['driver'] : null;
-        static::requireDriver($driver);
 
         return true;
     }
@@ -293,7 +274,25 @@ class SqlDbConfig extends BaseServiceConfigModel
             ServiceCacheConfig::setConfig($id, $cache);
         }
 
-        parent::setConfig($id, $config);
+        $dbConfig =
+            [
+                'options'    => array_get($config, 'options'),
+                'attributes' => array_get($config, 'attributes'),
+                'statements' => array_get($config, 'statements')
+            ];
+        unset($config['service_id']);
+        unset($config['options']);
+        unset($config['attributes']);
+        unset($config['statements']);
+        if (!empty($username = array_get($config, 'username'))) {
+            $config['username'] = Crypt::encrypt($username);
+        }
+        if (!empty($password = array_get($config, 'password'))) {
+            $config['password'] = Crypt::encrypt($password);
+        }
+        $dbConfig['connection'] = $config;
+
+        parent::setConfig($id, $dbConfig);
     }
 
     /**
@@ -301,10 +300,36 @@ class SqlDbConfig extends BaseServiceConfigModel
      */
     public static function getConfigSchema()
     {
-        $schema = parent::getConfigSchema();
-        $schema = array_merge($schema, ServiceCacheConfig::getConfigSchema());
+        $model = new static;
 
-        return $schema;
+        $schema = $model->getTableSchema();
+        if ($schema) {
+            $out = [];
+            foreach ($schema->columns as $name => $column) {
+                // Skip if column is hidden
+                if (in_array($name, $model->getHidden())) {
+                    continue;
+                }
+                /** @var ColumnSchema $column */
+                if (('service_id' === $name) || $column->autoIncrement) {
+                    continue;
+                }
+
+                if ('connection' === $name) {
+                    // specific attributes to the different databases
+                    $temp = static::getDefaultConnectionInfo();
+                    $out = array_merge($out, $temp);
+                } else {
+                    $temp = $column->toArray();
+                    static::prepareConfigSchemaField($temp);
+                    $out[] = $temp;
+                }
+            }
+
+            return $out;
+        }
+
+        return null;
     }
 
     /**
@@ -315,39 +340,18 @@ class SqlDbConfig extends BaseServiceConfigModel
         parent::prepareConfigSchemaField($schema);
 
         switch ($schema['name']) {
-            case 'driver':
-                $values = static::getAllDrivers();
-                $schema['type'] = 'picklist';
-                $schema['values'] = $values;
-                $schema['affects'] = 'dsn';
-                $schema['description'] =
-                    'Select the driver that matches the database type for which you want to connect.' .
-                    ' For further information, see http://php.net/manual/en/pdo.drivers.php.';
-                break;
-            case 'dsn':
-                $schema['label'] = 'Connection String (DSN)';
-                $schema['description'] =
-                    'The Data Source Name, or DSN, contains the information required to connect to the database.' .
-                    ' For further information, see http://php.net/manual/en/pdo.construct.php.';
-                break;
-            case 'username':
-                $schema['type'] = 'string';
-                $schema['description'] = 'The name of the database user. This can be a lookup key.';
-                break;
-            case 'password':
-                $schema['type'] = 'password';
-                $schema['description'] = 'The password for the database user. This can be a lookup key.';
-                break;
             case 'options':
+                $schema['label'] = 'Driver Options';
                 $schema['type'] = 'object';
                 $schema['object'] =
                     [
                         'key'   => ['label' => 'Name', 'type' => 'string'],
                         'value' => ['label' => 'Value', 'type' => 'string']
                     ];
-                $schema['description'] = 'A key=>value array of connection options.';
+                $schema['description'] = 'A key-value array of driver-specific connection options.';
                 break;
             case 'attributes':
+                $schema['label'] = 'Driver Attributes';
                 $schema['type'] = 'object';
                 $schema['object'] =
                     [
@@ -355,13 +359,14 @@ class SqlDbConfig extends BaseServiceConfigModel
                         'value' => ['label' => 'Value', 'type' => 'string']
                     ];
                 $schema['description'] =
-                    'A key=>value array of attributes to be set after connection.' .
+                    'A key-value array of attributes to be set after connection.' .
                     ' For further information, see http://php.net/manual/en/pdo.setattribute.php';
                 break;
-            case 'default_schema_only':
-                $schema['description'] =
-                    'Do not include other schemas/databases on this server ' .
-                    'regardless of permissions given to the supplied credentials.';
+            case 'statements':
+                $schema['label'] = 'Additional SQL Statements';
+                $schema['type'] = 'array';
+                $schema['items'] = 'string';
+                $schema['description'] = 'An array of SQL statements to run during connection initialization.';
                 break;
         }
     }
