@@ -27,6 +27,7 @@ use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Scalar;
 use Illuminate\Database\Query\Builder;
 use ServiceManager;
+use DB;
 
 /**
  * Class Table
@@ -258,12 +259,14 @@ class Table extends BaseDbTableResource
         $offset = intval(array_get($extras, ApiOptions::OFFSET, 0));
         $includeCount = Scalar::boolval(array_get($extras, ApiOptions::INCLUDE_COUNT));
         $related = array_get($extras, ApiOptions::RELATED);
+        /** @type ColumnSchema[] $availableFields */
+        $availableFields = $schema->getColumns(true);
         /** @type RelationSchema[] $availableRelations */
         $availableRelations = $schema->getRelations(true);
         $maxAllowed = static::getMaxRecordsReturnedLimit();
         $needLimit = false;
 
-        $result = $this->parseSelect($select, $schema->getColumns(true));
+        $result = $this->parseSelect($select, $availableFields);
         $bindings = array_get($result, 'bindings');
         $select = array_get($result, 'fields');
         $select = (empty($select)) ? '*' : $select;
@@ -312,7 +315,8 @@ class Table extends BaseDbTableResource
             if (false !== strpos($order, ';')) {
                 throw new BadRequestException('Invalid group by clause in request.');
             }
-            $builder->groupBy($group);
+            $groups = $this->parseGroupBy($group, $availableFields);
+            $builder->groupBy($groups);
         }
         $builder->take($limit);
         $builder->skip($offset);
@@ -940,6 +944,33 @@ class Table extends BaseDbTableResource
         }
 
         return ['fields' => $outArray, 'bindings' => $bindArray];
+    }
+
+    /**
+     * @param  string|array   $fields
+     * @param  ColumnSchema[] $avail_fields
+     *
+     * @return array
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
+    protected function parseGroupBy($fields, $avail_fields)
+    {
+        $outArray = [];
+        if (!empty($fields)) {
+            $fields = (!is_array($fields)) ? array_map('trim', explode(',', trim($fields, ','))) : $fields;
+            foreach ($fields as $field) {
+                $ndx = strtolower($field);
+                if (!isset($avail_fields[$ndx])) {
+                    $outArray[] = DB::raw($field);
+                } else {
+                    $fieldInfo = $avail_fields[$ndx];
+                    $outArray[] = $fieldInfo->name;
+                }
+            }
+        }
+
+        return $outArray;
     }
 
     // generic assignments
