@@ -666,7 +666,7 @@ class Table extends BaseDbTableResource
             // need to prop this up?
         }
 
-        switch ($cnvType = $info->determinePhpConversionType($info->type)) {
+        switch ($cnvType = $this->schema->determinePhpConversionType($info->type)) {
             case 'int':
                 if (!is_int($value)) {
                     if (!(ctype_digit($value))) {
@@ -729,7 +729,7 @@ class Table extends BaseDbTableResource
         if (!is_null($value) && !($value instanceof Expression)) {
             $value = $this->schema->parseValueForSet($value, $field_info);
 
-            switch ($cnvType = $field_info->determinePhpConversionType($field_info->type)) {
+            switch ($cnvType = $this->schema->determinePhpConversionType($field_info->type)) {
                 case 'int':
                     if (!is_int($value)) {
                         if (('' === $value) && $field_info->allowNull) {

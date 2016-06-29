@@ -2,16 +2,21 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use DreamFactory\Core\Components\DataValidator;
+use DreamFactory\Core\Database\Schema\FunctionSchema;
+use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Events\ResourcePostProcess;
 use DreamFactory\Core\Events\ResourcePreProcess;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
+use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\Utility\DataFormatter;
+use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
+use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Inflector;
 
 class StoredFunction extends BaseDbResource
@@ -36,9 +41,68 @@ class StoredFunction extends BaseDbResource
     //	Members
     //*************************************************************************
 
+    /**
+     * @type array Any parameters passed inline, i.e. /_proc/myproc(1, 2, 3)
+     */
+    protected $inlineParams = [];
+
     //*************************************************************************
     //	Methods
     //*************************************************************************
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getResourceName()
+    {
+        return static::RESOURCE_NAME;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function listResources($schema = null, $refresh = false)
+    {
+        /** @type FunctionSchema[] $result */
+        $result = $this->schema->getFunctionNames($schema, $refresh);
+        $resources = [];
+        foreach ($result as $proc) {
+            $name = $proc->publicName;
+            if (!empty($this->getPermissions($name))) {
+                $resources[] = $name;
+            }
+        }
+
+        return $resources;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getResources($only_handlers = false)
+    {
+        if ($only_handlers) {
+            return [];
+        }
+
+        $refresh = $this->request->getParameterAsBool('refresh');
+        $schema = $this->request->getParameter('schema', '');
+
+        /** @type FunctionSchema[] $result */
+        $result = $this->schema->getFunctionNames($schema, $refresh);
+
+        $resources = [];
+        foreach ($result as $function) {
+            $access = $this->getPermissions($function->name);
+            if (!empty($access)) {
+                $temp = $function->toArray();
+                $temp['access'] = VerbsMask::maskToArray($access);
+                $resources[] = $temp;
+            }
+        }
+
+        return $resources;
+    }
 
     /**
      * @param string $function
@@ -49,12 +113,17 @@ class StoredFunction extends BaseDbResource
     protected function validateStoredFunctionAccess(&$function, $action = null)
     {
         // check that the current user has privileges to access this function
-        $resource = $function;
-        if (!empty($function)) {
-            $resource .= rtrim((false !== strpos($function, '(')) ? strstr($function, '(', true) : $function);
+        $this->checkPermission($action, $function);
+    }
+
+    protected function setResourceMembers($resourcePath = null)
+    {
+        if (false !== strpos($resourcePath, '(')) {
+            $this->inlineParams = trim(strstr($resourcePath, '('), '()');
+            $resourcePath = rtrim(strstr($resourcePath, '(', true));
         }
 
-        $this->checkPermission($action, $resource);
+        return parent::setResourceMembers($resourcePath);
     }
 
     /**
@@ -135,24 +204,22 @@ class StoredFunction extends BaseDbResource
     protected function handleGET()
     {
         if (empty($this->resource)) {
+            $names = $this->request->getParameter(ApiOptions::IDS);
+            if (empty($names)) {
+                $names = ResourcesWrapper::unwrapResources($this->request->getPayloadData());
+            }
+
+            if (!empty($names)) {
+                $refresh = $this->request->getParameterAsBool('refresh');
+                $result = $this->describeFunctions($names, $refresh);
+
+                return ResourcesWrapper::wrapResources($result);
+            } else {
             return parent::handleGET();
         }
-
-        $payload = $this->request->getPayloadData();
-        if (false !== strpos($this->resource, '(')) {
-            $inlineParams = strstr($this->resource, '(');
-            $name = rtrim(strstr($this->resource, '(', true));
-            $params = array_get($payload, 'params', trim($inlineParams, '()'));
-        } else {
-            $name = $this->resource;
-            $params = array_get($payload, 'params', []);
         }
 
-        $returns = array_get($payload, 'returns');
-        $wrapper = array_get($payload, 'wrapper');
-        $schema = array_get($payload, 'schema');
-
-        return $this->callFunction($name, $params, $returns, $schema, $wrapper);
+        return $this->callFunction();
     }
 
     /**
@@ -161,104 +228,97 @@ class StoredFunction extends BaseDbResource
      */
     protected function handlePOST()
     {
-        $payload = $this->request->getPayloadData();
-        if (false !== strpos($this->resource, '(')) {
-            $inlineParams = strstr($this->resource, '(');
-            $name = rtrim(strstr($this->resource, '(', true));
-            $params = array_get($payload, 'params', trim($inlineParams, '()'));
-        } else {
-            $name = $this->resource;
-            $params = array_get($payload, 'params', []);
+        if (!empty($this->resource)) {
+            return $this->callFunction();
         }
 
-        $returns = array_get($payload, 'returns');
-        $wrapper = array_get($payload, 'wrapper');
-        $schema = array_get($payload, 'schema');
-
-        return $this->callFunction($name, $params, $returns, $schema, $wrapper);
+        return parent::handlePOST();
     }
 
     /**
-     * {@inheritdoc}
+     * Get multiple functions and their properties
+     *
+     * @param string | array $names   Function names comma-delimited string or array
+     * @param bool           $refresh Force a refresh of the schema from the database
+     *
+     * @return array
+     * @throws \Exception
      */
-    public function getResourceName()
+    public function describeFunctions($names, $refresh = false)
     {
-        return static::RESOURCE_NAME;
+        $names = static::validateAsArray(
+            $names,
+            ',',
+            true,
+            'The request contains no valid function names or properties.'
+        );
+
+        $out = [];
+        foreach ($names as $name) {
+            $out[] = $this->describeFunction($name, $refresh);
+        }
+
+        return $out;
     }
 
     /**
-     * {@inheritdoc}
+     * Get any properties related to the function
+     *
+     * @param string | array $name    Function name or defining properties
+     * @param bool           $refresh Force a refresh of the schema from the database
+     *
+     * @return array
+     * @throws \Exception
      */
-    public function listResources($schema = null, $refresh = false)
+    public function describeFunction($name, $refresh = false)
     {
+        $name = (is_array($name) ? array_get($name, 'name') : $name);
+        if (empty($name)) {
+            throw new BadRequestException('Function name can not be empty.');
+        }
+
+        $this->checkPermission(Verbs::GET, $name);
+
         try {
-            return $this->schema->getFunctionNames($schema, $refresh);
+            $procedure = $this->schema->getFunction($name, $refresh);
+            if (!$procedure) {
+                throw new NotFoundException("Function '$name' does not exist in the database.");
+            }
+
+            $result = $procedure->toArray();
+            $result['access'] = $this->getPermissions($name);
+
+            return $result;
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
-            throw new InternalServerErrorException("Failed to list database stored functions for this service.\n{$ex->getMessage()}");
+            throw new InternalServerErrorException("Failed to query database schema.\n{$ex->getMessage()}");
         }
     }
 
     /**
-     * {@inheritdoc}
-     */
-    public function getResources($only_handlers = false)
-    {
-        if ($only_handlers) {
-            return [];
-        }
-
-        $refresh = $this->request->getParameterAsBool('refresh');
-        $schema = $this->request->getParameter('schema', '');
-
-        $result = $this->listResources($schema, $refresh);
-
-        $resources = [];
-        foreach ($result as $name) {
-            $access = $this->getPermissions($name);
-            if (!empty($access)) {
-                $resources[] = ['name' => $name, 'access' => VerbsMask::maskToArray($access)];
-            }
-        }
-
-        return $resources;
-    }
-
-    /**
-     * @param string $name
-     * @param array  $params
-     * @param string $returns
-     * @param array  $schema
-     * @param string $wrapper
-     *
      * @throws \Exception
      * @return array
      */
-    public function callFunction($name, $params = null, $returns = null, $schema = null, $wrapper = null)
+    protected function callFunction()
     {
-        if (empty($name)) {
-            throw new BadRequestException('Stored function name can not be empty.');
-        }
+        $payload = $this->request->getPayloadData();
+        $params = array_get($payload, 'params', $this->inlineParams);
 
         if (false === $params = static::validateAsArray($params, ',', true)) {
             $params = [];
         }
 
         Session::replaceLookups($params);
-        foreach ($params as $key => $param) {
-            // overcome shortcomings of passed in data
-            if (is_array($param)) {
-                if (null === $pName = array_get($param, 'name')) {
-                    $params[$key]['name'] = "p$key";
-                }
-            } else {
-                $params[$key] = ['name' => "p$key", 'value' => $param];
-            }
-        }
 
         try {
-            $result = $this->schema->callFunction($name, $params);
+            $result = $this->schema->callFunction($this->resource, $params);
+        } catch (\Exception $ex) {
+            throw new InternalServerErrorException("Failed to call database stored function.\n{$ex->getMessage()}");
+        }
+
+        $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
+        $schema = array_get($payload, 'schema');
 
             if (!empty($returns) && (0 !== strcasecmp('TABLE', $returns))) {
                 // result could be an array of array of one value - i.e. multi-dataset format with just a single value
@@ -297,15 +357,7 @@ class StoredFunction extends BaseDbResource
                 }
             }
 
-            // wrap the result set if desired
-            if (!empty($wrapper)) {
-                $result = [$wrapper => $result];
-            }
-
             return $result;
-        } catch (\Exception $ex) {
-            throw new InternalServerErrorException("Failed to call database stored procedure.\n{$ex->getMessage()}");
-        }
     }
 
     public static function getApiDocInfo($service, array $resource = [])
@@ -324,9 +376,7 @@ class StoredFunction extends BaseDbResource
                     'tags'              => [$serviceName],
                     'summary'           => 'call' . $capitalized . 'StoredFunction() - Call a stored function.',
                     'operationId'       => 'call' . $capitalized . 'StoredFunction',
-                    'description'       =>
-                        'Call a stored function with no parameters. ' .
-                        'Set an optional wrapper for the returned data set. ',
+                    'description'       => 'Call a stored function with no parameters. ',
                     'x-publishedEvents' => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
                     'parameters'        => [
                         [
@@ -335,13 +385,6 @@ class StoredFunction extends BaseDbResource
                             'type'        => 'string',
                             'in'          => 'path',
                             'required'    => true,
-                        ],
-                        [
-                            'name'        => 'wrapper',
-                            'description' => 'Add this wrapper around the expected data set before returning.',
-                            'type'        => 'string',
-                            'in'          => 'query',
-                            'required'    => false,
                         ],
                         [
                             'name'        => 'returns',
@@ -368,9 +411,7 @@ class StoredFunction extends BaseDbResource
                         $capitalized .
                         'StoredFunctionWithParams() - Call a stored function.',
                     'operationId'       => 'call' . $capitalized . 'StoredFunctionWithParams',
-                    'description'       =>
-                        'Call a stored function with parameters. ' .
-                        'Set an optional wrapper and schema for the returned data set. ',
+                    'description'       => 'Call a stored function with parameters. ',
                     'x-publishedEvents' => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
                     'parameters'        => [
                         [
@@ -386,13 +427,6 @@ class StoredFunction extends BaseDbResource
                             'schema'      => ['$ref' => '#/definitions/StoredFunctionRequest'],
                             'in'          => 'body',
                             'required'    => true,
-                        ],
-                        [
-                            'name'        => 'wrapper',
-                            'description' => 'Add this wrapper around the expected data set before returning.',
-                            'type'        => 'string',
-                            'in'          => 'query',
-                            'required'    => false,
                         ],
                         [
                             'name'        => 'returns',
@@ -420,13 +454,6 @@ class StoredFunction extends BaseDbResource
             'StoredFunctionResponse'     => [
                 'type'       => 'object',
                 'properties' => [
-                    '_wrapper_if_supplied_' => [
-                        'type'        => 'array',
-                        'description' => 'Array of returned data.',
-                        'items'       => [
-                            'type' => 'string'
-                        ],
-                    ],
                     '_out_param_name_'      => [
                         'type'        => 'string',
                         'description' => 'Name and value of any given output parameter.',
@@ -446,10 +473,6 @@ class StoredFunction extends BaseDbResource
                     'schema'  => [
                         '$ref' => '#/definitions/StoredFunctionResultSchema',
                     ],
-                    'wrapper' => [
-                        'type'        => 'string',
-                        'description' => 'Add this wrapper around the expected data set before returning, same as URL parameter.',
-                    ],
                     'returns' => [
                         'type'        => 'string',
                         'description' => 'If returning a single value, use this to set the type of that value, same as URL parameter.',
@@ -465,26 +488,9 @@ class StoredFunction extends BaseDbResource
                             'Name of the parameter, required for OUT and INOUT types, ' .
                             'must be the same as the stored procedure\'s parameter name.',
                     ],
-                    'param_type' => [
-                        'type'        => 'string',
-                        'description' => 'Parameter type of IN, OUT, or INOUT, defaults to IN.',
-                    ],
                     'value'      => [
                         'type'        => 'string',
                         'description' => 'Value of the parameter, used for the IN and INOUT types, defaults to NULL.',
-                    ],
-                    'type'       => [
-                        'type'        => 'string',
-                        'description' =>
-                            'For INOUT and OUT parameters, the requested type for the returned value, ' .
-                            'i.e. integer, boolean, string, etc. Defaults to value type for INOUT and string for OUT.',
-                    ],
-                    'length'     => [
-                        'type'        => 'integer',
-                        'format'      => 'int32',
-                        'description' =>
-                            'For INOUT and OUT parameters, the requested length for the returned value. ' .
-                            'May be required by some database drivers.',
                     ],
                 ],
             ],
