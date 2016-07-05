@@ -303,22 +303,28 @@ class StoredProcedure extends BaseDbResource
     {
         $payload = $this->request->getPayloadData();
         $params = array_get($payload, 'params', $this->inlineParams);
-
-        if (false === $params = static::validateAsArray($params, ',', true)) {
+        if (empty($params)) {
+            $params = $this->request->getParameters();
+        }
+        if (false === $params = static::validateAsArray($params, ',')) {
             $params = [];
         }
 
         Session::replaceLookups($params);
-        
+
         $outParams = [];
         try {
             $result = $this->schema->callProcedure($this->resource, $params, $outParams);
+        } catch (RestException $ex) {
+            throw $ex;
         } catch (\Exception $ex) {
             throw new InternalServerErrorException("Failed to call database stored procedure.\n{$ex->getMessage()}");
         }
 
         $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
-        $wrapper = array_get($payload, 'wrapper', $this->request->getParameter('wrapper', config('resources_wrapper','resource')));
+        $wrapper =
+            array_get($payload, 'wrapper',
+                $this->request->getParameter('wrapper', config('resources_wrapper', 'resource')));
         $schema = array_get($payload, 'schema');
 
         if (!empty($returns) && (0 !== strcasecmp('TABLE', $returns))) {
@@ -333,26 +339,34 @@ class StoredProcedure extends BaseDbResource
         }
 
         // convert result field values to types according to schema received
-        if (is_array($schema) && is_array($result)) {
-            foreach ($result as &$row) {
-                if (is_array($row)) {
-                    if (isset($row[0])) {
-                        //  Multi-row set, dig a little deeper
-                        foreach ($row as &$sub) {
-                            if (is_array($sub)) {
-                                foreach ($sub as $key => $value) {
-                                    if (null !== $type = array_get($schema, $key)) {
-                                        $sub[$key] = DataFormatter::formatValue($value, $type);
+        if (is_array($schema) && !empty($result)) {
+            if (is_array($result)) {
+                foreach ($result as &$row) {
+                    if (is_array($row)) {
+                        if (isset($row[0])) {
+                            //  Multi-row set, dig a little deeper
+                            foreach ($row as &$sub) {
+                                if (is_array($sub)) {
+                                    foreach ($sub as $key => $value) {
+                                        if (null !== $type = array_get($schema, $key)) {
+                                            $sub[$key] = DataFormatter::formatValue($value, $type);
+                                        }
                                     }
                                 }
                             }
-                        }
-                    } else {
-                        foreach ($row as $key => $value) {
-                            if (null !== $type = array_get($schema, $key)) {
-                                $row[$key] = DataFormatter::formatValue($value, $type);
+                        } else {
+                            foreach ($row as $key => $value) {
+                                if (null !== $type = array_get($schema, $key)) {
+                                    $row[$key] = DataFormatter::formatValue($value, $type);
+                                }
                             }
                         }
+                    }
+                }
+            } else {
+                foreach ($result as $key => $value) {
+                    if (null !== $type = array_get($schema, $key)) {
+                        $result[$key] = DataFormatter::formatValue($value, $type);
                     }
                 }
             }
@@ -360,7 +374,14 @@ class StoredProcedure extends BaseDbResource
 
         // wrap the result set if desired
         if (!empty($outParams)) {
-            $result = [$wrapper => $result];
+            foreach ($outParams as $key => $value) {
+                if (null !== $type = array_get($schema, $key)) {
+                    $outParams[$key] = DataFormatter::formatValue($value, $type);
+                }
+            }
+            if (!empty($result)) {
+                $result = [$wrapper => $result];
+            }
             $result = array_merge($result, $outParams);
         }
 
@@ -524,13 +545,13 @@ class StoredProcedure extends BaseDbResource
             'StoredProcedureParam'        => [
                 'type'       => 'object',
                 'properties' => [
-                    'name'       => [
+                    'name'  => [
                         'type'        => 'string',
                         'description' =>
                             'Name of the parameter, required for OUT and INOUT types, ' .
                             'must be the same as the stored procedure\'s parameter name.',
                     ],
-                    'value'      => [
+                    'value' => [
                         'type'        => 'string',
                         'description' => 'Value of the parameter, used for the IN and INOUT types, defaults to NULL.',
                     ],

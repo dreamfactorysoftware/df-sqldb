@@ -215,8 +215,8 @@ class StoredFunction extends BaseDbResource
 
                 return ResourcesWrapper::wrapResources($result);
             } else {
-            return parent::handleGET();
-        }
+                return parent::handleGET();
+            }
         }
 
         return $this->callFunction();
@@ -303,9 +303,12 @@ class StoredFunction extends BaseDbResource
     protected function callFunction()
     {
         $payload = $this->request->getPayloadData();
+        // check payload first, then inline, then URL param
         $params = array_get($payload, 'params', $this->inlineParams);
-
-        if (false === $params = static::validateAsArray($params, ',', true)) {
+        if (empty($params)) {
+            $params = $this->request->getParameters();
+        }
+        if (false === $params = static::validateAsArray($params, ',')) {
             $params = [];
         }
 
@@ -313,6 +316,8 @@ class StoredFunction extends BaseDbResource
 
         try {
             $result = $this->schema->callFunction($this->resource, $params);
+        } catch (RestException $ex) {
+            throw $ex;
         } catch (\Exception $ex) {
             throw new InternalServerErrorException("Failed to call database stored function.\n{$ex->getMessage()}");
         }
@@ -320,19 +325,20 @@ class StoredFunction extends BaseDbResource
         $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
         $schema = array_get($payload, 'schema');
 
-            if (!empty($returns) && (0 !== strcasecmp('TABLE', $returns))) {
-                // result could be an array of array of one value - i.e. multi-dataset format with just a single value
+        if (!empty($returns) && (0 !== strcasecmp('TABLE', $returns))) {
+            // result could be an array of array of one value - i.e. multi-dataset format with just a single value
+            if (is_array($result)) {
+                $result = current($result);
                 if (is_array($result)) {
                     $result = current($result);
-                    if (is_array($result)) {
-                        $result = current($result);
-                    }
                 }
-                $result = DataFormatter::formatValue($result, $returns);
             }
+            $result = DataFormatter::formatValue($result, $returns);
+        }
 
-            // convert result field values to types according to schema received
-            if (is_array($schema) && is_array($result)) {
+        // convert result field values to types according to schema received
+        if (is_array($schema) && !empty($result)) {
+            if (is_array($result)) {
                 foreach ($result as &$row) {
                     if (is_array($row)) {
                         if (isset($row[0])) {
@@ -355,9 +361,16 @@ class StoredFunction extends BaseDbResource
                         }
                     }
                 }
+            } elseif (is_array($result)) {
+                foreach ($result as $key => $value) {
+                    if (null !== $type = array_get($schema, $key)) {
+                        $result[$key] = DataFormatter::formatValue($value, $type);
+                    }
+                }
             }
+        }
 
-            return $result;
+        return $result;
     }
 
     public static function getApiDocInfo($service, array $resource = [])
@@ -454,7 +467,7 @@ class StoredFunction extends BaseDbResource
             'StoredFunctionResponse'     => [
                 'type'       => 'object',
                 'properties' => [
-                    '_out_param_name_'      => [
+                    '_out_param_name_' => [
                         'type'        => 'string',
                         'description' => 'Name and value of any given output parameter.',
                     ],
@@ -482,13 +495,13 @@ class StoredFunction extends BaseDbResource
             'StoredFunctionParam'        => [
                 'type'       => 'object',
                 'properties' => [
-                    'name'       => [
+                    'name'  => [
                         'type'        => 'string',
                         'description' =>
                             'Name of the parameter, required for OUT and INOUT types, ' .
                             'must be the same as the stored procedure\'s parameter name.',
                     ],
-                    'value'      => [
+                    'value' => [
                         'type'        => 'string',
                         'description' => 'Value of the parameter, used for the IN and INOUT types, defaults to NULL.',
                     ],
