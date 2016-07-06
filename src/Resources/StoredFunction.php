@@ -93,7 +93,7 @@ class StoredFunction extends BaseDbResource
 
         $resources = [];
         foreach ($result as $function) {
-            $access = $this->getPermissions($function->name);
+            $access = $this->getPermissions($function->publicName);
             if (!empty($access)) {
                 $temp = $function->toArray();
                 $temp['access'] = VerbsMask::maskToArray($access);
