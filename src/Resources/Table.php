@@ -666,7 +666,7 @@ class Table extends BaseDbTableResource
             // need to prop this up?
         }
 
-        switch ($cnvType = $info->determinePhpConversionType($info->type)) {
+        switch ($cnvType = $this->schema->determinePhpConversionType($info->type)) {
             case 'int':
                 if (!is_int($value)) {
                     if (!(ctype_digit($value))) {
@@ -726,47 +726,52 @@ class Table extends BaseDbTableResource
      */
     protected function parseValueForSet($value, $field_info)
     {
-        if (!is_null($value) && !($value instanceof Expression)) {
-            $value = $this->schema->parseValueForSet($value, $field_info);
+        if (!is_null($value)) {
+            if ($value instanceof Expression) {
+                // todo need to wrangle in expression parameters somehow
+                $value = DB::raw($value->expression);
+            } else {
+                $value = $this->schema->parseValueForSet($value, $field_info);
 
-            switch ($cnvType = $field_info->determinePhpConversionType($field_info->type)) {
-                case 'int':
-                    if (!is_int($value)) {
-                        if (('' === $value) && $field_info->allowNull) {
-                            $value = null;
-                        } elseif (!ctype_digit($value)) {
-                            if (!is_float($value)) { // bigint catch as float
-                                throw new BadRequestException("Field '{$field_info->getName(true)}' must be a valid integer.");
+                switch ($cnvType = $this->schema->determinePhpConversionType($field_info->type)) {
+                    case 'int':
+                        if (!is_int($value)) {
+                            if (('' === $value) && $field_info->allowNull) {
+                                $value = null;
+                            } elseif (!ctype_digit($value)) {
+                                if (!is_float($value)) { // bigint catch as float
+                                    throw new BadRequestException("Field '{$field_info->getName(true)}' must be a valid integer.");
+                                }
+                            } else {
+                                $value = intval($value);
                             }
-                        } else {
-                            $value = intval($value);
                         }
-                    }
-                    break;
+                        break;
 
-                case 'time':
-                    $cfgFormat = Config::get('df.db_time_format');
-                    $outFormat = 'H:i:s.u';
-                    $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                    break;
-                case 'date':
-                    $cfgFormat = Config::get('df.db_date_format');
-                    $outFormat = 'Y-m-d';
-                    $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                    break;
-                case 'datetime':
-                    $cfgFormat = Config::get('df.db_datetime_format');
-                    $outFormat = 'Y-m-d H:i:s';
-                    $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                    break;
-                case 'timestamp':
-                    $cfgFormat = Config::get('df.db_timestamp_format');
-                    $outFormat = 'Y-m-d H:i:s';
-                    $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                    break;
+                    case 'time':
+                        $cfgFormat = Config::get('df.db_time_format');
+                        $outFormat = 'H:i:s.u';
+                        $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
+                        break;
+                    case 'date':
+                        $cfgFormat = Config::get('df.db_date_format');
+                        $outFormat = 'Y-m-d';
+                        $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
+                        break;
+                    case 'datetime':
+                        $cfgFormat = Config::get('df.db_datetime_format');
+                        $outFormat = 'Y-m-d H:i:s';
+                        $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
+                        break;
+                    case 'timestamp':
+                        $cfgFormat = Config::get('df.db_timestamp_format');
+                        $outFormat = 'Y-m-d H:i:s';
+                        $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
+                        break;
 
-                default:
-                    break;
+                    default:
+                        break;
+                }
             }
         }
 

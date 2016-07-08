@@ -2,16 +2,21 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use DreamFactory\Core\Components\DataValidator;
+use DreamFactory\Core\Database\Schema\ProcedureSchema;
+use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Events\ResourcePostProcess;
 use DreamFactory\Core\Events\ResourcePreProcess;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
+use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\Utility\DataFormatter;
+use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
+use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Inflector;
 
 class StoredProcedure extends BaseDbResource
@@ -36,9 +41,67 @@ class StoredProcedure extends BaseDbResource
     //	Members
     //*************************************************************************
 
+    /**
+     * @type array Any parameters passed inline, i.e. /_proc/myproc(1, 2, 3)
+     */
+    protected $inlineParams = [];
+
     //*************************************************************************
     //	Methods
     //*************************************************************************
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getResourceName()
+    {
+        return static::RESOURCE_NAME;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function listResources($schema = null, $refresh = false)
+    {
+        /** @type ProcedureSchema[] $result */
+        $result = $this->schema->getProcedureNames($schema, $refresh);
+        $resources = [];
+        foreach ($result as $proc) {
+            $name = $proc->publicName;
+            if (!empty($this->getPermissions($name))) {
+                $resources[] = $name;
+            }
+        }
+
+        return $resources;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getResources($only_handlers = false)
+    {
+        if ($only_handlers) {
+            return [];
+        }
+
+        $refresh = $this->request->getParameterAsBool('refresh');
+        $schema = $this->request->getParameter('schema', '');
+
+        /** @type ProcedureSchema[] $result */
+        $result = $this->schema->getProcedureNames($schema, $refresh);
+        $resources = [];
+        foreach ($result as $procedure) {
+            $access = $this->getPermissions($procedure->publicName);
+            if (!empty($access)) {
+                $temp = $procedure->toArray();
+                $temp['access'] = VerbsMask::maskToArray($access);
+                $resources[] = $temp;
+            }
+        }
+
+        return $resources;
+    }
 
     /**
      * @param string $procedure
@@ -49,12 +112,17 @@ class StoredProcedure extends BaseDbResource
     protected function validateStoredProcedureAccess(&$procedure, $action = null)
     {
         // check that the current user has privileges to access this function
-        $resource = $procedure;
-        if (!empty($procedure)) {
-            $resource .= rtrim((false !== strpos($procedure, '(')) ? strstr($procedure, '(', true) : $procedure);
+        $this->checkPermission($action, $procedure);
+    }
+
+    protected function setResourceMembers($resourcePath = null)
+    {
+        if (false !== strpos($resourcePath, '(')) {
+            $this->inlineParams = trim(strstr($resourcePath, '('), '()');
+            $resourcePath = rtrim(strstr($resourcePath, '(', true));
         }
 
-        $this->checkPermission($action, $resource);
+        return parent::setResourceMembers($resourcePath);
     }
 
     /**
@@ -135,24 +203,22 @@ class StoredProcedure extends BaseDbResource
     protected function handleGET()
     {
         if (empty($this->resource)) {
-            return parent::handleGET();
+            $names = $this->request->getParameter(ApiOptions::IDS);
+            if (empty($names)) {
+                $names = ResourcesWrapper::unwrapResources($this->request->getPayloadData());
+            }
+
+            if (!empty($names)) {
+                $refresh = $this->request->getParameterAsBool('refresh');
+                $result = $this->describeProcedures($names, $refresh);
+
+                return ResourcesWrapper::wrapResources($result);
+            } else {
+                return parent::handleGET();
+            }
         }
 
-        $payload = $this->request->getPayloadData();
-        if (false !== strpos($this->resource, '(')) {
-            $inlineParams = strstr($this->resource, '(');
-            $name = rtrim(strstr($this->resource, '(', true));
-            $params = array_get($payload, 'params', trim($inlineParams, '()'));
-        } else {
-            $name = $this->resource;
-            $params = array_get($payload, 'params', []);
-        }
-
-        $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
-        $wrapper = array_get($payload, 'wrapper', $this->request->getParameter('wrapper'));
-        $schema = array_get($payload, 'schema');
-
-        return $this->callProcedure($name, $params, $returns, $schema, $wrapper);
+        return $this->callProcedure();
     }
 
     /**
@@ -161,140 +227,120 @@ class StoredProcedure extends BaseDbResource
      */
     protected function handlePOST()
     {
-        $payload = $this->request->getPayloadData();
-        if (false !== strpos($this->resource, '(')) {
-            $inlineParams = strstr($this->resource, '(');
-            $name = rtrim(strstr($this->resource, '(', true));
-            $params = array_get($payload, 'params', trim($inlineParams, '()'));
-        } else {
-            $name = $this->resource;
-            $params = array_get($payload, 'params', []);
+        if (!empty($this->resource)) {
+            return $this->callProcedure();
         }
 
-        $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
-        $wrapper = array_get($payload, 'wrapper', $this->request->getParameter('wrapper'));
-        $schema = array_get($payload, 'schema');
-
-        return $this->callProcedure($name, $params, $returns, $schema, $wrapper);
+        return parent::handlePOST();
     }
 
     /**
-     * {@inheritdoc}
+     * Get multiple procedures and their properties
+     *
+     * @param string | array $names   Procedure names comma-delimited string or array
+     * @param bool           $refresh Force a refresh of the schema from the database
+     *
+     * @return array
+     * @throws \Exception
      */
-    public function getResourceName()
+    protected function describeProcedures($names, $refresh = false)
     {
-        return static::RESOURCE_NAME;
+        $names = static::validateAsArray(
+            $names,
+            ',',
+            true,
+            'The request contains no valid procedure names or properties.'
+        );
+
+        $out = [];
+        foreach ($names as $name) {
+            $out[] = $this->describeProcedure($name, $refresh);
+        }
+
+        return $out;
     }
 
     /**
-     * {@inheritdoc}
+     * Get any properties related to the procedure
+     *
+     * @param string | array $name    Procedure name or defining properties
+     * @param bool           $refresh Force a refresh of the schema from the database
+     *
+     * @return array
+     * @throws \Exception
      */
-    public function listResources($schema = null, $refresh = false)
+    protected function describeProcedure($name, $refresh = false)
     {
+        $name = (is_array($name) ? array_get($name, 'name') : $name);
+        if (empty($name)) {
+            throw new BadRequestException('Procedure name can not be empty.');
+        }
+
+        $this->checkPermission(Verbs::GET, $name);
+
         try {
-            return $this->schema->getProcedureNames($schema, $refresh);
+            $procedure = $this->schema->getProcedure($name, $refresh);
+            if (!$procedure) {
+                throw new NotFoundException("Procedure '$name' does not exist in the database.");
+            }
+
+            $result = $procedure->toArray();
+            $result['access'] = $this->getPermissions($name);
+
+            return $result;
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
-            throw new InternalServerErrorException("Failed to list database stored procedures for this service.\n{$ex->getMessage()}");
+            throw new InternalServerErrorException("Failed to query database schema.\n{$ex->getMessage()}");
         }
     }
 
     /**
-     * {@inheritdoc}
-     */
-    public function getResources($only_handlers = false)
-    {
-        if ($only_handlers) {
-            return [];
-        }
-
-        $refresh = $this->request->getParameterAsBool('refresh');
-        $schema = $this->request->getParameter('schema', '');
-
-        $result = $this->listResources($schema, $refresh);
-        $resources = [];
-        foreach ($result as $name) {
-            $access = $this->getPermissions($name);
-            if (!empty($access)) {
-                $resources[] = ['name' => $name, 'access' => VerbsMask::maskToArray($access)];
-            }
-        }
-
-        return $resources;
-    }
-
-    /**
-     * @param string $name
-     * @param array  $params
-     * @param string $returns
-     * @param array  $schema
-     * @param string $wrapper
-     *
      * @throws \Exception
      * @return array
      */
-    public function callProcedure($name, $params = null, $returns = null, $schema = null, $wrapper = null)
+    protected function callProcedure()
     {
-        if (empty($name)) {
-            throw new BadRequestException('Stored procedure name can not be empty.');
+        $payload = $this->request->getPayloadData();
+        $params = array_get($payload, 'params', $this->inlineParams);
+        if (empty($params)) {
+            $params = $this->request->getParameters();
         }
-
-        if (false === $params = static::validateAsArray($params, ',', true)) {
+        if (false === $params = static::validateAsArray($params, ',')) {
             $params = [];
         }
 
         Session::replaceLookups($params);
-        foreach ($params as $key => $param) {
-            // overcome shortcomings of passed in data
-            if (is_array($param)) {
-                if (null === $pName = array_get($param, 'name')) {
-                    $params[$key]['name'] = "p$key";
-                }
-                if (null === $pType = array_get($param, 'param_type')) {
-                    $params[$key]['param_type'] = 'IN';
-                }
-                if (null === $pValue = array_get($param, 'value')) {
-                    // ensure some value is set as this will be referenced for return of INOUT and OUT params
-                    $params[$key]['value'] = null;
-                }
-                if (false !== stripos(strval($pType), 'OUT')) {
-                    if (null === $rType = array_get($param, 'type')) {
-                        $rType = (isset($pValue)) ? gettype($pValue) : 'string';
-                        $params[$key]['type'] = $rType;
-                    }
-                    if (null === $rLength = array_get($param, 'length')) {
-                        $rLength = 256;
-                        switch ($rType) {
-                            case 'int':
-                            case 'integer':
-                                $rLength = 12;
-                                break;
-                        }
-                        $params[$key]['length'] = $rLength;
-                    }
-                }
-            } else {
-                $params[$key] = ['name' => "p$key", 'param_type' => 'IN', 'value' => $param];
-            }
+
+        $outParams = [];
+        try {
+            $result = $this->schema->callProcedure($this->resource, $params, $outParams);
+        } catch (RestException $ex) {
+            throw $ex;
+        } catch (\Exception $ex) {
+            throw new InternalServerErrorException("Failed to call database stored procedure.\n{$ex->getMessage()}");
         }
 
-        try {
-            $result = $this->schema->callProcedure($name, $params);
+        $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
+        $wrapper =
+            array_get($payload, 'wrapper',
+                $this->request->getParameter('wrapper', config('resources_wrapper', 'resource')));
+        $schema = array_get($payload, 'schema');
 
-            if (!empty($returns) && (0 !== strcasecmp('TABLE', $returns))) {
-                // result could be an array of array of one value - i.e. multi-dataset format with just a single value
+        if (!empty($returns) && (0 !== strcasecmp('TABLE', $returns))) {
+            // result could be an array of array of one value - i.e. multi-dataset format with just a single value
+            if (is_array($result)) {
+                $result = current($result);
                 if (is_array($result)) {
                     $result = current($result);
-                    if (is_array($result)) {
-                        $result = current($result);
-                    }
                 }
-                $result = DataFormatter::formatValue($result, $returns);
             }
+            $result = DataFormatter::formatValue($result, $returns);
+        }
 
-            // convert result field values to types according to schema received
-            if (is_array($schema) && is_array($result)) {
+        // convert result field values to types according to schema received
+        if (is_array($schema) && !empty($result)) {
+            if (is_array($result)) {
                 foreach ($result as &$row) {
                     if (is_array($row)) {
                         if (isset($row[0])) {
@@ -317,29 +363,29 @@ class StoredProcedure extends BaseDbResource
                         }
                     }
                 }
-            }
-
-            // wrap the result set if desired
-            if (!empty($wrapper)) {
-                $result = [$wrapper => $result];
-            }
-
-            // add back output parameters to results
-            foreach ($params as $key => $param) {
-                if (false !== stripos(strval(array_get($param, 'param_type')), 'OUT')) {
-                    $name = array_get($param, 'name', "p$key");
-                    if (null !== $value = array_get($param, 'value')) {
-                        $type = array_get($param, 'type');
-                        $value = DataFormatter::formatValue($value, $type);
+            } else {
+                foreach ($result as $key => $value) {
+                    if (null !== $type = array_get($schema, $key)) {
+                        $result[$key] = DataFormatter::formatValue($value, $type);
                     }
-                    $result[$name] = $value;
                 }
             }
-
-            return $result;
-        } catch (\Exception $ex) {
-            throw new InternalServerErrorException("Failed to call database stored procedure.\n{$ex->getMessage()}");
         }
+
+        // wrap the result set if desired
+        if (!empty($outParams)) {
+            foreach ($outParams as $key => $value) {
+                if (null !== $type = array_get($schema, $key)) {
+                    $outParams[$key] = DataFormatter::formatValue($value, $type);
+                }
+            }
+            if (!empty($result)) {
+                $result = [$wrapper => $result];
+            }
+            $result = array_merge($result, $outParams);
+        }
+
+        return $result;
     }
 
     public static function getApiDocInfo($service, array $resource = [])
@@ -499,32 +545,15 @@ class StoredProcedure extends BaseDbResource
             'StoredProcedureParam'        => [
                 'type'       => 'object',
                 'properties' => [
-                    'name'       => [
+                    'name'  => [
                         'type'        => 'string',
                         'description' =>
                             'Name of the parameter, required for OUT and INOUT types, ' .
                             'must be the same as the stored procedure\'s parameter name.',
                     ],
-                    'param_type' => [
-                        'type'        => 'string',
-                        'description' => 'Parameter type of IN, OUT, or INOUT, defaults to IN.',
-                    ],
-                    'value'      => [
+                    'value' => [
                         'type'        => 'string',
                         'description' => 'Value of the parameter, used for the IN and INOUT types, defaults to NULL.',
-                    ],
-                    'type'       => [
-                        'type'        => 'string',
-                        'description' =>
-                            'For INOUT and OUT parameters, the requested type for the returned value, ' .
-                            'i.e. integer, boolean, string, etc. Defaults to value type for INOUT and string for OUT.',
-                    ],
-                    'length'     => [
-                        'type'        => 'integer',
-                        'format'      => 'int32',
-                        'description' =>
-                            'For INOUT and OUT parameters, the requested length for the returned value. ' .
-                            'May be required by some database drivers.',
                     ],
                 ],
             ],
