@@ -322,9 +322,6 @@ class StoredProcedure extends BaseDbResource
         }
 
         $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
-        $wrapper =
-            array_get($payload, 'wrapper',
-                $this->request->getParameter('wrapper', config('resources_wrapper', 'resource')));
         $schema = array_get($payload, 'schema');
 
         if (!empty($returns) && (0 !== strcasecmp('TABLE', $returns))) {
@@ -380,9 +377,18 @@ class StoredProcedure extends BaseDbResource
                 }
             }
             if (!empty($result)) {
+                // must be wrapped
+                $wrapper =
+                    array_get($payload, 'wrapper',
+                        $this->request->getParameter('wrapper', config('resources_wrapper', 'resource')));
                 $result = [$wrapper => $result];
             }
             $result = array_merge($result, $outParams);
+        } elseif (!empty($result)) {
+            // want it wrapped?
+            if (!empty($wrapper = array_get($payload, 'wrapper', $this->request->getParameter('wrapper')))) {
+                $result = [$wrapper => $result];
+            }
         }
 
         return $result;
