@@ -382,7 +382,6 @@ class StoredFunction extends BaseDbResource
                     'summary'           => 'call' . $capitalized . 'StoredFunction() - Call a stored function.',
                     'operationId'       => 'call' . $capitalized . 'StoredFunction',
                     'description'       => 'Call a stored function with no parameters. ',
-                    'x-publishedEvents' => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
                     'parameters'        => [
                         [
                             'name'        => 'function_name',
@@ -417,7 +416,6 @@ class StoredFunction extends BaseDbResource
                         'StoredFunctionWithParams() - Call a stored function.',
                     'operationId'       => 'call' . $capitalized . 'StoredFunctionWithParams',
                     'description'       => 'Call a stored function with parameters. ',
-                    'x-publishedEvents' => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
                     'parameters'        => [
                         [
                             'name'        => 'function_name',

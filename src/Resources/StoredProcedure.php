@@ -405,10 +405,6 @@ class StoredProcedure extends BaseDbResource
                     'description'       =>
                         'Call a stored procedure with no parameters. ' .
                         'Set an optional wrapper for the returned data set. ',
-                    'x-publishedEvents' => [
-                        $eventPath . '.{procedure_name}.call',
-                        $eventPath . '.procedure_called',
-                    ],
                     'parameters'        => [
                         [
                             'name'        => 'procedure_name',
@@ -452,10 +448,6 @@ class StoredProcedure extends BaseDbResource
                     'description'       =>
                         'Call a stored procedure with parameters. ' .
                         'Set an optional wrapper and schema for the returned data set. ',
-                    'x-publishedEvents' => [
-                        $eventPath . '.{procedure_name}.call',
-                        $eventPath . '.procedure_called',
-                    ],
                     'parameters'        => [
                         [
                             'name'        => 'procedure_name',
