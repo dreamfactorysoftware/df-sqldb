@@ -5,8 +5,6 @@ use DreamFactory\Core\Components\DataValidator;
 use DreamFactory\Core\Database\Schema\FunctionSchema;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\VerbsMask;
-use DreamFactory\Core\Events\ResourcePostProcess;
-use DreamFactory\Core\Events\ResourcePreProcess;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
@@ -36,6 +34,10 @@ class StoredFunction extends BaseDbResource
      * Resource tag for dealing with table schema
      */
     const RESOURCE_NAME = '_func';
+    /**
+     * Replacement tag for dealing with function events
+     */
+    const EVENT_IDENTIFIER = '{function_name}';
 
     //*************************************************************************
     //	Members
@@ -126,73 +128,63 @@ class StoredFunction extends BaseDbResource
         return parent::setResourceMembers($resourcePath);
     }
 
-    /**
-     * Runs pre process tasks/scripts
-     */
-    protected function preProcess()
+    protected function getEventName()
     {
+        $suffix = '';
         switch (count($this->resourceArray)) {
-            case 0:
-                parent::preProcess();
-                break;
             case 1:
-                // Try the generic table event
-                /** @noinspection PhpUnusedLocalVariableInspection */
-                $results = \Event::fire(
-                    new ResourcePreProcess(
-                        $this->getServiceName(), $this->getFullPathName('.') . '.{function_name}', $this->request,
-                        $this->resourcePath
-                    )
-                );
-                // Try the actual table name event
-                /** @noinspection PhpUnusedLocalVariableInspection */
-                $results = \Event::fire(
-                    new ResourcePreProcess(
-                        $this->getServiceName(), $this->getFullPathName('.') . '.' . $this->resourceArray[0],
-                        $this->request,
-                        $this->resourcePath
-                    )
-                );
+                $suffix = '.' . static::EVENT_IDENTIFIER;
                 break;
-            default:
-                // Do nothing is all we got?
+        }
+
+        return parent::getEventName() . $suffix;
+    }
+
+
+    protected function firePreProcessEvent($name = null, $resource = null)
+    {
+        // fire default first
+        // Try the generic table event
+        parent::firePreProcessEvent($name, $resource);
+
+        // also fire more specific event
+        // Try the actual table name event
+        switch (count($this->resourceArray)) {
+            case 1:
+                parent::firePreProcessEvent(str_replace(static::EVENT_IDENTIFIER, $this->resourceArray[0],
+                    $this->getEventName()), $resource);
                 break;
         }
     }
 
-    /**
-     * Runs post process tasks/scripts
-     */
-    protected function postProcess()
+    protected function firePostProcessEvent($name = null, $resource = null)
     {
+        // fire default first
+        // Try the generic table event
+        parent::firePostProcessEvent($name, $resource);
+
+        // also fire more specific event
+        // Try the actual table name event
         switch (count($this->resourceArray)) {
-            case 0:
-                parent::postProcess();
-                break;
             case 1:
-                $event = new ResourcePostProcess(
-                    $this->getServiceName(), $this->getFullPathName('.') . '.' . $this->resourceArray[0],
-                    $this->request,
-                    $this->response,
-                    $this->resourcePath
-                );
-                /** @noinspection PhpUnusedLocalVariableInspection */
-                $results = \Event::fire($event);
-                // copy the event response back to this response
-                $this->response = $event->response;
-
-                $event = new ResourcePostProcess(
-                    $this->getServiceName(), $this->getFullPathName('.') . '.{function_name}', $this->request,
-                    $this->response,
-                    $this->resourcePath
-                );
-                /** @noinspection PhpUnusedLocalVariableInspection */
-                $results = \Event::fire($event);
-
-                $this->response = $event->response;
+                parent::firePostProcessEvent(str_replace(static::EVENT_IDENTIFIER, $this->resourceArray[0],
+                    $this->getEventName()), $resource);
                 break;
-            default:
-                // Do nothing is all we got?
+        }
+    }
+
+    protected function fireFinalEvent($name = null, $resource = null)
+    {
+        // fire default first
+        // Try the generic table event
+        parent::fireFinalEvent($name, $resource);
+
+        // also fire more specific event
+        // Try the actual table name event
+        switch (count($this->resourceArray)) {
+            case 1:
+                parent::fireFinalEvent(str_replace(static::EVENT_IDENTIFIER, $this->resourceArray[0],
+                    $this->getEventName()), $resource);
                 break;
         }
     }
@@ -390,7 +382,6 @@ class StoredFunction extends BaseDbResource
                     'summary'           => 'call' . $capitalized . 'StoredFunction() - Call a stored function.',
                     'operationId'       => 'call' . $capitalized . 'StoredFunction',
                     'description'       => 'Call a stored function with no parameters. ',
-                    'x-publishedEvents' => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
                     'parameters'        => [
                         [
                             'name'        => 'function_name',
@@ -425,7 +416,6 @@ class StoredFunction extends BaseDbResource
                         'StoredFunctionWithParams() - Call a stored function.',
                     'operationId'       => 'call' . $capitalized . 'StoredFunctionWithParams',
                     'description'       => 'Call a stored function with parameters. ',
-                    'x-publishedEvents' => [$eventPath . '.{function_name}.call', $eventPath . '.function_called',],
                     'parameters'        => [
                         [
                             'name'        => 'function_name',

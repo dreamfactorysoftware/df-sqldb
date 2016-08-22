@@ -5,8 +5,6 @@ use DreamFactory\Core\Components\DataValidator;
 use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\VerbsMask;
-use DreamFactory\Core\Events\ResourcePostProcess;
-use DreamFactory\Core\Events\ResourcePreProcess;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
@@ -36,6 +34,10 @@ class StoredProcedure extends BaseDbResource
      * Resource tag for dealing with table schema
      */
     const RESOURCE_NAME = '_proc';
+    /**
+     * Replacement tag for dealing with procedure events
+     */
+    const EVENT_IDENTIFIER = '{procedure_name}';
 
     //*************************************************************************
     //	Members
@@ -125,73 +127,63 @@ class StoredProcedure extends BaseDbResource
         return parent::setResourceMembers($resourcePath);
     }
 
-    /**
-     * Runs pre process tasks/scripts
-     */
-    protected function preProcess()
+    protected function getEventName()
     {
+        $suffix = '';
         switch (count($this->resourceArray)) {
-            case 0:
-                parent::preProcess();
-                break;
             case 1:
-                // Try the generic table event
-                /** @noinspection PhpUnusedLocalVariableInspection */
-                $results = \Event::fire(
-                    new ResourcePreProcess(
-                        $this->getServiceName(), $this->getFullPathName('.') . '.{procedure_name}', $this->request,
-                        $this->resourcePath
-                    )
-                );
-                // Try the actual table name event
-                /** @noinspection PhpUnusedLocalVariableInspection */
-                $results = \Event::fire(
-                    new ResourcePreProcess(
-                        $this->getServiceName(), $this->getFullPathName('.') . '.' . $this->resourceArray[0],
-                        $this->request,
-                        $this->resourcePath
-                    )
-                );
+                $suffix = '.' . static::EVENT_IDENTIFIER;
                 break;
-            default:
-                // Do nothing is all we got?
+        }
+
+        return parent::getEventName() . $suffix;
+    }
+
+
+    protected function firePreProcessEvent($name = null, $resource = null)
+    {
+        // fire default first
+        // Try the generic table event
+        parent::firePreProcessEvent($name, $resource);
+
+        // also fire more specific event
+        // Try the actual table name event
+        switch (count($this->resourceArray)) {
+            case 1:
+                parent::firePreProcessEvent(str_replace(static::EVENT_IDENTIFIER, $this->resourceArray[0],
+                    $this->getEventName()), $resource);
                 break;
         }
     }
 
-    /**
-     * Runs post process tasks/scripts
-     */
-    protected function postProcess()
+    protected function firePostProcessEvent($name = null, $resource = null)
     {
+        // fire default first
+        // Try the generic table event
+        parent::firePostProcessEvent($name, $resource);
+
+        // also fire more specific event
+        // Try the actual table name event
         switch (count($this->resourceArray)) {
-            case 0:
-                parent::postProcess();
-                break;
             case 1:
-                $event = new ResourcePostProcess(
-                    $this->getServiceName(), $this->getFullPathName('.') . '.' . $this->resourceArray[0],
-                    $this->request,
-                    $this->response,
-                    $this->resourcePath
-                );
-                /** @noinspection PhpUnusedLocalVariableInspection */
-                $results = \Event::fire($event);
-                // copy the event response back to this response
-                $this->response = $event->response;
-
-                $event = new ResourcePostProcess(
-                    $this->getServiceName(), $this->getFullPathName('.') . '.{procedure_name}', $this->request,
-                    $this->response,
-                    $this->resourcePath
-                );
-                /** @noinspection PhpUnusedLocalVariableInspection */
-                $results = \Event::fire($event);
-
-                $this->response = $event->response;
+                parent::firePostProcessEvent(str_replace(static::EVENT_IDENTIFIER, $this->resourceArray[0],
+                    $this->getEventName()), $resource);
                 break;
-            default:
-                // Do nothing is all we got?
+        }
+    }
+
+    protected function fireFinalEvent($name = null, $resource = null)
+    {
+        // fire default first
+        // Try the generic table event
+        parent::fireFinalEvent($name, $resource);
+
+        // also fire more specific event
+        // Try the actual table name event
+        switch (count($this->resourceArray)) {
+            case 1:
+                parent::fireFinalEvent(str_replace(static::EVENT_IDENTIFIER, $this->resourceArray[0],
+                    $this->getEventName()), $resource);
                 break;
         }
     }
@@ -322,9 +314,6 @@ class StoredProcedure extends BaseDbResource
         }
 
         $returns = array_get($payload, 'returns', $this->request->getParameter('returns'));
-        $wrapper =
-            array_get($payload, 'wrapper',
-                $this->request->getParameter('wrapper', config('resources_wrapper', 'resource')));
         $schema = array_get($payload, 'schema');
 
         if (!empty($returns) && (0 !== strcasecmp('TABLE', $returns))) {
@@ -380,9 +369,18 @@ class StoredProcedure extends BaseDbResource
                 }
             }
             if (!empty($result)) {
+                // must be wrapped
+                $wrapper =
+                    array_get($payload, 'wrapper',
+                        $this->request->getParameter('wrapper', config('resources_wrapper', 'resource')));
                 $result = [$wrapper => $result];
             }
             $result = array_merge($result, $outParams);
+        } elseif (!empty($result)) {
+            // want it wrapped?
+            if (!empty($wrapper = array_get($payload, 'wrapper', $this->request->getParameter('wrapper')))) {
+                $result = [$wrapper => $result];
+            }
         }
 
         return $result;
@@ -407,10 +405,6 @@ class StoredProcedure extends BaseDbResource
                     'description'       =>
                         'Call a stored procedure with no parameters. ' .
                         'Set an optional wrapper for the returned data set. ',
-                    'x-publishedEvents' => [
-                        $eventPath . '.{procedure_name}.call',
-                        $eventPath . '.procedure_called',
-                    ],
                     'parameters'        => [
                         [
                             'name'        => 'procedure_name',
@@ -454,10 +448,6 @@ class StoredProcedure extends BaseDbResource
                     'description'       =>
                         'Call a stored procedure with parameters. ' .
                         'Set an optional wrapper and schema for the returned data set. ',
-                    'x-publishedEvents' => [
-                        $eventPath . '.{procedure_name}.call',
-                        $eventPath . '.procedure_called',
-                    ],
                     'parameters'        => [
                         [
                             'name'        => 'procedure_name',
