@@ -6,6 +6,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Added
 
 ### Changed
+- Update Config models with df-core changes for encryption and protection.
 
 ### Fixed
 
