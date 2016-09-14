@@ -7,8 +7,15 @@ use DreamFactory\Core\Exceptions\BadRequestException;
  * SqliteDbConfig
  *
  */
-class SqliteDbConfig extends SqlDbConfig
+class SqliteDbConfig extends BaseSqlDbConfig
 {
+    protected $appends = ['database'];
+
+    protected function getConnectionFields()
+    {
+        return ['database'];
+    }
+
     public static function getDriverName()
     {
         return 'sqlite';
