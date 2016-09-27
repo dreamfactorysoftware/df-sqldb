@@ -87,10 +87,10 @@ class SqlDbConfig extends BaseSqlDbConfig
 
     public static function validateConfig($config, $create = true)
     {
-        $host = isset($config['host']) ? $config['host'] : null;
-        $db = isset($config['database']) ? $config['database'] : null;
-        if (empty($host) || empty($db)) {
-            throw new BadRequestException("Database connection information must contain host and database name must be provided.");
+        if ($create) {
+            if (empty(array_get($config, 'host')) || empty(array_get($config, 'database'))) {
+                throw new BadRequestException("Database connection information must contain at least host and database name.");
+            }
         }
 
         return parent::validateConfig($config, $create);

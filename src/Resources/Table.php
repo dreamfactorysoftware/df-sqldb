@@ -257,15 +257,29 @@ class Table extends BaseDbTableResource
         $group = trim(array_get($extras, ApiOptions::GROUP));
         $limit = intval(array_get($extras, ApiOptions::LIMIT, 0));
         $offset = intval(array_get($extras, ApiOptions::OFFSET, 0));
+        $countOnly = Scalar::boolval(array_get($extras, ApiOptions::COUNT_ONLY));
         $includeCount = Scalar::boolval(array_get($extras, ApiOptions::INCLUDE_COUNT));
+
+        $maxAllowed = static::getMaxRecordsReturnedLimit();
+        $needLimit = false;
+        if (($limit < 1) || ($limit > $maxAllowed)) {
+            // impose a limit to protect server
+            $limit = $maxAllowed;
+            $needLimit = true;
+        }
+
+        // count total records
+        $count = ($countOnly || $includeCount || $needLimit) ? $builder->count() : 0;
+
+        if ($countOnly) {
+            return $count;
+        }
+
         $related = array_get($extras, ApiOptions::RELATED);
         /** @type ColumnSchema[] $availableFields */
         $availableFields = $schema->getColumns(true);
         /** @type RelationSchema[] $availableRelations */
         $availableRelations = $schema->getRelations(true);
-        $maxAllowed = static::getMaxRecordsReturnedLimit();
-        $needLimit = false;
-
         $result = $this->parseSelect($select, $availableFields);
         $bindings = array_get($result, 'bindings');
         $select = array_get($result, 'fields');
@@ -278,15 +292,6 @@ class Table extends BaseDbTableResource
                 }
             }
         }
-
-        if (($limit < 1) || ($limit > $maxAllowed)) {
-            // impose a limit to protect server
-            $limit = $maxAllowed;
-            $needLimit = true;
-        }
-
-        // count total records
-        $count = ($includeCount || $needLimit) ? $builder->count() : 0;
 
         // apply the rest of the parameters
         $builder->select($select);
@@ -360,9 +365,7 @@ class Table extends BaseDbTableResource
 
         if (!empty($related) || $schema->fetchRequiresRelations) {
             if (!empty($availableRelations)) {
-                foreach ($data as $key => $temp) {
-                    $data[$key] = $this->retrieveRelatedRecords($schema, $availableRelations, $related, $temp);
-                }
+                $this->retrieveRelatedRecords($schema, $availableRelations, $related, $data);
             }
         }
 
@@ -428,7 +431,7 @@ class Table extends BaseDbTableResource
         $params = [],
         $ss_filters = [],
         $avail_fields = []
-    ){
+    ) {
         // interpret any parameter values as lookups
         $params = (is_array($params) ? static::interpretRecordValues($params) : []);
         $serverFilter = $this->buildQueryStringFromData($ss_filters);
@@ -988,11 +991,10 @@ class Table extends BaseDbTableResource
      *
      * @throws InternalServerErrorException
      * @throws BadRequestException
-     * @return array
+     * @return void
      */
-    protected function retrieveRelatedRecords(TableSchema $schema, $relations, $requests, $data)
+    protected function retrieveRelatedRecords(TableSchema $schema, $relations, $requests, &$data)
     {
-        $relatedData = [];
         $relatedExtras = [ApiOptions::LIMIT => static::getMaxRecordsReturnedLimit(), ApiOptions::FIELDS => '*'];
         foreach ($relations as $key => $relation) {
             if (empty($relation)) {
@@ -1000,15 +1002,11 @@ class Table extends BaseDbTableResource
             }
 
             if (is_array($requests) && array_key_exists($key, $requests)) {
-                $relatedData[$relation->getName(true)] =
-                    $this->retrieveRelationRecords($schema, $relation, $data, $requests[$key]);
+                $this->retrieveRelationRecords($schema, $relation, $data, $requests[$key]);
             } elseif (('*' == $requests) || $relation->alwaysFetch) {
-                $relatedData[$relation->getName(true)] =
-                    $this->retrieveRelationRecords($schema, $relation, $data, $relatedExtras);
+                $this->retrieveRelationRecords($schema, $relation, $data, $relatedExtras);
             }
         }
-
-        return array_merge($data, $relatedData);
     }
 
     /**
@@ -1163,30 +1161,67 @@ class Table extends BaseDbTableResource
      * @param array          $data
      * @param array          $extras
      *
-     * @return array|null
+     * @return void
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
      * @throws \DreamFactory\Core\Exceptions\InternalServerErrorException
      * @throws \DreamFactory\Core\Exceptions\NotFoundException
      * @throws \DreamFactory\Core\Exceptions\RestException
      * @throws \Exception
      */
-    protected function retrieveRelationRecords(TableSchema $schema, RelationSchema $relation, $data, $extras)
+    protected function retrieveRelationRecords(TableSchema $schema, RelationSchema $relation, &$data, $extras)
     {
+        $relationName = $relation->getName(true);
         $localFieldInfo = $schema->getColumn($relation->field);
         $localField = $localFieldInfo->getName(true);
-        $fieldVal = array_get($data, $localField);
-        if (empty($fieldVal)) {
+        $extras = (is_array($extras) ? $extras : []);
+
+        $fieldValues = [];
+        foreach ($data as $ndx => $record) {
+            $fieldValues[$ndx] = array_get($record, $localField);
             switch ($relation->type) {
                 case RelationSchema::BELONGS_TO:
-                    return null;
+                    $data[$ndx][$relationName] = null;
+                    break;
                 default:
-                    return [];
+                    $data[$ndx][$relationName] = [];
+                    break;
             }
         }
 
-        $extras = (is_array($extras) ? $extras : []);
         switch ($relation->type) {
             case RelationSchema::BELONGS_TO:
+                $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+                $refSchema = $this->getTableSchema($relation->refService, $relation->refTable);
+                $refTable = $refSchema->getName(true);
+                if (empty($refField = $refSchema->getColumn($relation->refFields))) {
+                    throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+                }
+
+                // check for access
+                Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
+
+                // Get records
+                $values = array_unique($fieldValues);
+                $refFieldName = $refField->getName(true);
+                $extras[ApiOptions::FILTER] = "($refFieldName IN (" . implode(',', $values) . '))';
+                $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
+
+                // Map the records back to data
+                if (!empty($relatedRecords)) {
+                    foreach ($fieldValues as $ndx => $fieldValue) {
+                        if (empty($fieldValue)) {
+                            continue;
+                        }
+
+                        foreach ($relatedRecords as $record) {
+                            if ($fieldValue === array_get($record, $refFieldName)) {
+                                $data[$ndx][$relationName] = $record;
+                                continue 2; // belongs_to only supports one related per record
+                            }
+                        }
+                    }
+                }
+                break;
             case RelationSchema::HAS_MANY:
                 $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
                 $refSchema = $this->getTableSchema($relation->refService, $relation->refTable);
@@ -1199,14 +1234,25 @@ class Table extends BaseDbTableResource
                 Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                 // Get records
-                $filterVal = ('string' === gettype($fieldVal)) ? "'$fieldVal'" : $fieldVal;
-                $extras[ApiOptions::FILTER] = '(' . $refField->getName(true) . ' = ' . $filterVal . ')';
+                $values = array_unique($fieldValues);
+                $refFieldName = $refField->getName(true);
+                $extras[ApiOptions::FILTER] = "($refFieldName IN (" . implode(',', $values) . '))';
                 $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
-                if (RelationSchema::BELONGS_TO === $relation->type) {
-                    return (!empty($relatedRecords) ? array_get($relatedRecords, 0) : null);
-                }
 
-                return $relatedRecords;
+                // Map the records back to data
+                if (!empty($relatedRecords)) {
+                    foreach ($fieldValues as $ndx => $fieldValue) {
+                        if (empty($fieldValue)) {
+                            continue;
+                        }
+
+                        foreach ($relatedRecords as $record) {
+                            if ($fieldValue === array_get($record, $refFieldName)) {
+                                $data[$ndx][$relationName][] = $record;
+                            }
+                        }
+                    }
+                }
                 break;
             case RelationSchema::MANY_MANY:
                 $junctionService =
@@ -1226,51 +1272,65 @@ class Table extends BaseDbTableResource
                 Session::checkServicePermission(Verbs::GET, $junctionService, '_table/' . $junctionTable);
 
                 // Get records
-                $filterVal = ('string' === gettype($fieldVal)) ? "'$fieldVal'" : $fieldVal;
-                $filter = '(' . $junctionField->getName(true) . ' = ' . $filterVal . ')';
+                $values = array_unique($fieldValues);
+                $junctionFieldName = $junctionField->getName(true);
+                $junctionRefFieldName = $junctionRefField->getName(true);
+                $filter = "($junctionFieldName IN (" . implode(',', $values) . '))';
                 $filter .= static::padOperator(DbLogicalOperators::AND_STR);
-                $filter .= '(' . $junctionRefField->getName(true) . ' ' . DbComparisonOperators::IS_NOT_NULL . ')';
-                $temp = [ApiOptions::FILTER => $filter, ApiOptions::FIELDS => $junctionRefField->getName(true)];
-                $joinData = $this->retrieveVirtualRecords($junctionService, '_table/' . $junctionTable, $temp);
-                if (empty($joinData)) {
-                    return [];
-                }
-
-                $relatedIds = [];
-                foreach ($joinData as $record) {
-                    if (null !== $rightValue = array_get($record, $junctionRefField->getName(true))) {
-                        $relatedIds[] = $rightValue;
+                $filter .= "($junctionRefFieldName " . DbComparisonOperators::IS_NOT_NULL . ')';
+                $temp = [ApiOptions::FILTER => $filter, ApiOptions::FIELDS => [$junctionFieldName,$junctionRefFieldName]];
+                $junctionData = $this->retrieveVirtualRecords($junctionService, '_table/' . $junctionTable, $temp);
+                if (!empty($junctionData)) {
+                    $relatedIds = [];
+                    foreach ($junctionData as $record) {
+                        if (null !== $rightValue = array_get($record, $junctionRefFieldName)) {
+                            $relatedIds[] = $rightValue;
+                        }
                     }
-                }
-                if (!empty($relatedIds)) {
-                    $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
-                    $refSchema = $this->getTableSchema($relation->refService, $relation->refTable);
-                    $refTable = $refSchema->getName(true);
-                    if (empty($refField = $refSchema->getColumn($relation->refFields))) {
-                        throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+                    if (!empty($relatedIds)) {
+                        $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+                        $refSchema = $this->getTableSchema($relation->refService, $relation->refTable);
+                        $refTable = $refSchema->getName(true);
+                        if (empty($refField = $refSchema->getColumn($relation->refFields))) {
+                            throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+                        }
+                        $refFieldName = $refField->getName(true);
+
+                        // check for access
+                        Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
+
+                        // Get records
+                        $filter = $refFieldName . ' IN (' . implode(',', $relatedIds) . ')';
+                        $extras[ApiOptions::FILTER] = $filter;
+                        $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
+
+                        // Map the records back to data
+                        if (!empty($relatedRecords)) {
+                            foreach ($fieldValues as $ndx => $fieldValue) {
+                                if (empty($fieldValue)) {
+                                    continue;
+                                }
+
+                                foreach ($junctionData as $junction) {
+                                    if ($fieldValue === array_get($junction, $junctionFieldName)) {
+                                        $rightValue = array_get($junction, $junctionRefFieldName);
+                                        foreach ($relatedRecords as $record) {
+                                            if ($rightValue === array_get($record, $refFieldName)) {
+                                                $data[$ndx][$relationName][] = $record;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                     }
-
-                    // check for access
-                    Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
-
-                    // Get records
-                    if (count($relatedIds) > 1) {
-                        $filter = $refField->getName(true) . ' IN (' . implode(',', $relatedIds) . ')';
-                    } else {
-                        $filter = $refField->getName(true) . ' = ' . $relatedIds[0];
-                    }
-                    $extras[ApiOptions::FILTER] = $filter;
-                    $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
-
-                    return $relatedRecords;
                 }
                 break;
             default:
                 throw new InternalServerErrorException('Invalid relationship type detected.');
                 break;
         }
-
-        return null;
     }
 
     /**
@@ -1368,7 +1428,7 @@ class Table extends BaseDbTableResource
         RelationSchema $relation,
         $many_records = [],
         $allow_delete = false
-    ){
+    ) {
         // update currently only supports one id field
         if (empty($one_id = array_get($one_record, $relation->field))) {
             throw new BadRequestException("The {$one_table->getName(true)} id can not be empty.");
@@ -1532,7 +1592,7 @@ class Table extends BaseDbTableResource
         TableSchema $schema,
         ColumnSchema $linkerField,
         $records
-    ){
+    ) {
         // do we have permission to do so?
         Session::checkServicePermission(Verbs::PUT, $service, '_table/' . $schema->getName(true));
         if (!empty($service) && ($service !== $this->getServiceName())) {
@@ -1572,7 +1632,7 @@ class Table extends BaseDbTableResource
         ColumnSchema $linkerField,
         $linkerIds,
         $record
-    ){
+    ) {
         // do we have permission to do so?
         Session::checkServicePermission(Verbs::PUT, $service, '_table/' . $schema->getName(true));
         if (!empty($service) && ($service !== $this->getServiceName())) {
@@ -1608,7 +1668,7 @@ class Table extends BaseDbTableResource
         ColumnSchema $linkerField,
         $linkerIds,
         $addCondition = null
-    ){
+    ) {
         // do we have permission to do so?
         Session::checkServicePermission(Verbs::DELETE, $service, '_table/' . $schema->getName(true));
         if (!empty($service) && ($service !== $this->getServiceName())) {
@@ -1666,7 +1726,7 @@ class Table extends BaseDbTableResource
         $one_record,
         RelationSchema $relation,
         $many_records = []
-    ){
+    ) {
         if (empty($one_id = array_get($one_record, $relation->field))) {
             throw new BadRequestException("The {$one_table->getName(true)} id can not be empty.");
         }
@@ -1906,7 +1966,7 @@ class Table extends BaseDbTableResource
         $rollback = false,
         $continue = false,
         $single = false
-    ){
+    ) {
         if ($rollback) {
             // sql transaction really only for rollback scenario, not batching
             if (0 >= $this->dbConn->transactionLevel()) {
@@ -1968,15 +2028,15 @@ class Table extends BaseDbTableResource
                     throw new BadRequestException('No valid fields were found in record.');
                 }
 
-                    if (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
-                        $idName = $this->tableIdsInfo[0]->name;
-                        $id[$idName] = $builder->insertGetId($parsed, $idName);
-                        $record[$idName] = $id[$idName];
-                    } else {
-                        if (!$builder->insert($parsed)) {
-                            throw new InternalServerErrorException("Record insert failed.");
-                        }
+                if (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
+                    $idName = $this->tableIdsInfo[0]->name;
+                    $id[$idName] = $builder->insertGetId($parsed, $idName);
+                    $record[$idName] = $id[$idName];
+                } else {
+                    if (!$builder->insert($parsed)) {
+                        throw new InternalServerErrorException("Record insert failed.");
                     }
+                }
 
                 if (!empty($relatedInfo)) {
                     $this->updatePostRelations(
