@@ -17,6 +17,13 @@ class MySqlDbConfig extends SqlDbConfig
         return 3306;
     }
 
+    protected function getConnectionFields()
+    {
+        $fields = parent::getConnectionFields();
+
+        return array_merge($fields, ['charset', 'collation', 'timezone', 'modes', 'strict', 'unix_socket']);
+    }
+
     public static function getDefaultConnectionInfo()
     {
         $defaults = parent::getDefaultConnectionInfo();

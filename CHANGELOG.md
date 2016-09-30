@@ -4,10 +4,13 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Added
-
 ### Changed
-
 ### Fixed
+
+## [0.5.0] - 2016-09-30
+### Changed
+- DF-826 Update Config models with df-core changes for encryption and protection.
+- DF-873 Improve related data queries by pushing full dataset down to per relationship handling.
 
 ## [0.4.0] - 2016-08-21
 ### Changed
@@ -95,8 +98,9 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.4.0...HEAD
-[0.3.2]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.3.2...0.4.0
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.5.0...HEAD
+[0.5.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.4.0...0.5.0
+[0.4.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.3.2...0.4.0
 [0.3.2]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.3.1...0.3.2
 [0.3.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.2.2...0.3.0

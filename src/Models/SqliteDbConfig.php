@@ -7,8 +7,15 @@ use DreamFactory\Core\Exceptions\BadRequestException;
  * SqliteDbConfig
  *
  */
-class SqliteDbConfig extends SqlDbConfig
+class SqliteDbConfig extends BaseSqlDbConfig
 {
+    protected $appends = ['database'];
+
+    protected function getConnectionFields()
+    {
+        return ['database'];
+    }
+
     public static function getDriverName()
     {
         return 'sqlite';
@@ -36,8 +43,7 @@ class SqliteDbConfig extends SqlDbConfig
 
     public static function validateConfig($config, $create = true)
     {
-        $db = isset($config['database']) ? $config['database'] : null;
-        if (empty($db)) {
+        if (empty($db = array_get($config, 'database'))) {
             throw new BadRequestException('Database name must be provided.');
         }
 

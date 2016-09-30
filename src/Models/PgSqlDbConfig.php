@@ -17,6 +17,13 @@ class PgSqlDbConfig extends SqlDbConfig
         return 5432;
     }
 
+    protected function getConnectionFields()
+    {
+        $fields = parent::getConnectionFields();
+
+        return array_merge($fields, ['charset', 'sslmode', 'timezone', 'application_name']);
+    }
+
     public static function getDefaultConnectionInfo()
     {
         $defaults = parent::getDefaultConnectionInfo();
