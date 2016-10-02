@@ -116,6 +116,8 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
             $config['options'] = [];
         }
 
+        $name = 'service.'.$this->name;
+        $config['name'] = $name;
         // add config to global for reuse, todo check existence and update?
         config(['database.connections.service.' . $this->name => $config]);
         /** @type DatabaseManager $db */
