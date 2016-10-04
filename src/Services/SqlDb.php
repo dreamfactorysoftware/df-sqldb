@@ -122,7 +122,7 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         config(['database.connections.service.' . $this->name => $config]);
         /** @type DatabaseManager $db */
         $db = app('db');
-        $this->dbConn = $db->connection('service.' . $this->name);
+        $this->dbConn = $db->connection($name);
 
         $this->initStatements(array_get($config, 'statements', []));
 
