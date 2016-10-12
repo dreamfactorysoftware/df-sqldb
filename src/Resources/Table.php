@@ -335,7 +335,8 @@ class Table extends BaseDbTableResource
                 $name = array_get($binding, 'name');
                 $type = array_get($binding, 'php_type');
                 if (isset($temp[$name])) {
-                    $temp[$name] = $this->schema->formatValue($temp[$name], $type);
+                    //trim values returned, this will also trim trailing nulls \u0000
+                    $temp[$name] = $this->schema->formatValue(trim($temp[$name]), $type);
                 }
             }
 
