@@ -196,9 +196,10 @@ class StoredFunction extends BaseDbResource
     protected function handleGET()
     {
         if (empty($this->resource)) {
-            $names = $this->request->getParameter(ApiOptions::IDS);
+            $payload = $this->request->getPayloadData();
+            $names = array_get($payload, ApiOptions::IDS, $this->request->getParameter(ApiOptions::IDS));
             if (empty($names)) {
-                $names = ResourcesWrapper::unwrapResources($this->request->getPayloadData());
+                $names = ResourcesWrapper::unwrapResources($payload);
             }
 
             if (!empty($names)) {
@@ -329,34 +330,26 @@ class StoredFunction extends BaseDbResource
         }
 
         // convert result field values to types according to schema received
-        if (is_array($schema) && !empty($result)) {
-            if (is_array($result)) {
-                foreach ($result as &$row) {
-                    if (is_array($row)) {
-                        if (isset($row[0])) {
-                            //  Multi-row set, dig a little deeper
-                            foreach ($row as &$sub) {
-                                if (is_array($sub)) {
-                                    foreach ($sub as $key => $value) {
-                                        if (null !== $type = array_get($schema, $key)) {
-                                            $sub[$key] = DataFormatter::formatValue($value, $type);
-                                        }
-                                    }
+        if (is_array($schema) && is_array($result) && !empty($result)) {
+            foreach ($result as $rkey => &$row) {
+                if (is_array($row)) {
+                    //  Multi-row set, dig a little deeper
+                    foreach ($row as $skey => &$sub) {
+                        if (is_array($sub)) {
+                            foreach ($sub as $key => $value) {
+                                if (null !== $type = array_get($schema, $key)) {
+                                    $sub[$key] = DataFormatter::formatValue($value, $type);
                                 }
                             }
                         } else {
-                            foreach ($row as $key => $value) {
-                                if (null !== $type = array_get($schema, $key)) {
-                                    $row[$key] = DataFormatter::formatValue($value, $type);
-                                }
+                            if (null !== $type = array_get($schema, $skey)) {
+                                $row[$skey] = DataFormatter::formatValue($sub, $type);
                             }
                         }
                     }
-                }
-            } elseif (is_array($result)) {
-                foreach ($result as $key => $value) {
-                    if (null !== $type = array_get($schema, $key)) {
-                        $result[$key] = DataFormatter::formatValue($value, $type);
+                } else {
+                    if (null !== $type = array_get($schema, $rkey)) {
+                        $result[$rkey] = DataFormatter::formatValue($row, $type);
                     }
                 }
             }

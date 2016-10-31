@@ -17,6 +17,7 @@ use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\NotImplementedException;
 use DreamFactory\Core\Exceptions\RestException;
+use DreamFactory\Core\Models\Service;
 use DreamFactory\Core\Resources\BaseDbTableResource;
 use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
@@ -363,7 +364,7 @@ class Table extends BaseDbTableResource
             }
         }
 
-        if (!empty($related) || $schema->fetchRequiresRelations) {
+        if (!empty($data) && (!empty($related) || $schema->fetchRequiresRelations)) {
             if (!empty($availableRelations)) {
                 $this->retrieveRelatedRecords($schema, $availableRelations, $related, $data);
             }
@@ -1177,7 +1178,6 @@ class Table extends BaseDbTableResource
 
         $fieldValues = [];
         foreach ($data as $ndx => $record) {
-            $fieldValues[$ndx] = array_get($record, $localField);
             switch ($relation->type) {
                 case RelationSchema::BELONGS_TO:
                     $data[$ndx][$relationName] = null;
@@ -1186,22 +1186,33 @@ class Table extends BaseDbTableResource
                     $data[$ndx][$relationName] = [];
                     break;
             }
+            $fieldValues[$ndx] = array_get($record, $localField);
+        }
+
+        // clean up values before query
+        $values = array_unique($fieldValues);
+        $values = array_filter($values, function ($v) {
+            return !is_null($v);
+        });
+        if (empty($values)) {
+            return;
         }
 
         switch ($relation->type) {
             case RelationSchema::BELONGS_TO:
-                $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
-                $refSchema = $this->getTableSchema($relation->refService, $relation->refTable);
+                $refService = ($this->getServiceId() !== $relation->refServiceId) ?
+                    Service::getCachedNameById($relation->refServiceId) :
+                    $this->getServiceName();
+                $refSchema = $this->getTableSchema($refService, $relation->refTable);
                 $refTable = $refSchema->getName(true);
-                if (empty($refField = $refSchema->getColumn($relation->refFields))) {
-                    throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+                if (empty($refField = $refSchema->getColumn($relation->refField))) {
+                    throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refField} not found.");
                 }
 
                 // check for access
                 Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                 // Get records
-                $values = array_unique($fieldValues);
                 $refFieldName = $refField->getName(true);
                 $extras[ApiOptions::FILTER] = "($refFieldName IN (" . implode(',', $values) . '))';
                 $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
@@ -1223,18 +1234,19 @@ class Table extends BaseDbTableResource
                 }
                 break;
             case RelationSchema::HAS_MANY:
-                $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
-                $refSchema = $this->getTableSchema($relation->refService, $relation->refTable);
+                $refService = ($this->getServiceId() !== $relation->refServiceId) ?
+                    Service::getCachedNameById($relation->refServiceId) :
+                    $this->getServiceName();
+                $refSchema = $this->getTableSchema($refService, $relation->refTable);
                 $refTable = $refSchema->getName(true);
-                if (empty($refField = $refSchema->getColumn($relation->refFields))) {
-                    throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+                if (empty($refField = $refSchema->getColumn($relation->refField))) {
+                    throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refField} not found.");
                 }
 
                 // check for access
                 Session::checkServicePermission(Verbs::GET, $refService, '_table/' . $refTable);
 
                 // Get records
-                $values = array_unique($fieldValues);
                 $refFieldName = $refField->getName(true);
                 $extras[ApiOptions::FILTER] = "($refFieldName IN (" . implode(',', $values) . '))';
                 $relatedRecords = $this->retrieveVirtualRecords($refService, '_table/' . $refTable, $extras);
@@ -1255,8 +1267,9 @@ class Table extends BaseDbTableResource
                 }
                 break;
             case RelationSchema::MANY_MANY:
-                $junctionService =
-                    ($relation->isForeignJunctionService ? $relation->junctionService : $this->getServiceName());
+                $junctionService = ($this->getServiceId() !== $relation->junctionServiceId) ?
+                    Service::getCachedNameById($relation->junctionServiceId) :
+                    $this->getServiceName();
                 $junctionSchema = $this->getTableSchema($junctionService, $relation->junctionTable);
                 $junctionTable = $junctionSchema->getName(true);
                 $junctionField = $junctionSchema->getColumn($relation->junctionField);
@@ -1272,27 +1285,31 @@ class Table extends BaseDbTableResource
                 Session::checkServicePermission(Verbs::GET, $junctionService, '_table/' . $junctionTable);
 
                 // Get records
-                $values = array_unique($fieldValues);
                 $junctionFieldName = $junctionField->getName(true);
                 $junctionRefFieldName = $junctionRefField->getName(true);
                 $filter = "($junctionFieldName IN (" . implode(',', $values) . '))';
                 $filter .= static::padOperator(DbLogicalOperators::AND_STR);
                 $filter .= "($junctionRefFieldName " . DbComparisonOperators::IS_NOT_NULL . ')';
-                $temp = [ApiOptions::FILTER => $filter, ApiOptions::FIELDS => [$junctionFieldName,$junctionRefFieldName]];
+                $temp = [
+                    ApiOptions::FILTER => $filter,
+                    ApiOptions::FIELDS => [$junctionFieldName, $junctionRefFieldName]
+                ];
                 $junctionData = $this->retrieveVirtualRecords($junctionService, '_table/' . $junctionTable, $temp);
                 if (!empty($junctionData)) {
                     $relatedIds = [];
                     foreach ($junctionData as $record) {
-                        if (null !== $rightValue = array_get($record, $junctionRefFieldName)) {
+                        if (!is_null($rightValue = array_get($record, $junctionRefFieldName))) {
                             $relatedIds[] = $rightValue;
                         }
                     }
                     if (!empty($relatedIds)) {
-                        $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
-                        $refSchema = $this->getTableSchema($relation->refService, $relation->refTable);
+                        $refService = ($this->getServiceId() !== $relation->refServiceId) ?
+                            Service::getCachedNameById($relation->refServiceId) :
+                            $this->getServiceName();
+                        $refSchema = $this->getTableSchema($refService, $relation->refTable);
                         $refTable = $refSchema->getName(true);
-                        if (empty($refField = $refSchema->getColumn($relation->refFields))) {
-                            throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+                        if (empty($refField = $refSchema->getColumn($relation->refField))) {
+                            throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refField} not found.");
                         }
                         $refFieldName = $refField->getName(true);
 
@@ -1344,11 +1361,13 @@ class Table extends BaseDbTableResource
     protected function updateBelongsTo(RelationSchema $relation, &$record, $parent)
     {
         try {
-            $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+            $refService = ($this->getServiceId() !== $relation->refServiceId) ?
+                Service::getCachedNameById($relation->refServiceId) :
+                $this->getServiceName();
             $refSchema = $this->getTableSchema($refService, $relation->refTable);
             $refTable = $refSchema->getName(true);
-            if (empty($refField = $refSchema->getColumn($relation->refFields))) {
-                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+            if (empty($refField = $refSchema->getColumn($relation->refField))) {
+                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refField} not found.");
             }
 
             if (is_array($refSchema->primaryKey)) {
@@ -1396,10 +1415,10 @@ class Table extends BaseDbTableResource
 
             if (!empty($insertMany)) {
                 if (!empty($newIds = $this->createForeignRecords($refService, $refSchema, $insertMany))) {
-                    if ($relation->refFields === $pkFieldAlias) {
+                    if ($relation->refField === $pkFieldAlias) {
                         $record[$relation->field] = array_get(reset($newIds), $pkFieldAlias);
                     } else {
-                        $record[$relation->field] = array_get(reset($insertMany), $relation->refFields);
+                        $record[$relation->field] = array_get(reset($insertMany), $relation->refField);
                     }
                 }
             }
@@ -1435,11 +1454,13 @@ class Table extends BaseDbTableResource
         }
 
         try {
-            $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+            $refService = ($this->getServiceId() !== $relation->refServiceId) ?
+                Service::getCachedNameById($relation->refServiceId) :
+                $this->getServiceName();
             $refSchema = $this->getTableSchema($refService, $relation->refTable);
             $refTable = $refSchema->getName(true);
-            if (empty($refField = $refSchema->getColumn($relation->refFields))) {
-                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+            if (empty($refField = $refSchema->getColumn($relation->refField))) {
+                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refField} not found.");
             }
 
             if (is_array($refSchema->primaryKey)) {
@@ -1746,11 +1767,13 @@ class Table extends BaseDbTableResource
                 throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '$onePkFieldName' not found.");
             }
 
-            $refService = ($relation->isForeignService ? $relation->refService : $this->getServiceName());
+            $refService = ($this->getServiceId() !== $relation->refServiceId) ?
+                Service::getCachedNameById($relation->refServiceId) :
+                $this->getServiceName();
             $refSchema = $this->getTableSchema($refService, $relation->refTable);
             $refTable = $refSchema->getName(true);
-            if (empty($refField = $refSchema->getColumn($relation->refFields))) {
-                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refFields} not found.");
+            if (empty($refField = $refSchema->getColumn($relation->refField))) {
+                throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '{$relation->refField} not found.");
             }
             if (is_array($refSchema->primaryKey)) {
                 if (1 !== count($refSchema->primaryKey)) {
@@ -1766,8 +1789,9 @@ class Table extends BaseDbTableResource
                 throw new InternalServerErrorException("Incorrect relationship configuration detected. Field '$refPkFieldName' not found.");
             }
 
-            $junctionService =
-                ($relation->isForeignJunctionService ? $relation->junctionService : $this->getServiceName());
+            $junctionService = ($this->getServiceId() !== $relation->junctionServiceId) ?
+                Service::getCachedNameById($relation->junctionServiceId) :
+                $this->getServiceName();
             $junctionSchema = $this->getTableSchema($junctionService, $relation->junctionTable);
             $junctionTable = $junctionSchema->getName(true);
             if (empty($junctionField = $junctionSchema->getColumn($relation->junctionField))) {

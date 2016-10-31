@@ -4,7 +4,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Added
+- Added _field and _related resources to _schema/<table> API paths to help support virtual relationships
+
 ### Changed
+- Updated API Docs to support new database schema API paths and resources
+
 ### Fixed
 
 ## [0.5.0] - 2016-09-30
