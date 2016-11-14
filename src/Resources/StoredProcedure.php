@@ -4,13 +4,13 @@ namespace DreamFactory\Core\SqlDb\Resources;
 use DreamFactory\Core\Components\DataValidator;
 use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbResource;
-use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
@@ -24,7 +24,6 @@ class StoredProcedure extends BaseDbResource
     //*************************************************************************
 
     use DataValidator;
-    use SqlDbResource;
 
     //*************************************************************************
     //	Constants
@@ -66,7 +65,7 @@ class StoredProcedure extends BaseDbResource
     public function listResources($schema = null, $refresh = false)
     {
         /** @type ProcedureSchema[] $result */
-        $result = $this->schema->getProcedureNames($schema, $refresh);
+        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $proc) {
             $name = $proc->publicName;
@@ -91,7 +90,7 @@ class StoredProcedure extends BaseDbResource
         $schema = $this->request->getParameter('schema', '');
 
         /** @type ProcedureSchema[] $result */
-        $result = $this->schema->getProcedureNames($schema, $refresh);
+        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $procedure) {
             $access = $this->getPermissions($procedure->publicName);
@@ -272,7 +271,7 @@ class StoredProcedure extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
-            $procedure = $this->schema->getProcedure($name, $refresh);
+            $procedure = $this->schema->getResource(DbResourceTypes::TYPE_PROCEDURE, $name, $refresh);
             if (!$procedure) {
                 throw new NotFoundException("Procedure '$name' does not exist in the database.");
             }
