@@ -201,6 +201,11 @@ class Table extends BaseDbTableResource
 
     // Helper methods
 
+    protected function restrictFieldsToDefined()
+    {
+        return true;
+    }
+
     protected function runQuery($table, $select, Builder $builder, $extras)
     {
         $schema = $this->schema->getResource(DbResourceTypes::TYPE_TABLE, $table);
