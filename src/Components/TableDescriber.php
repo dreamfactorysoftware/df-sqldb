@@ -56,7 +56,19 @@ trait TableDescriber
                         'type'        => 'array',
                         'description' => 'An array of available relationships to other tables.',
                         'items'       => [
-                            '$ref' => '#/definitions/RelatedSchema',
+                            '$ref' => '#/definitions/RelationshipSchema',
+                        ],
+                    ],
+                ],
+            ],
+            'FieldSchemas'  => [
+                'type'       => 'object',
+                'properties' => [
+                    $wrapper => [
+                        'type'        => 'array',
+                        'description' => 'An array of field definitions.',
+                        'items'       => [
+                            '$ref' => '#/definitions/FieldSchema',
                         ],
                     ],
                 ],
@@ -131,7 +143,7 @@ trait TableDescriber
                         'type'        => 'string',
                         'description' => 'For foreign keys, the referenced table name.',
                     ],
-                    'ref_fields'         => [
+                    'ref_field'          => [
                         'type'        => 'string',
                         'description' => 'For foreign keys, the referenced table field name.',
                     ],
@@ -151,12 +163,36 @@ trait TableDescriber
                     ],
                 ],
             ],
-            'RelatedSchema' => [
+            'RelationshipSchemas'  => [
+                'type'       => 'object',
+                'properties' => [
+                    $wrapper => [
+                        'type'        => 'array',
+                        'description' => 'An array of relationship definitions.',
+                        'items'       => [
+                            '$ref' => '#/definitions/RelationshipSchema',
+                        ],
+                    ],
+                ],
+            ],
+            'RelationshipSchema' => [
                 'type'       => 'object',
                 'properties' => [
                     'name'               => [
                         'type'        => 'string',
                         'description' => 'Name of the relationship.',
+                    ],
+                    'alias'               => [
+                        'type'        => 'string',
+                        'description' => 'Alias to use in the API to override the name the relationship.',
+                    ],
+                    'label'               => [
+                        'type'        => 'string',
+                        'description' => 'Label for the relationship.',
+                    ],
+                    'description'               => [
+                        'type'        => 'string',
+                        'description' => 'Description of the relationship.',
                     ],
                     'type'               => [
                         'type'        => 'string',
@@ -170,7 +206,7 @@ trait TableDescriber
                         'type'        => 'string',
                         'description' => 'The table name that is referenced by the relationship.',
                     ],
-                    'ref_fields'         => [
+                    'ref_field'          => [
                         'type'        => 'string',
                         'description' => 'The field name that is referenced by the relationship.',
                     ],
@@ -185,6 +221,10 @@ trait TableDescriber
                     'junction_ref_field' => [
                         'type'        => 'string',
                         'description' => 'The intermediate joining table referencing field used for many_many relationships.',
+                    ],
+                    'always_fetch' => [
+                        'type'        => 'boolean',
+                        'description' => 'Always fetch this relationship when querying the parent table.',
                     ],
                 ],
             ],

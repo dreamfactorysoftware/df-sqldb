@@ -7,6 +7,15 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Changed
 ### Fixed
 
+## [0.6.0] - 2016-11-17
+### Added
+- Added _field and _related resources to _schema/<table> API paths to help support virtual relationships
+
+### Changed
+- Virtual relationships rework to support all relationship types
+- DB base class changes to support field configuration across all database types.
+- Updated API Docs to support new database schema API paths and resources
+
 ## [0.5.0] - 2016-09-30
 ### Changed
 - DF-826 Update Config models with df-core changes for encryption and protection.
@@ -98,7 +107,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.5.0...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.6.0...HEAD
+[0.6.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.3.2...0.4.0
 [0.3.2]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.3.1...0.3.2

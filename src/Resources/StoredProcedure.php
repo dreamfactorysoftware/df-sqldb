@@ -4,13 +4,13 @@ namespace DreamFactory\Core\SqlDb\Resources;
 use DreamFactory\Core\Components\DataValidator;
 use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbResource;
-use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
@@ -24,7 +24,6 @@ class StoredProcedure extends BaseDbResource
     //*************************************************************************
 
     use DataValidator;
-    use SqlDbResource;
 
     //*************************************************************************
     //	Constants
@@ -66,7 +65,7 @@ class StoredProcedure extends BaseDbResource
     public function listResources($schema = null, $refresh = false)
     {
         /** @type ProcedureSchema[] $result */
-        $result = $this->schema->getProcedureNames($schema, $refresh);
+        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $proc) {
             $name = $proc->publicName;
@@ -91,7 +90,7 @@ class StoredProcedure extends BaseDbResource
         $schema = $this->request->getParameter('schema', '');
 
         /** @type ProcedureSchema[] $result */
-        $result = $this->schema->getProcedureNames($schema, $refresh);
+        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $procedure) {
             $access = $this->getPermissions($procedure->publicName);
@@ -195,9 +194,10 @@ class StoredProcedure extends BaseDbResource
     protected function handleGET()
     {
         if (empty($this->resource)) {
-            $names = $this->request->getParameter(ApiOptions::IDS);
+            $payload = $this->request->getPayloadData();
+            $names = array_get($payload, ApiOptions::IDS, $this->request->getParameter(ApiOptions::IDS));
             if (empty($names)) {
-                $names = ResourcesWrapper::unwrapResources($this->request->getPayloadData());
+                $names = ResourcesWrapper::unwrapResources($payload);
             }
 
             if (!empty($names)) {
@@ -271,7 +271,7 @@ class StoredProcedure extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
-            $procedure = $this->schema->getProcedure($name, $refresh);
+            $procedure = $this->schema->getResource(DbResourceTypes::TYPE_PROCEDURE, $name, $refresh);
             if (!$procedure) {
                 throw new NotFoundException("Procedure '$name' does not exist in the database.");
             }
@@ -294,6 +294,7 @@ class StoredProcedure extends BaseDbResource
     protected function callProcedure()
     {
         $payload = $this->request->getPayloadData();
+        // check payload first, then inline, then URL param
         $params = array_get($payload, 'params', $this->inlineParams);
         if (empty($params)) {
             $params = $this->request->getParameters();
@@ -328,34 +329,26 @@ class StoredProcedure extends BaseDbResource
         }
 
         // convert result field values to types according to schema received
-        if (is_array($schema) && !empty($result)) {
-            if (is_array($result)) {
-                foreach ($result as &$row) {
-                    if (is_array($row)) {
-                        if (isset($row[0])) {
-                            //  Multi-row set, dig a little deeper
-                            foreach ($row as &$sub) {
-                                if (is_array($sub)) {
-                                    foreach ($sub as $key => $value) {
-                                        if (null !== $type = array_get($schema, $key)) {
-                                            $sub[$key] = DataFormatter::formatValue($value, $type);
-                                        }
-                                    }
+        if (is_array($schema) && is_array($result) && !empty($result)) {
+            foreach ($result as $rkey => &$row) {
+                if (is_array($row)) {
+                    //  Multi-row set, dig a little deeper
+                    foreach ($row as $skey => &$sub) {
+                        if (is_array($sub)) {
+                            foreach ($sub as $key => $value) {
+                                if (null !== $type = array_get($schema, $key)) {
+                                    $sub[$key] = DataFormatter::formatValue($value, $type);
                                 }
                             }
                         } else {
-                            foreach ($row as $key => $value) {
-                                if (null !== $type = array_get($schema, $key)) {
-                                    $row[$key] = DataFormatter::formatValue($value, $type);
-                                }
+                            if (null !== $type = array_get($schema, $skey)) {
+                                $row[$skey] = DataFormatter::formatValue($sub, $type);
                             }
                         }
                     }
-                }
-            } else {
-                foreach ($result as $key => $value) {
-                    if (null !== $type = array_get($schema, $key)) {
-                        $result[$key] = DataFormatter::formatValue($value, $type);
+                } else {
+                    if (null !== $type = array_get($schema, $rkey)) {
+                        $result[$rkey] = DataFormatter::formatValue($row, $type);
                     }
                 }
             }
@@ -393,19 +386,18 @@ class StoredProcedure extends BaseDbResource
         $class = trim(strrchr(static::class, '\\'), '\\');
         $resourceName = strtolower(array_get($resource, 'name', $class));
         $path = '/' . $serviceName . '/' . $resourceName;
-        $eventPath = $serviceName . '.' . $resourceName;
         $base = parent::getApiDocInfo($service, $resource);
 
         $apis = [
             $path . '/{procedure_name}' => [
                 'get'  => [
-                    'tags'              => [$serviceName],
-                    'summary'           => 'call' . $capitalized . 'StoredProcedure() - Call a stored procedure.',
-                    'operationId'       => 'call' . $capitalized . 'StoredProcedure',
-                    'description'       =>
+                    'tags'        => [$serviceName],
+                    'summary'     => 'call' . $capitalized . 'StoredProcedure() - Call a stored procedure.',
+                    'operationId' => 'call' . $capitalized . 'StoredProcedure',
+                    'description' =>
                         'Call a stored procedure with no parameters. ' .
                         'Set an optional wrapper for the returned data set. ',
-                    'parameters'        => [
+                    'parameters'  => [
                         [
                             'name'        => 'procedure_name',
                             'description' => 'Name of the stored procedure to call.',
@@ -428,7 +420,7 @@ class StoredProcedure extends BaseDbResource
                             'required'    => false,
                         ],
                     ],
-                    'responses'         => [
+                    'responses'   => [
                         '200'     => [
                             'description' => 'Success',
                             'schema'      => ['$ref' => '#/definitions/StoredProcedureResponse']
@@ -440,15 +432,15 @@ class StoredProcedure extends BaseDbResource
                     ],
                 ],
                 'post' => [
-                    'tags'              => [$serviceName],
-                    'summary'           => 'call' .
+                    'tags'        => [$serviceName],
+                    'summary'     => 'call' .
                         $capitalized .
                         'StoredProcedureWithParams() - Call a stored procedure.',
-                    'operationId'       => 'call' . $capitalized . 'StoredProcedureWithParams',
-                    'description'       =>
+                    'operationId' => 'call' . $capitalized . 'StoredProcedureWithParams',
+                    'description' =>
                         'Call a stored procedure with parameters. ' .
                         'Set an optional wrapper and schema for the returned data set. ',
-                    'parameters'        => [
+                    'parameters'  => [
                         [
                             'name'        => 'procedure_name',
                             'description' => 'Name of the stored procedure to call.',
@@ -478,7 +470,7 @@ class StoredProcedure extends BaseDbResource
                             'required'    => false,
                         ],
                     ],
-                    'responses'         => [
+                    'responses'   => [
                         '200'     => [
                             'description' => 'Success',
                             'schema'      => ['$ref' => '#/definitions/StoredProcedureResponse']

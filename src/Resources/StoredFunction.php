@@ -4,13 +4,13 @@ namespace DreamFactory\Core\SqlDb\Resources;
 use DreamFactory\Core\Components\DataValidator;
 use DreamFactory\Core\Database\Schema\FunctionSchema;
 use DreamFactory\Core\Enums\ApiOptions;
+use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Resources\BaseDbResource;
-use DreamFactory\Core\SqlDb\Components\SqlDbResource;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
@@ -24,7 +24,6 @@ class StoredFunction extends BaseDbResource
     //*************************************************************************
 
     use DataValidator;
-    use SqlDbResource;
 
     //*************************************************************************
     //	Constants
@@ -66,7 +65,7 @@ class StoredFunction extends BaseDbResource
     public function listResources($schema = null, $refresh = false)
     {
         /** @type FunctionSchema[] $result */
-        $result = $this->schema->getFunctionNames($schema, $refresh);
+        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_FUNCTION, $schema, $refresh);
         $resources = [];
         foreach ($result as $proc) {
             $name = $proc->publicName;
@@ -91,7 +90,7 @@ class StoredFunction extends BaseDbResource
         $schema = $this->request->getParameter('schema', '');
 
         /** @type FunctionSchema[] $result */
-        $result = $this->schema->getFunctionNames($schema, $refresh);
+        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_FUNCTION, $schema, $refresh);
 
         $resources = [];
         foreach ($result as $function) {
@@ -196,9 +195,10 @@ class StoredFunction extends BaseDbResource
     protected function handleGET()
     {
         if (empty($this->resource)) {
-            $names = $this->request->getParameter(ApiOptions::IDS);
+            $payload = $this->request->getPayloadData();
+            $names = array_get($payload, ApiOptions::IDS, $this->request->getParameter(ApiOptions::IDS));
             if (empty($names)) {
-                $names = ResourcesWrapper::unwrapResources($this->request->getPayloadData());
+                $names = ResourcesWrapper::unwrapResources($payload);
             }
 
             if (!empty($names)) {
@@ -272,7 +272,7 @@ class StoredFunction extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
-            $procedure = $this->schema->getFunction($name, $refresh);
+            $procedure = $this->schema->getResource(DbResourceTypes::TYPE_FUNCTION, $name, $refresh);
             if (!$procedure) {
                 throw new NotFoundException("Function '$name' does not exist in the database.");
             }
@@ -329,34 +329,26 @@ class StoredFunction extends BaseDbResource
         }
 
         // convert result field values to types according to schema received
-        if (is_array($schema) && !empty($result)) {
-            if (is_array($result)) {
-                foreach ($result as &$row) {
-                    if (is_array($row)) {
-                        if (isset($row[0])) {
-                            //  Multi-row set, dig a little deeper
-                            foreach ($row as &$sub) {
-                                if (is_array($sub)) {
-                                    foreach ($sub as $key => $value) {
-                                        if (null !== $type = array_get($schema, $key)) {
-                                            $sub[$key] = DataFormatter::formatValue($value, $type);
-                                        }
-                                    }
+        if (is_array($schema) && is_array($result) && !empty($result)) {
+            foreach ($result as $rkey => &$row) {
+                if (is_array($row)) {
+                    //  Multi-row set, dig a little deeper
+                    foreach ($row as $skey => &$sub) {
+                        if (is_array($sub)) {
+                            foreach ($sub as $key => $value) {
+                                if (null !== $type = array_get($schema, $key)) {
+                                    $sub[$key] = DataFormatter::formatValue($value, $type);
                                 }
                             }
                         } else {
-                            foreach ($row as $key => $value) {
-                                if (null !== $type = array_get($schema, $key)) {
-                                    $row[$key] = DataFormatter::formatValue($value, $type);
-                                }
+                            if (null !== $type = array_get($schema, $skey)) {
+                                $row[$skey] = DataFormatter::formatValue($sub, $type);
                             }
                         }
                     }
-                }
-            } elseif (is_array($result)) {
-                foreach ($result as $key => $value) {
-                    if (null !== $type = array_get($schema, $key)) {
-                        $result[$key] = DataFormatter::formatValue($value, $type);
+                } else {
+                    if (null !== $type = array_get($schema, $rkey)) {
+                        $result[$rkey] = DataFormatter::formatValue($row, $type);
                     }
                 }
             }
@@ -372,7 +364,6 @@ class StoredFunction extends BaseDbResource
         $class = trim(strrchr(static::class, '\\'), '\\');
         $resourceName = strtolower(array_get($resource, 'name', $class));
         $path = '/' . $serviceName . '/' . $resourceName;
-        $eventPath = $serviceName . '.' . $resourceName;
         $base = parent::getApiDocInfo($service, $resource);
 
         $apis = [

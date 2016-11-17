@@ -2,13 +2,8 @@
 
 namespace DreamFactory\Core\SqlDb\Services;
 
-use DreamFactory\Core\Components\DbSchemaExtras;
-use DreamFactory\Core\Contracts\CacheInterface;
-use DreamFactory\Core\Contracts\DbExtrasInterface;
-use DreamFactory\Core\Contracts\SchemaInterface;
 use DreamFactory\Core\Database\ConnectionExtension;
-use DreamFactory\Core\Database\Schema\TableSchema;
-use DreamFactory\Core\Exceptions\InternalServerErrorException;
+use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Services\BaseDbService;
 use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\StoredFunction;
@@ -16,7 +11,6 @@ use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\Scalar;
-use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\DatabaseManager;
 
 /**
@@ -24,23 +18,13 @@ use Illuminate\Database\DatabaseManager;
  *
  * @package DreamFactory\Core\SqlDb\Services
  */
-class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
+class SqlDb extends BaseDbService
 {
-    use ConnectionExtension, DbSchemaExtras;
+    use ConnectionExtension;
 
     //*************************************************************************
     //	Members
     //*************************************************************************
-
-    /**
-     * @var ConnectionInterface
-     */
-    protected $dbConn;
-
-    /**
-     * @var SchemaInterface
-     */
-    protected $schema;
 
     /**
      * @var array
@@ -109,20 +93,20 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         Session::replaceLookups($config, true);
 
         static::adaptConfig($config);
-        
+
         $options = array_get($config, 'options', []);
         if (!is_array($options)) {
             // laravel database config requires options to be [], not null
             $config['options'] = [];
         }
 
-        $name = 'service.'.$this->name;
+        $name = 'service.' . $this->name;
         $config['name'] = $name;
         // add config to global for reuse, todo check existence and update?
         config(['database.connections.service.' . $this->name => $config]);
         /** @type DatabaseManager $db */
         $db = app('db');
-        $this->dbConn = $db->connection('service.' . $this->name);
+        $this->dbConn = $db->connection($name);
 
         $this->initStatements(array_get($config, 'statements', []));
 
@@ -141,29 +125,47 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
      */
     public function __destruct()
     {
-        if (isset($this->dbConn)) {
-            try {
-                /** @type DatabaseManager $db */
-                $db = app('db');
-                $db->disconnect('service.' . $this->name);
-                $this->dbConn = null;
-            } catch (\Exception $ex) {
-                error_log("Failed to disconnect from database.\n{$ex->getMessage()}");
-            }
-        }
+        /** @type DatabaseManager $db */
+        $db = app('db');
+        $db->disconnect('service.' . $this->name);
+
+        parent::__destruct();
     }
 
     /**
-     * @throws \Exception
-     * @return ConnectionInterface
+     * {@inheritdoc}
      */
-    public function getConnection()
+    public function getResources($only_handlers = false)
     {
-        if (!isset($this->dbConn)) {
-            throw new InternalServerErrorException('Database connection has not been initialized.');
+        $types = $this->schema->getSupportedResourceTypes();
+        $resources = [
+            Schema::RESOURCE_NAME => [
+                'name'       => Schema::RESOURCE_NAME,
+                'class_name' => Schema::class,
+                'label'      => 'Schema',
+            ],
+            Table::RESOURCE_NAME  => [
+                'name'       => Table::RESOURCE_NAME,
+                'class_name' => Table::class,
+                'label'      => 'Tables',
+            ]
+        ];
+        if (in_array(DbResourceTypes::TYPE_PROCEDURE, $types)) {
+            $resources[StoredProcedure::RESOURCE_NAME] = [
+                'name'       => StoredProcedure::RESOURCE_NAME,
+                'class_name' => StoredProcedure::class,
+                'label'      => 'Stored Procedures',
+            ];
+        }
+        if (in_array(DbResourceTypes::TYPE_FUNCTION, $types)) {
+            $resources[StoredFunction::RESOURCE_NAME] = [
+                'name'       => StoredFunction::RESOURCE_NAME,
+                'class_name' => StoredFunction::class,
+                'label'      => 'Stored Functions',
+            ];
         }
 
-        return $this->dbConn;
+        return ($only_handlers) ? $resources : array_values($resources);
     }
 
     protected function initStatements($statements = [])
@@ -177,34 +179,5 @@ class SqlDb extends BaseDbService implements CacheInterface, DbExtrasInterface
         foreach ($statements as $statement) {
             $this->dbConn->statement($statement);
         }
-    }
-
-    /**
-     * @param string|null $schema
-     * @param bool        $refresh
-     * @param bool        $use_alias
-     *
-     * @return TableSchema[]
-     * @throws \Exception
-     */
-    public function getTableNames($schema = null, $refresh = false, $use_alias = false)
-    {
-        /** @type TableSchema[] $tables */
-        $tables = $this->schema->getTableNames($schema, true, $refresh);
-        if ($use_alias) {
-            $temp = []; // reassign index to alias
-            foreach ($tables as $table) {
-                $temp[strtolower($table->getName(true))] = $table;
-            }
-
-            return $temp;
-        }
-
-        return $tables;
-    }
-
-    public function refreshTableCache()
-    {
-        $this->schema->refresh();
     }
 }
