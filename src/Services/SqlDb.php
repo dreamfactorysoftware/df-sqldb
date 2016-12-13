@@ -2,16 +2,15 @@
 
 namespace DreamFactory\Core\SqlDb\Services;
 
-use DreamFactory\Core\Database\ConnectionExtension;
 use DreamFactory\Core\Enums\DbResourceTypes;
-use DreamFactory\Core\Services\BaseDbService;
+use DreamFactory\Core\Database\Services\BaseDbService;
 use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\StoredFunction;
 use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
 use DreamFactory\Core\Utility\Session;
-use DreamFactory\Library\Utility\Scalar;
 use Illuminate\Database\DatabaseManager;
+use DbSchemaExtensions;
 
 /**
  * Class SqlDb
@@ -20,8 +19,6 @@ use Illuminate\Database\DatabaseManager;
  */
 class SqlDb extends BaseDbService
 {
-    use ConnectionExtension;
-
     //*************************************************************************
     //	Members
     //*************************************************************************
@@ -110,12 +107,14 @@ class SqlDb extends BaseDbService
 
         $this->initStatements(array_get($config, 'statements', []));
 
-        $this->schema = $this->getSchemaExtension($this->dbConn);
+        $driver = $this->dbConn->getDriverName();
+        if (null === $this->schema = DbSchemaExtensions::getSchemaExtension($driver, $this->dbConn)) {
+            throw new \Exception("Driver '$driver' is not supported by this software.");
+        }
+
         $this->schema->setCache($this);
         $this->schema->setExtraStore($this);
 
-        $defaultSchemaOnly = Scalar::boolval(array_get($config, 'default_schema_only'));
-        $this->schema->setDefaultSchemaOnly($defaultSchemaOnly);
         $schema = array_get($config, 'schema');
         $this->schema->setUserSchema($schema);
     }

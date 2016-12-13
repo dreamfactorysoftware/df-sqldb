@@ -1,7 +1,7 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Resources;
 
-use DreamFactory\Core\Resources\DbSchemaResource;
+use DreamFactory\Core\Database\Resources\DbSchemaResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
 
 class Schema extends DbSchemaResource

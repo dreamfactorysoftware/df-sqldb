@@ -15,7 +15,7 @@ use DreamFactory\Core\Exceptions\BadRequestException;
  */
 class SqlDbConfig extends BaseSqlDbConfig
 {
-    protected $appends = ['host','port','database','username','password','default_schema_only'];
+    protected $appends = ['host', 'port', 'database', 'username', 'password', 'schema'];
 
     protected $encrypted = ['username', 'password'];
 
@@ -23,7 +23,7 @@ class SqlDbConfig extends BaseSqlDbConfig
 
     protected function getConnectionFields()
     {
-        return ['host','port','database','username','password','default_schema_only'];
+        return ['host', 'port', 'database', 'username', 'password', 'schema'];
     }
 
     public static function getDefaultConnectionInfo()
@@ -60,26 +60,20 @@ class SqlDbConfig extends BaseSqlDbConfig
                 'type'        => 'password',
                 'description' => 'The password for the database user. This can be a lookup key.'
             ],
+            [
+                'name'        => 'schema',
+                'label'       => 'Schema',
+                'type'        => 'string',
+                'description' => 'Leave blank to work with all available schemas, ' .
+                    'type "default" to only work with the default schema for the given credentials, ' .
+                    'or type in a specific schema to use for this service.'
+            ],
 //            [
 //                'name'        => 'prefix',
 //                'label'       => 'Table Prefix',
 //                'type'        => 'string',
 //                'description' => 'The name of the database table prefix.'
 //            ],
-//            [
-//                'name'        => 'schema',
-//                'label'       => 'Schema',
-//                'type'        => 'string',
-//                'description' => 'Do not include other schemas/databases on this server ' .
-//                    'regardless of permissions given to the supplied credentials.'
-//            ],
-            [
-                'name'        => 'default_schema_only',
-                'label'       => 'Use Default Schema Only',
-                'type'        => 'boolean',
-                'description' => 'Do not include other schemas/databases on this server ' .
-                    'regardless of permissions given to the supplied credentials.'
-            ]
         ];
 
         return $defaults;

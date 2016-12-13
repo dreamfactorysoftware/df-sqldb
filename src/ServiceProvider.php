@@ -2,10 +2,14 @@
 namespace DreamFactory\Core\SqlDb;
 
 use DreamFactory\Core\Components\ServiceDocBuilder;
+use DreamFactory\Core\Components\DbSchemaExtensions;
 use DreamFactory\Core\Enums\ServiceTypeGroups;
 use DreamFactory\Core\Models\SystemTableModelMapper;
 use DreamFactory\Core\Services\ServiceManager;
 use DreamFactory\Core\Services\ServiceType;
+use DreamFactory\Core\SqlDb\Database\Schema\MySqlSchema;
+use DreamFactory\Core\SqlDb\Database\Schema\PostgresSchema;
+use DreamFactory\Core\SqlDb\Database\Schema\SqliteSchema;
 use DreamFactory\Core\SqlDb\Models\MySqlDbConfig;
 use DreamFactory\Core\SqlDb\Models\PgSqlDbConfig;
 use DreamFactory\Core\SqlDb\Models\SqlDbConfig;
@@ -20,6 +24,19 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
 
     public function register()
     {
+        // Add our database extensions.
+        $this->app->resolving('db.schema', function (DbSchemaExtensions $db){
+            $db->extend('sqlite', function ($connection){
+                return new SqliteSchema($connection);
+            });
+            $db->extend('mysql', function ($connection){
+                return new MySqlSchema($connection);
+            });
+            $db->extend('pgsql', function ($connection){
+                return new PostgresSchema($connection);
+            });
+        });
+
         // Add our service types.
         $this->app->resolving('df.service', function (ServiceManager $df) {
             $df->addType(

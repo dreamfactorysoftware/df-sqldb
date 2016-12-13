@@ -5,7 +5,7 @@ namespace DreamFactory\Core\SqlDb\Resources;
 use Config;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\RelationSchema;
-use DreamFactory\Core\Database\Expression;
+use DreamFactory\Core\Database\Components\Expression;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\DbComparisonOperators;
 use DreamFactory\Core\Enums\DbLogicalOperators;
@@ -15,7 +15,7 @@ use DreamFactory\Core\Exceptions\ForbiddenException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
-use DreamFactory\Core\Resources\BaseDbTableResource;
+use DreamFactory\Core\Database\Resources\BaseDbTableResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
@@ -66,14 +66,18 @@ class Table extends BaseDbTableResource
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
-            $fieldsInfo = $this->getFieldsInfo($table);
+            if (!$tableSchema = $this->getTableSchema(null, $table)) {
+                throw new NotFoundException("Table '$table' does not exist in the database.");
+            }
+
+            $fieldsInfo = $tableSchema->getColumns(true);
             $idsInfo = $this->getIdsInfo($table, $fieldsInfo, $idFields, $idTypes);
-            $relatedInfo = $this->describeTableRelated($table);
+            $relatedInfo = $tableSchema->getRelations(true);
             $fields = (empty($fields)) ? $idFields : $fields;
             $parsed = $this->parseRecord($record, $fieldsInfo, $ssFilters, true);
 
             // build filter string if necessary, add server-side filters if necessary
-            $builder = $this->dbConn->table($table);
+            $builder = $this->dbConn->table($tableSchema->internalName);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
             if (!empty($parsed)) {
@@ -118,8 +122,11 @@ class Table extends BaseDbTableResource
     {
         // truncate the table, return success
         try {
+            if (!$tableSchema = $this->getTableSchema(null, $table)) {
+                throw new NotFoundException("Table '$table' does not exist in the database.");
+            }
             // build filter string if necessary, add server-side filters if necessary
-            $builder = $this->dbConn->table($table);
+            $builder = $this->dbConn->table($tableSchema->internalName);
             $ssFilters = array_get($extras, 'ss_filters');
             $params = [];
             $serverFilter = $this->buildQueryStringFromData($ssFilters);
@@ -155,13 +162,16 @@ class Table extends BaseDbTableResource
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
-            $fieldsInfo = $this->getFieldsInfo($table);
+            if (!$tableSchema = $this->getTableSchema(null, $table)) {
+                throw new NotFoundException("Table '$table' does not exist in the database.");
+            }
+            $fieldsInfo = $tableSchema->getColumns(true);
             /*$idsInfo = */
             $this->getIdsInfo($table, $fieldsInfo, $idFields, $idTypes);
             $fields = (empty($fields)) ? $idFields : $fields;
 
             // build filter string if necessary, add server-side filters if necessary
-            $builder = $this->dbConn->table($table);
+            $builder = $this->dbConn->table($tableSchema->internalName);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
             $results = $this->runQuery($table, $fields, $builder, $extras);
@@ -185,10 +195,15 @@ class Table extends BaseDbTableResource
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
-            $fieldsInfo = $this->getFieldsInfo($table);
+            $tableSchema = $this->getTableSchema(null, $table);
+            if (!$tableSchema) {
+                throw new NotFoundException("Table '$table' does not exist in the database.");
+            }
+
+            $fieldsInfo = $tableSchema->getColumns(true);
 
             // build filter string if necessary, add server-side filters if necessary
-            $builder = $this->dbConn->table($table);
+            $builder = $this->dbConn->table($tableSchema->internalName);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
             return $this->runQuery($table, $fields, $builder, $extras);
@@ -208,7 +223,7 @@ class Table extends BaseDbTableResource
 
     protected function runQuery($table, $select, Builder $builder, $extras)
     {
-        $schema = $this->schema->getResource(DbResourceTypes::TYPE_TABLE, $table);
+        $schema = $this->getTableSchema(null, $table);
         if (!$schema) {
             throw new NotFoundException("Table '$table' does not exist in the database.");
         }
@@ -942,7 +957,7 @@ class Table extends BaseDbTableResource
         $allowRelatedDelete = Scalar::boolval(array_get($extras, 'allow_related_delete'));
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
-        $builder = $this->dbConn->table($this->transactionTable);
+        $builder = $this->dbConn->table($this->transactionTableSchema->internalName);
         if (!empty($id)) {
             if (is_array($id)) {
                 foreach ($idFields as $name) {
@@ -1165,7 +1180,7 @@ class Table extends BaseDbTableResource
         $allowRelatedDelete = Scalar::boolval(array_get($extras, 'allow_related_delete'));
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
-        $builder = $this->dbConn->table($this->transactionTable);
+        $builder = $this->dbConn->table($this->transactionTableSchema->internalName);
 
         /** @type ColumnSchema $idName */
         $idName = (isset($this->tableIdsInfo, $this->tableIdsInfo[0])) ? $this->tableIdsInfo[0] : null;
