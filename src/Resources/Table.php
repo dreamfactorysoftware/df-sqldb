@@ -3,19 +3,20 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use Config;
+use DB;
+use DreamFactory\Core\Database\Components\Expression;
+use DreamFactory\Core\Database\Enums\DbFunctionUses;
+use DreamFactory\Core\Database\Resources\BaseDbTableResource;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\RelationSchema;
-use DreamFactory\Core\Database\Components\Expression;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\DbComparisonOperators;
 use DreamFactory\Core\Enums\DbLogicalOperators;
-use DreamFactory\Core\Enums\DbResourceTypes;
+use DreamFactory\Core\Enums\DbSimpleTypes;
 use DreamFactory\Core\Exceptions\BadRequestException;
-use DreamFactory\Core\Exceptions\ForbiddenException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
-use DreamFactory\Core\Database\Resources\BaseDbTableResource;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
@@ -23,7 +24,6 @@ use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Scalar;
 use Illuminate\Database\Query\Builder;
-use DB;
 
 /**
  * Class Table
@@ -558,7 +558,13 @@ class Table extends BaseDbTableResource
                     $sqlOp = DbLogicalOperators::NOT_STR . ' ' . $sqlOp;
                 }
 
-                $out = $this->schema->parseFieldForFilter($info, true) . " $sqlOp";
+                if ($function = $info->getDbFunction(DbFunctionUses::FILTER)) {
+                    $out = $this->dbConn->raw($function);
+                } else {
+                    $out = $info->quotedName;
+                }
+                $out .= " $sqlOp";
+
                 $out .= (isset($value) ? " $value" : null);
                 if ($leftParen) {
                     $out = $leftParen . $out;
@@ -595,7 +601,6 @@ class Table extends BaseDbTableResource
 
         // remove quoting on strings if used, i.e. 1.x required them
         if (is_string($value)) {
-
             if ((0 === strcmp("'" . trim($value, "'") . "'", $value)) ||
                 (0 === strcmp('"' . trim($value, '"') . '"', $value))
             ) {
@@ -605,15 +610,18 @@ class Table extends BaseDbTableResource
                 return $value;
             }
         }
-        // if not already a replacement parameter, evaluate it
-        try {
-            $value = $this->schema->parseValueForSet($value, $info);
-        } catch (ForbiddenException $ex) {
-            // need to prop this up?
-        }
 
-        switch ($cnvType = $this->schema->determinePhpConversionType($info->type)) {
-            case 'int':
+        switch ($info->type) {
+            case DbSimpleTypes::TYPE_BOOLEAN:
+                $value = filter_var($value, FILTER_VALIDATE_BOOLEAN);
+                break;
+
+            case DbSimpleTypes::TYPE_INTEGER:
+            case DbSimpleTypes::TYPE_ID:
+            case DbSimpleTypes::TYPE_REF:
+            case DbSimpleTypes::TYPE_USER_ID:
+            case DbSimpleTypes::TYPE_USER_ID_ON_CREATE:
+            case DbSimpleTypes::TYPE_USER_ID_ON_UPDATE:
                 if (!is_int($value)) {
                     if (!(ctype_digit($value))) {
                         throw new BadRequestException("Field '{$info->getName(true)}' must be a valid integer.");
@@ -623,22 +631,38 @@ class Table extends BaseDbTableResource
                 }
                 break;
 
-            case 'time':
-                $cfgFormat = Config::get('df.db_time_format');
-                $outFormat = 'H:i:s.u';
-                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
+            case DbSimpleTypes::TYPE_DECIMAL:
+            case DbSimpleTypes::TYPE_DOUBLE:
+            case DbSimpleTypes::TYPE_FLOAT:
+                $value = floatval($value);
                 break;
-            case 'date':
+
+            case DbSimpleTypes::TYPE_STRING:
+            case DbSimpleTypes::TYPE_TEXT:
+                break;
+
+            // special checks
+            case DbSimpleTypes::TYPE_DATE:
                 $cfgFormat = Config::get('df.db_date_format');
                 $outFormat = 'Y-m-d';
                 $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
                 break;
-            case 'datetime':
+
+            case DbSimpleTypes::TYPE_TIME:
+                $cfgFormat = Config::get('df.db_time_format');
+                $outFormat = 'H:i:s.u';
+                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
+                break;
+
+            case DbSimpleTypes::TYPE_DATETIME:
                 $cfgFormat = Config::get('df.db_datetime_format');
                 $outFormat = 'Y-m-d H:i:s';
                 $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
                 break;
-            case 'timestamp':
+
+            case DbSimpleTypes::TYPE_TIMESTAMP:
+            case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
+            case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
                 $cfgFormat = Config::get('df.db_timestamp_format');
                 $outFormat = 'Y-m-d H:i:s';
                 $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
@@ -648,6 +672,9 @@ class Table extends BaseDbTableResource
                 break;
         }
 
+        // anything else schema specific
+        $value = $this->schema->parseValueForSet($value, $info);
+
         $out_params[] = $value;
         $value = '?';
 
@@ -655,7 +682,7 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @throws \Exception
+     * @inheritdoc
      */
     protected function getCurrentTimestamp()
     {
@@ -663,65 +690,16 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param mixed        $value
-     * @param ColumnSchema $field_info
-     *
-     * @return mixed
-     * @throws \DreamFactory\Core\Exceptions\BadRequestException
-     * @throws \Exception
+     * @inheritdoc
      */
-    protected function parseValueForSet($value, $field_info)
+    protected function parseValueForSet($value, $field_info, $for_update = false)
     {
-        if (!is_null($value)) {
-            if ($value instanceof Expression) {
-                // todo need to wrangle in expression parameters somehow
-                $value = DB::raw($value->expression);
-            } else {
-                $value = $this->schema->parseValueForSet($value, $field_info);
-
-                switch ($cnvType = $this->schema->determinePhpConversionType($field_info->type)) {
-                    case 'int':
-                        if (!is_int($value)) {
-                            if (('' === $value) && $field_info->allowNull) {
-                                $value = null;
-                            } elseif (!ctype_digit($value)) {
-                                if (!is_float($value)) { // bigint catch as float
-                                    throw new BadRequestException("Field '{$field_info->getName(true)}' must be a valid integer.");
-                                }
-                            } else {
-                                $value = intval($value);
-                            }
-                        }
-                        break;
-
-                    case 'time':
-                        $cfgFormat = Config::get('df.db_time_format');
-                        $outFormat = 'H:i:s.u';
-                        $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                        break;
-                    case 'date':
-                        $cfgFormat = Config::get('df.db_date_format');
-                        $outFormat = 'Y-m-d';
-                        $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                        break;
-                    case 'datetime':
-                        $cfgFormat = Config::get('df.db_datetime_format');
-                        $outFormat = 'Y-m-d H:i:s';
-                        $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                        break;
-                    case 'timestamp':
-                        $cfgFormat = Config::get('df.db_timestamp_format');
-                        $outFormat = 'Y-m-d H:i:s';
-                        $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                        break;
-
-                    default:
-                        break;
-                }
-            }
+        if ($value instanceof Expression) {
+            // todo need to wrangle in expression parameters somehow
+            return DB::raw($value->expression);
+        } else {
+            return parent::parseValueForSet($value, $field_info, $for_update);
         }
-
-        return $value;
     }
 
     /**
@@ -762,6 +740,25 @@ class Table extends BaseDbTableResource
     }
 
     /**
+     * @param ColumnSchema $field
+     *
+     * @return \Illuminate\Database\Query\Expression|string
+     */
+    protected function parseFieldForSelect($field)
+    {
+        if ($function = $field->getDbFunction(DbFunctionUses::SELECT)) {
+            return $this->dbConn->raw($function . ' AS ' . $field->getName(true, true));
+        }
+
+        $out = $field->name;
+        if (!empty($field->alias)) {
+            $out .= ' AS ' . $field->alias;
+        }
+
+        return $out;
+    }
+
+    /**
      * @param  string|array   $fields
      * @param  ColumnSchema[] $avail_fields
      *
@@ -782,16 +779,22 @@ class Table extends BaseDbTableResource
                 }
 
                 $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
-                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
+                $bindArray[] = [
+                    'name'     => $fieldInfo->getName(true),
+                    'php_type' => $fieldInfo->phpType
+                ];
+                $outArray[] = $this->parseFieldForSelect($fieldInfo);
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
-                if ($fieldInfo->isAggregate()) {
+                if ($fieldInfo->isAggregate) {
                     continue;
                 }
-                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
-                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
+                $bindArray[] = [
+                    'name'     => $fieldInfo->getName(true),
+                    'php_type' => $fieldInfo->phpType
+                ];
+                $outArray[] = $this->parseFieldForSelect($fieldInfo);
             }
         }
 
@@ -819,16 +822,22 @@ class Table extends BaseDbTableResource
                 }
 
                 $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
-                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
+                $bindArray[] = [
+                    'name'     => $fieldInfo->getName(true),
+                    'php_type' => $fieldInfo->phpType
+                ];
+                $outArray[] = $this->parseFieldForSelect($fieldInfo);
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
-                if ($fieldInfo->isAggregate()) {
+                if ($fieldInfo->isAggregate) {
                     continue;
                 }
-                $bindArray[] = $this->schema->getPdoBinding($fieldInfo);
-                $outArray[] = $this->schema->parseFieldForSelect($fieldInfo, false);
+                $bindArray[] = [
+                    'name'     => $fieldInfo->getName(true),
+                    'php_type' => $fieldInfo->phpType
+                ];
+                $outArray[] = $this->parseFieldForSelect($fieldInfo);
             }
         }
 

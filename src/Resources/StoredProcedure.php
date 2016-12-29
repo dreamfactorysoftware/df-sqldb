@@ -68,7 +68,7 @@ class StoredProcedure extends BaseDbResource
         $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $proc) {
-            $name = $proc->publicName;
+            $name = $proc->name;
             if (!empty($this->getPermissions($name))) {
                 $resources[] = $name;
             }
@@ -93,7 +93,7 @@ class StoredProcedure extends BaseDbResource
         $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $procedure) {
-            $access = $this->getPermissions($procedure->publicName);
+            $access = $this->getPermissions($procedure->name);
             if (!empty($access)) {
                 $temp = $procedure->toArray();
                 $temp['access'] = VerbsMask::maskToArray($access);

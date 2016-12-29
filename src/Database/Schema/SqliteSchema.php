@@ -310,9 +310,9 @@ class SqliteSchema extends Schema
 
         $names = [];
         foreach ($rows as $row) {
-            $internalName = $tableName = $name = $row->tbl_name;
-            $quotedName = $this->quoteTableName($tableName);;
-            $settings = compact('tableName', 'name', 'internalName','quotedName');
+            $name = $row->tbl_name;
+            $quotedName = $this->quoteTableName($name);;
+            $settings = compact('name', 'quotedName');
             $names[strtolower($name)] = new TableSchema($settings);
         }
 
@@ -559,11 +559,11 @@ class SqliteSchema extends Schema
     {
         switch ($field_info->type) {
             case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = (filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 1 : 0);
+                $value = ($value ? 1 : 0);
                 break;
         }
 
-        return $value;
+        return parent::parseValueForSet($value, $field_info);
     }
 
     /**

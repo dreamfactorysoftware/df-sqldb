@@ -441,11 +441,11 @@ MYSQL;
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $row = array_values($row);
             $schemaName = $schema;
-            $tableName = $row[0];
-            $internalName = $schemaName . '.' . $tableName;
-            $name = ($addSchema) ? $internalName : $tableName;
-            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($tableName);;
-            $settings = compact('schemaName', 'tableName', 'name', 'internalName', 'quotedName');
+            $resourceName = $row[0];
+            $internalName = $schemaName . '.' . $resourceName;
+            $name = ($addSchema) ? $internalName : $resourceName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);;
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $names[strtolower($name)] = new TableSchema($settings);
         }
 
@@ -475,11 +475,11 @@ MYSQL;
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $row = array_values($row);
             $schemaName = $schema;
-            $tableName = $row[0];
-            $internalName = $schemaName . '.' . $tableName;
-            $name = ($addSchema) ? $internalName : $tableName;
-            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($tableName);
-            $settings = compact('schemaName', 'tableName', 'name', 'internalName', 'quotedName');
+            $resourceName = $row[0];
+            $internalName = $schemaName . '.' . $resourceName;
+            $name = ($addSchema) ? $internalName : $resourceName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $settings['isView'] = true;
             $names[strtolower($name)] = new TableSchema($settings);
         }
@@ -599,11 +599,11 @@ MYSQL;
     {
         switch ($field_info->type) {
             case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = (filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 1 : 0);
+                $value = ($value ? 1 : 0);
                 break;
         }
 
-        return $value;
+        return parent::parseValueForSet($value, $field_info);
     }
 
     /**

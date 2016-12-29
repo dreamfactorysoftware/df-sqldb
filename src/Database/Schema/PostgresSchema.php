@@ -292,13 +292,8 @@ class PostgresSchema extends Schema
         $enable = $check ? 'ENABLE' : 'DISABLE';
         $tableNames = $this->getTableNames($schema);
         $db = $this->connection;
-        foreach ($tableNames as $tableInfo) {
-            $tableName = $tableInfo['name'];
-            $tableName = '"' . $tableName . '"';
-            if (strpos($tableName, '.') !== false) {
-                $tableName = str_replace('.', '"."', $tableName);
-            }
-            $db->statement("ALTER TABLE $tableName $enable TRIGGER ALL");
+        foreach ($tableNames as $table) {
+            $db->statement("ALTER TABLE {$table->quotedName} $enable TRIGGER ALL");
         }
     }
 
@@ -307,7 +302,7 @@ class PostgresSchema extends Schema
      */
     protected function findColumns(TableSchema $table)
     {
-        $params = [':table' => $table->tableName, ':schema' => $table->schemaName];
+        $params = [':table' => $table->resourceName, ':schema' => $table->schemaName];
         $sql = <<<EOD
 SELECT a.attname, LOWER(format_type(a.atttypid, a.atttypmod)) AS type, d.adsrc, a.attnotnull, a.atthasdef,
 	pg_catalog.col_description(a.attrelid, a.attnum) AS comment
@@ -458,11 +453,11 @@ EOD;
         foreach ($rows as $row) {
             $row = (array)$row;
             $schemaName = isset($row['table_schema']) ? $row['table_schema'] : '';
-            $tableName = isset($row['table_name']) ? $row['table_name'] : '';
-            $internalName = $schemaName . '.' . $tableName;
-            $name = ($addSchema) ? $internalName : $tableName;
-            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($tableName);
-            $settings = compact('schemaName', 'tableName', 'name', 'internalName','quotedName');
+            $resourceName = isset($row['table_name']) ? $row['table_name'] : '';
+            $internalName = $schemaName . '.' . $resourceName;
+            $name = ($addSchema) ? $internalName : $resourceName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
             $names[strtolower($name)] = new TableSchema($settings);
         }
 
@@ -491,11 +486,11 @@ EOD;
         foreach ($rows as $row) {
             $row = (array)$row;
             $schemaName = isset($row['table_schema']) ? $row['table_schema'] : '';
-            $tableName = isset($row['table_name']) ? $row['table_name'] : '';
-            $internalName = $schemaName . '.' . $tableName;
-            $name = ($addSchema) ? $internalName : $tableName;
-            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($tableName);
-            $settings = compact('schemaName', 'tableName', 'name', 'internalName','quotedName');
+            $resourceName = isset($row['table_name']) ? $row['table_name'] : '';
+            $internalName = $schemaName . '.' . $resourceName;
+            $name = ($addSchema) ? $internalName : $resourceName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
             $settings['isView'] = true;
             $names[strtolower($name)] = new TableSchema($settings);
         }
@@ -642,11 +637,11 @@ MYSQL;
     {
         switch ($field_info->type) {
             case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = (filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 'TRUE' : 'FALSE');
+                $value = ($value ? 'TRUE' : 'FALSE');
                 break;
         }
 
-        return $value;
+        return parent::parseValueForSet($value, $field_info);
     }
 
     public function formatValue($value, $type)
@@ -773,31 +768,31 @@ MYSQL;
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
-            $name = array_get($row, 'ROUTINE_NAME');
+            $resourceName = array_get($row, 'ROUTINE_NAME');
             switch (strtoupper($type)) {
                 case 'PROCEDURE':
-                    if (false === array_search($name, $procedures)) {
+                    if (false === array_search($resourceName, $procedures)) {
                         // only way to determine proc from func is by params??
                         continue 2;
                     }
                     break;
                 case 'FUNCTION':
-                    if (false !== array_search($name, $procedures)) {
+                    if (false !== array_search($resourceName, $procedures)) {
                         // only way to determine proc from func is by params??
                         continue 2;
                     }
                     break;
             }
             $schemaName = $schema;
-            $internalName = $schemaName . '.' . $name;
-            $publicName = ($addSchema) ? $internalName : $name;
-            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($name);
+            $internalName = $schemaName . '.' . $resourceName;
+            $name = ($addSchema) ? $internalName : $resourceName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
             $returnType = array_get($row, 'DATA_TYPE');
             if (!empty($returnType) && (0 !== strcasecmp('void', $returnType))) {
                 $returnType = static::extractSimpleType($returnType);
             }
-            $settings = compact('schemaName', 'name', 'publicName', 'quotedName', 'internalName', 'returnType');
-            $names[strtolower($publicName)] =
+            $settings = compact('schemaName', 'resourceName', 'name', 'quotedName', 'internalName', 'returnType');
+            $names[strtolower($name)] =
                 ('PROCEDURE' === $type) ? new ProcedureSchema($settings) : new FunctionSchema($settings);
         }
 
