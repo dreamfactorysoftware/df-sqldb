@@ -1041,7 +1041,6 @@ class Table extends BaseDbTableResource
                 break;
 
             case Verbs::PUT:
-            case Verbs::MERGE:
             case Verbs::PATCH:
                 if (!empty($updates)) {
                     $record = $updates;
@@ -1241,7 +1240,6 @@ class Table extends BaseDbTableResource
         } elseif (!empty($this->batchIds)) {
             switch ($action) {
                 case Verbs::PUT:
-                case Verbs::MERGE:
                 case Verbs::PATCH:
                     if (!empty($updates)) {
                         $parsed = $this->parseRecord($updates, $this->tableFieldsInfo, $ssFilters, true);
