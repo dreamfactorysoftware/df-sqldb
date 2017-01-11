@@ -499,13 +499,7 @@ EOD;
     }
 
     /**
-     * Builds a SQL statement for renaming a DB table.
-     *
-     * @param string $table   the table to be renamed. The name will be properly quoted by the method.
-     * @param string $newName the new table name. The name will be properly quoted by the method.
-     *
-     * @return string the SQL statement for renaming a DB table.
-     * @since 1.1.6
+     * @inheritdoc
      */
     public function renameTable($table, $newName)
     {
@@ -513,47 +507,11 @@ EOD;
     }
 
     /**
-     * Builds a SQL statement for adding a new DB column.
-     *
-     * @param string $table  the table that the new column will be added to. The table name will be properly quoted by
-     *                       the method.
-     * @param string $column the name of the new column. The name will be properly quoted by the method.
-     * @param string $type   the column type. The {@link getColumnType} method will be invoked to convert abstract
-     *                       column type (if any) into the physical one. Anything that is not recognized as abstract
-     *                       type will be kept in the generated SQL. For example, 'string' will be turned into
-     *                       'varchar(255)', while 'string not null' will become 'varchar(255) not null'.
-     *
-     * @return string the SQL statement for adding a new column.
-     * @since 1.1.6
-     */
-    public function addColumn($table, $column, $type)
-    {
-        $sql = <<<MYSQL
-ALTER TABLE  {$this->quoteTableName($table)}
-ADD COLUMN {$this->quoteColumnName($column)} {$this->getColumnType($type)}
-MYSQL;
-
-        return $sql;
-    }
-
-    /**
-     * Builds a SQL statement for changing the definition of a column.
-     *
-     * @param string $table      the table whose column is to be changed. The table name will be properly quoted by the
-     *                           method.
-     * @param string $column     the name of the column to be changed. The name will be properly quoted by the method.
-     * @param string $definition the new column type. The {@link getColumnType} method will be invoked to convert
-     *                           abstract column type (if any) into the physical one. Anything that is not recognized
-     *                           as abstract type will be kept in the generated SQL. For example, 'string' will be
-     *                           turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not
-     *                           null'.
-     *
-     * @return string the SQL statement for changing the definition of a column.
-     * @since 1.1.6
+     * @inheritdoc
      */
     public function alterColumn($table, $column, $definition)
     {
-        $sql = 'ALTER TABLE ' . $this->quoteTableName($table) . ' ALTER COLUMN ' . $this->quoteColumnName($column);
+        $sql = "ALTER TABLE $table ALTER COLUMN " . $this->quoteColumnName($column);
         if (false !== $pos = strpos($definition, ' ')) {
             $sql .= ' TYPE ' . $this->getColumnType(substr($definition, 0, $pos));
             switch (substr($definition, $pos + 1)) {

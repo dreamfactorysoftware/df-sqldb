@@ -409,16 +409,9 @@ class SqliteSchema extends Schema
     }
 
     /**
-     * Builds a SQL statement for dropping a DB column.
-     * Because SQLite does not support dropping a DB column, calling this method will throw an exception.
-     *
-     * @param string $table  the table whose column is to be dropped. The name will be properly quoted by the method.
-     * @param string $column the name of the column to be dropped. The name will be properly quoted by the method.
-     *
-     * @throws \Exception
-     * @return string the SQL statement for dropping a DB column.
+     * @inheritdoc
      */
-    public function dropColumn($table, $column)
+    public function dropColumns($table, $column)
     {
         throw new \Exception('Dropping DB column is not supported by SQLite.');
     }
@@ -481,20 +474,7 @@ class SqliteSchema extends Schema
     }
 
     /**
-     * Builds a SQL statement for changing the definition of a column.
-     * Because SQLite does not support altering a DB column, calling this method will throw an exception.
-     *
-     * @param string $table      the table whose column is to be changed. The table name will be properly quoted by the
-     *                           method.
-     * @param string $column     the name of the column to be changed. The name will be properly quoted by the method.
-     * @param string $definition the new column type. The {@link getColumnType} method will be invoked to convert
-     *                           abstract column type (if any) into the physical one. Anything that is not recognized
-     *                           as abstract type will be kept in the generated SQL. For example, 'string' will be
-     *                           turned into 'varchar(255)', while 'string not null' will become 'varchar(255) not
-     *                           null'.
-     *
-     * @throws \Exception
-     * @return string the SQL statement for changing the definition of a column.
+     * @inheritdoc
      */
     public function alterColumn($table, $column, $definition)
     {
