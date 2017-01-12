@@ -365,7 +365,7 @@ class SqliteSchema extends Schema
         $references = [];
         /** @type TableSchema $each */
         foreach ($this->getTableNames() as $each) {
-            $sql = "PRAGMA foreign_key_list({$each->name})";
+            $sql = "PRAGMA foreign_key_list({$each->quotedName})";
             $fks = $this->connection->select($sql);
             foreach ($fks as $key) {
                 $key = (array)$key;
