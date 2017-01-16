@@ -10,7 +10,7 @@ use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
-use DreamFactory\Core\Resources\BaseDbResource;
+use DreamFactory\Core\Database\Resources\BaseDbResource;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
@@ -68,7 +68,7 @@ class StoredProcedure extends BaseDbResource
         $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $proc) {
-            $name = $proc->publicName;
+            $name = $proc->name;
             if (!empty($this->getPermissions($name))) {
                 $resources[] = $name;
             }
@@ -93,7 +93,7 @@ class StoredProcedure extends BaseDbResource
         $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $procedure) {
-            $access = $this->getPermissions($procedure->publicName);
+            $access = $this->getPermissions($procedure->name);
             if (!empty($access)) {
                 $temp = $procedure->toArray();
                 $temp['access'] = VerbsMask::maskToArray($access);

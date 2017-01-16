@@ -167,16 +167,15 @@ class BaseSqlDbConfig extends CacheableServiceConfig
                 $pdoDriver = 'sqlite';
                 break;
             case 'sqlsrv':
-                if (substr(PHP_OS, 0, 3) == 'WIN') {
-                    $pdoDriver = 'sqlsrv';
-                    $extension = 'sqlsrv';
-                } else {
-                    $pdoDriver = 'dblib';
-                    $extension = 'mssql';
-                }
+                $pdoDriver = 'sqlsrv';
+                $extension = 'sqlsrv';
 
                 if (!extension_loaded($extension)) {
-                    throw new \Exception("Required extension '$extension' is not detected, but may be compiled in.");
+                    $pdoDriver = 'dblib';
+                    $extension = 'mssql';
+                    if (!extension_loaded($extension)) {
+                        throw new \Exception("Required extension '$extension' is not detected, but may be compiled in.");
+                    }
                 }
                 break;
             default:

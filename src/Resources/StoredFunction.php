@@ -10,7 +10,7 @@ use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
-use DreamFactory\Core\Resources\BaseDbResource;
+use DreamFactory\Core\Database\Resources\BaseDbResource;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
@@ -68,7 +68,7 @@ class StoredFunction extends BaseDbResource
         $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_FUNCTION, $schema, $refresh);
         $resources = [];
         foreach ($result as $proc) {
-            $name = $proc->publicName;
+            $name = $proc->name;
             if (!empty($this->getPermissions($name))) {
                 $resources[] = $name;
             }
@@ -94,7 +94,7 @@ class StoredFunction extends BaseDbResource
 
         $resources = [];
         foreach ($result as $function) {
-            $access = $this->getPermissions($function->publicName);
+            $access = $this->getPermissions($function->name);
             if (!empty($access)) {
                 $temp = $function->toArray();
                 $temp['access'] = VerbsMask::maskToArray($access);
