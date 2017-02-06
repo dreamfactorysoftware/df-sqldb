@@ -14,6 +14,7 @@ use DreamFactory\Core\Enums\DbComparisonOperators;
 use DreamFactory\Core\Enums\DbLogicalOperators;
 use DreamFactory\Core\Enums\DbSimpleTypes;
 use DreamFactory\Core\Exceptions\BadRequestException;
+use DreamFactory\Core\Exceptions\BatchException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
@@ -1292,21 +1293,17 @@ class Table extends BaseDbTableResource
                             $extras
                         );
                         if (count($this->batchIds) !== count($result)) {
-                            $errors = [];
                             foreach ($this->batchIds as $index => $id) {
                                 $found = false;
-                                if (empty($result)) {
                                     foreach ($result as $record) {
                                         if ($id == array_get($record, $idName->getName(true))) {
                                             $out[$index] = $record;
                                             $found = true;
-                                            continue;
+                                            break;
                                         }
                                     }
-                                }
                                 if (!$found) {
-                                    $errors[] = $index;
-                                    $out[$index] = "Record with identifier '" . print_r($id, true) . "' not found.";
+                                    $out[$index] = new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
                                 }
                             }
                         } else {
@@ -1316,7 +1313,7 @@ class Table extends BaseDbTableResource
 
                     $rows = $builder->delete();
                     if (count($this->batchIds) !== $rows) {
-                        throw new BadRequestException('Batch Error: Not all requested records were deleted.');
+                        throw new BatchException($out, 'Batch Error: Not all requested records were deleted.');
                     }
                     break;
 
@@ -1328,32 +1325,23 @@ class Table extends BaseDbTableResource
                         $builder,
                         $extras
                     );
-                    if (empty($result)) {
-                        throw new NotFoundException('No records were found using the given identifiers.');
-                    }
 
                     if (count($this->batchIds) !== count($result)) {
-                        $errors = [];
                         foreach ($this->batchIds as $index => $id) {
                             $found = false;
                             foreach ($result as $record) {
                                 if ($id == array_get($record, $idName->getName(true))) {
                                     $out[$index] = $record;
                                     $found = true;
-                                    continue;
+                                    break;
                                 }
                             }
                             if (!$found) {
-                                $errors[] = $index;
-                                $out[$index] = "Record with identifier '" . print_r($id, true) . "' not found.";
+                                $out[$index] = new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
                             }
                         }
 
-                        if (!empty($errors)) {
-                            $context = ['error' => $errors, ResourcesWrapper::getWrapper() => $out];
-                            throw new NotFoundException('Batch Error: Not all records could be retrieved.', null, null,
-                                $context);
-                        }
+                        throw new BatchException($out, 'Batch Error: Not all records could be retrieved.');
                     }
 
                     $out = $result;
