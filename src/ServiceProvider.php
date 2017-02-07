@@ -22,7 +22,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
 {
     use ServiceDocBuilder;
 
-    public function boot()
+    public function register()
     {
         // Add our database extensions.
         $this->app->resolving('db.schema', function (DbSchemaExtensions $db){
@@ -90,7 +90,10 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         $this->app->resolving('df.system.table_model_map', function (SystemTableModelMapper $df) {
             $df->addMapping('sql_db_config', SqlDbConfig::class);
         });
+    }
 
+    public function boot()
+    {
         // add migrations
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
     }
