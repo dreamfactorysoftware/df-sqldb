@@ -1118,28 +1118,16 @@ class Table extends BaseDbTableResource
                         $extras
                     );
                     if (empty($result)) {
+                        // bail, we know it isn't there
                         throw new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
                     }
 
                     $out = $result[0];
                 }
 
-                $rows = $builder->delete();
-                if (0 >= $rows) {
-                    if (empty($out)) {
-                        // could have just not updated anything, or could be bad id
-                        $result = $this->runQuery(
-                            $this->transactionTable,
-                            $fields,
-                            $builder,
-                            $extras
-                        );
-                        if (empty($result)) {
-                            throw new NotFoundException("Record with identifier '" .
-                                print_r($id, true) .
-                                "' not found.");
-                        }
-                    }
+                if (1 > $builder->delete()) {
+                    // wasn't anything there to delete
+                    throw new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
                 }
 
                 if (empty($out)) {
