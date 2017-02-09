@@ -1246,10 +1246,6 @@ class Table extends BaseDbTableResource
                         $parsed = $this->parseRecord($updates, $this->tableFieldsInfo, $ssFilters, true);
                         if (!empty($parsed)) {
                             $rows = $builder->update($parsed);
-                            if (0 >= $rows) {
-                                throw new NotFoundException('No records were found using the given identifiers.');
-                            }
-
                             if (count($this->batchIds) !== $rows) {
                                 throw new BadRequestException('Batch Error: Not all requested records could be updated.');
                             }
@@ -1274,9 +1270,6 @@ class Table extends BaseDbTableResource
                                 $builder,
                                 $extras
                             );
-                            if (empty($result)) {
-                                throw new NotFoundException('No records were found using the given identifiers.');
-                            }
 
                             $out = $result;
                         }
@@ -1284,36 +1277,35 @@ class Table extends BaseDbTableResource
                     break;
 
                 case Verbs::DELETE:
-                    if ($requireMore) {
-                        $fields = (empty($fields)) ? $idFields : $fields;
-                        $result = $this->runQuery(
-                            $this->transactionTable,
-                            $fields,
-                            $builder,
-                            $extras
-                        );
-                        if (count($this->batchIds) !== count($result)) {
-                            foreach ($this->batchIds as $index => $id) {
-                                $found = false;
-                                    foreach ($result as $record) {
-                                        if ($id == array_get($record, $idName->getName(true))) {
-                                            $out[$index] = $record;
-                                            $found = true;
-                                            break;
-                                        }
-                                    }
-                                if (!$found) {
-                                    $out[$index] = new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
+                    $fields = (empty($fields)) ? $idFields : $fields;
+                    $result = $this->runQuery(
+                        $this->transactionTable,
+                        $fields,
+                        $builder,
+                        $extras
+                    );
+                    if (count($this->batchIds) !== count($result)) {
+                        foreach ($this->batchIds as $index => $id) {
+                            $found = false;
+                            foreach ($result as $record) {
+                                if ($id == array_get($record, $idName->getName(true))) {
+                                    $out[$index] = $record;
+                                    $found = true;
+                                    break;
                                 }
                             }
-                        } else {
-                            $out = $result;
+                            if (!$found) {
+                                $out[$index] = new NotFoundException("Record with identifier '" . print_r($id,
+                                        true) . "' not found.");
+                            }
                         }
+                    } else {
+                        $out = $result;
                     }
 
                     $rows = $builder->delete();
                     if (count($this->batchIds) !== $rows) {
-                        throw new BatchException($out, 'Batch Error: Not all requested records were deleted.');
+                        throw new BatchException($out, 'Batch Error: Not all requested records could be deleted.');
                     }
                     break;
 
@@ -1337,11 +1329,12 @@ class Table extends BaseDbTableResource
                                 }
                             }
                             if (!$found) {
-                                $out[$index] = new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
+                                $out[$index] = new NotFoundException("Record with identifier '" . print_r($id,
+                                        true) . "' not found.");
                             }
                         }
 
-                        throw new BatchException($out, 'Batch Error: Not all records could be retrieved.');
+                        throw new BatchException($out, 'Batch Error: Not all requested records could be retrieved.');
                     }
 
                     $out = $result;
