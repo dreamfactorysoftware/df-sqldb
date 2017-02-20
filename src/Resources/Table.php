@@ -20,7 +20,6 @@ use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
 use DreamFactory\Core\Utility\DataFormatter;
-use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Scalar;
@@ -222,7 +221,7 @@ class Table extends BaseDbTableResource
         return true;
     }
 
-    protected function runQuery($table, $select, Builder $builder, $extras)
+    protected function runQuery($table, $fields, Builder $builder, $extras)
     {
         $schema = $this->getTableSchema(null, $table);
         if (!$schema) {
@@ -251,27 +250,29 @@ class Table extends BaseDbTableResource
             return $count;
         }
 
-        $related = array_get($extras, ApiOptions::RELATED);
+        $fields = static::fieldsToArray($fields);
         /** @type ColumnSchema[] $availableFields */
         $availableFields = $schema->getColumns(true);
         /** @type RelationSchema[] $availableRelations */
         $availableRelations = $schema->getRelations(true);
-        $result = $this->parseSelect($select, $availableFields);
-        $bindings = array_get($result, 'bindings');
-        $select = array_get($result, 'fields');
-        $select = (empty($select)) ? '*' : $select;
+        $related = array_get($extras, ApiOptions::RELATED);
+
         // see if we need to add anymore fields to select for related retrieval
-        if (('*' !== $select) && !empty($availableRelations) && (!empty($related) || $schema->fetchRequiresRelations)) {
-            foreach ($availableRelations as $relation) {
-                if (false === array_search($relation->field, $select)) {
-                    $select[] = $relation->field;
+        if (!empty($fields)) {
+            if (!empty($availableRelations) && (!empty($related) || $schema->fetchRequiresRelations)) {
+                foreach ($availableRelations as $relation) {
+                    if (false === array_search($relation->field, $fields)) {
+                        $fields[] = $relation->field;
+                    }
                 }
             }
         }
+        $select = $this->parseSelect($fields, $availableFields);
 
-        // apply the rest of the parameters
+        // apply the selected fields
         $builder->select($select);
 
+        // apply the rest of the parameters
         if (!empty($order)) {
             if (false !== strpos($order, ';')) {
                 throw new BadRequestException('Invalid order by clause in request.');
@@ -293,7 +294,8 @@ class Table extends BaseDbTableResource
             }
         }
         if (!empty($group)) {
-            if (false !== strpos($order, ';')) {
+            $group = static::fieldsToArray($group);
+            if (false !== strpos($group, ';')) {
                 throw new BadRequestException('Invalid group by clause in request.');
             }
             $groups = $this->parseGroupBy($group, $availableFields);
@@ -303,19 +305,27 @@ class Table extends BaseDbTableResource
         $builder->skip($offset);
 
         $result = $builder->get();
-        $data = [];
-        $row = 0;
-        foreach ($result as $record) {
-            $temp = (array)$record;
-            foreach ($bindings as $binding) {
-                $name = array_get($binding, 'name');
-                $type = array_get($binding, 'php_type');
-                if (isset($temp[$name])) {
-                    $temp[$name] = $this->schema->formatValue($temp[$name], $type);
+
+        $result->transform(function ($item) use ($availableFields) {
+            $item = (array)$item;
+            foreach ($item as $field => &$value) {
+                if (!is_null($value) && ($fieldInfo = array_get($availableFields, strtolower($field)))) {
+                    $value = $this->schema->formatValue($value, $fieldInfo->phpType);
                 }
             }
 
-            $data[$row++] = $temp;
+            return $item;
+        });
+
+        if (!empty($result)) {
+            if (!empty($related) || $schema->fetchRequiresRelations) {
+                if (!empty($availableRelations)) {
+                    // until this is refactored to collections
+                    $data = $result->toArray();
+                    $this->retrieveRelatedRecords($schema, $availableRelations, $related, $data);
+                    $result = collect($data);
+                }
+            }
         }
 
         $meta = [];
@@ -339,12 +349,7 @@ class Table extends BaseDbTableResource
             }
         }
 
-        if (!empty($data) && (!empty($related) || $schema->fetchRequiresRelations)) {
-            if (!empty($availableRelations)) {
-                $this->retrieveRelatedRecords($schema, $availableRelations, $related, $data);
-            }
-        }
-
+        $data = $result->toArray();
         if (!empty($meta)) {
             $data['meta'] = $meta;
         }
@@ -759,6 +764,83 @@ class Table extends BaseDbTableResource
         return $out;
     }
 
+    protected static function fieldsToArray($fields)
+    {
+        if (empty($fields) || (ApiOptions::FIELDS_ALL === $fields)) {
+            return [];
+        }
+
+        return (!is_array($fields)) ? array_map('trim', explode(',', trim($fields, ','))) : $fields;
+    }
+
+    /**
+     * @param  array          $fields
+     * @param  ColumnSchema[] $avail_fields
+     *
+     * @return array
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
+    protected function parseSelect(array $fields, $avail_fields)
+    {
+        $outArray = [];
+        if (empty($fields)) {
+            foreach ($avail_fields as $fieldInfo) {
+                if ($fieldInfo->isAggregate) {
+                    continue;
+                }
+                $outArray[] = $this->parseFieldForSelect($fieldInfo);
+            }
+        } else {
+            foreach ($fields as $field) {
+                $ndx = strtolower($field);
+                if (!isset($avail_fields[$ndx])) {
+                    throw new BadRequestException('Invalid field requested: ' . $field);
+                }
+
+                $fieldInfo = $avail_fields[$ndx];
+                $outArray[] = $this->parseFieldForSelect($fieldInfo);
+            }
+        }
+
+        return $outArray;
+    }
+
+    /**
+     * @param  array          $fields
+     * @param  ColumnSchema[] $avail_fields
+     *
+     * @return array
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
+    protected function parseBindings(array $fields, $avail_fields)
+    {
+        $bindArray = [];
+        if (empty($fields)) {
+            foreach ($avail_fields as $fieldInfo) {
+                if ($fieldInfo->isAggregate) {
+                    continue;
+                }
+                $bindArray[] = [
+                    'name'     => $fieldInfo->getName(true),
+                    'php_type' => $fieldInfo->phpType
+                ];
+            }
+        } else {
+            foreach ($fields as $field) {
+                if ($fieldInfo = array_get($avail_fields, strtolower($field))) {
+                    $bindArray[] = [
+                        'name'     => $fieldInfo->getName(true),
+                        'php_type' => $fieldInfo->phpType
+                    ];
+                }
+            }
+        }
+
+        return $bindArray;
+    }
+
     /**
      * @param  string|array   $fields
      * @param  ColumnSchema[] $avail_fields
@@ -767,12 +849,11 @@ class Table extends BaseDbTableResource
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
      * @throws \Exception
      */
-    protected function parseSelect($fields, $avail_fields)
+    protected function parseOrderBy(array $fields, $avail_fields)
     {
         $outArray = [];
         $bindArray = [];
-        if (!(empty($fields) || (ApiOptions::FIELDS_ALL === $fields))) {
-            $fields = (!is_array($fields)) ? array_map('trim', explode(',', trim($fields, ','))) : $fields;
+        if (!empty($fields)) {
             foreach ($fields as $field) {
                 $ndx = strtolower($field);
                 if (!isset($avail_fields[$ndx])) {
@@ -803,61 +884,17 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param  string|array   $fields
+     * @param  array          $fields
      * @param  ColumnSchema[] $avail_fields
      *
      * @return array
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
      * @throws \Exception
      */
-    protected function parseOrderBy($fields, $avail_fields)
-    {
-        $outArray = [];
-        $bindArray = [];
-        if (!(empty($fields) || (ApiOptions::FIELDS_ALL === $fields))) {
-            $fields = (!is_array($fields)) ? array_map('trim', explode(',', trim($fields, ','))) : $fields;
-            foreach ($fields as $field) {
-                $ndx = strtolower($field);
-                if (!isset($avail_fields[$ndx])) {
-                    throw new BadRequestException('Invalid field requested: ' . $field);
-                }
-
-                $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = [
-                    'name'     => $fieldInfo->getName(true),
-                    'php_type' => $fieldInfo->phpType
-                ];
-                $outArray[] = $this->parseFieldForSelect($fieldInfo);
-            }
-        } else {
-            foreach ($avail_fields as $fieldInfo) {
-                if ($fieldInfo->isAggregate) {
-                    continue;
-                }
-                $bindArray[] = [
-                    'name'     => $fieldInfo->getName(true),
-                    'php_type' => $fieldInfo->phpType
-                ];
-                $outArray[] = $this->parseFieldForSelect($fieldInfo);
-            }
-        }
-
-        return ['fields' => $outArray, 'bindings' => $bindArray];
-    }
-
-    /**
-     * @param  string|array   $fields
-     * @param  ColumnSchema[] $avail_fields
-     *
-     * @return array
-     * @throws \DreamFactory\Core\Exceptions\BadRequestException
-     * @throws \Exception
-     */
-    protected function parseGroupBy($fields, $avail_fields)
+    protected function parseGroupBy(array $fields, $avail_fields)
     {
         $outArray = [];
         if (!empty($fields)) {
-            $fields = (!is_array($fields)) ? array_map('trim', explode(',', trim($fields, ','))) : $fields;
             foreach ($fields as $field) {
                 $ndx = strtolower($field);
                 if (!isset($avail_fields[$ndx])) {

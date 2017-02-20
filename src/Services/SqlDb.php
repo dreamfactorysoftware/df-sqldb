@@ -19,40 +19,9 @@ use DbSchemaExtensions;
  */
 class SqlDb extends BaseDbService
 {
-    //*************************************************************************
-    //	Members
-    //*************************************************************************
-
     /**
-     * @var array
+     * {@inheritdoc}
      */
-    protected static $resources = [
-        Schema::RESOURCE_NAME          => [
-            'name'       => Schema::RESOURCE_NAME,
-            'class_name' => Schema::class,
-            'label'      => 'Schema',
-        ],
-        Table::RESOURCE_NAME           => [
-            'name'       => Table::RESOURCE_NAME,
-            'class_name' => Table::class,
-            'label'      => 'Tables',
-        ],
-        StoredProcedure::RESOURCE_NAME => [
-            'name'       => StoredProcedure::RESOURCE_NAME,
-            'class_name' => StoredProcedure::class,
-            'label'      => 'Stored Procedures',
-        ],
-        StoredFunction::RESOURCE_NAME  => [
-            'name'       => StoredFunction::RESOURCE_NAME,
-            'class_name' => StoredFunction::class,
-            'label'      => 'Stored Functions',
-        ],
-    ];
-
-    //*************************************************************************
-    //	Methods
-    //*************************************************************************
-
     public static function adaptConfig(array &$config)
     {
         if (!isset($config['charset'])) {
