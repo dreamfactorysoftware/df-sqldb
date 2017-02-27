@@ -9,6 +9,7 @@ use DreamFactory\Core\Database\Enums\DbFunctionUses;
 use DreamFactory\Core\Database\Resources\BaseDbTableResource;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\RelationSchema;
+use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\DbComparisonOperators;
 use DreamFactory\Core\Enums\DbLogicalOperators;
@@ -24,6 +25,7 @@ use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Scalar;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Collection;
 
 /**
  * Class Table
@@ -60,7 +62,6 @@ class Table extends BaseDbTableResource
 
         $idFields = array_get($extras, ApiOptions::ID_FIELD);
         $idTypes = array_get($extras, ApiOptions::ID_TYPE);
-        $fields = array_get($extras, ApiOptions::FIELDS);
         $related = array_get($extras, ApiOptions::RELATED);
         $allowRelatedDelete = Scalar::boolval(array_get($extras, ApiOptions::ALLOW_RELATED_DELETE));
         $ssFilters = array_get($extras, 'ss_filters');
@@ -73,7 +74,6 @@ class Table extends BaseDbTableResource
             $fieldsInfo = $tableSchema->getColumns(true);
             $idsInfo = $this->getIdsInfo($table, $fieldsInfo, $idFields, $idTypes);
             $relatedInfo = $tableSchema->getRelations(true);
-            $fields = (empty($fields)) ? $idFields : $fields;
             $parsed = $this->parseRecord($record, $fieldsInfo, $ssFilters, true);
 
             // build filter string if necessary, add server-side filters if necessary
@@ -84,7 +84,7 @@ class Table extends BaseDbTableResource
                 $builder->update($parsed);
             }
 
-            $results = $this->runQuery($table, $fields, $builder, $extras);
+            $results = $this->runQuery($table, $builder, $extras);
 
             if (!empty($relatedInfo)) {
                 // update related info
@@ -94,7 +94,7 @@ class Table extends BaseDbTableResource
                 }
                 // get latest with related changes if requested
                 if (!empty($related)) {
-                    $results = $this->runQuery($table, $fields, $builder, $extras);
+                    $results = $this->runQuery($table, $builder, $extras);
                 }
             }
 
@@ -158,7 +158,6 @@ class Table extends BaseDbTableResource
 
         $idFields = array_get($extras, ApiOptions::ID_FIELD);
         $idTypes = array_get($extras, ApiOptions::ID_TYPE);
-        $fields = array_get($extras, ApiOptions::FIELDS);
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
@@ -168,13 +167,12 @@ class Table extends BaseDbTableResource
             $fieldsInfo = $tableSchema->getColumns(true);
             /*$idsInfo = */
             $this->getIdsInfo($table, $fieldsInfo, $idFields, $idTypes);
-            $fields = (empty($fields)) ? $idFields : $fields;
 
             // build filter string if necessary, add server-side filters if necessary
             $builder = $this->dbConn->table($tableSchema->internalName);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
-            $results = $this->runQuery($table, $fields, $builder, $extras);
+            $results = $this->runQuery($table, $builder, $extras);
 
             $builder->delete();
 
@@ -191,7 +189,6 @@ class Table extends BaseDbTableResource
      */
     public function retrieveRecordsByFilter($table, $filter = null, $params = [], $extras = [])
     {
-        $fields = array_get($extras, ApiOptions::FIELDS);
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
@@ -206,7 +203,7 @@ class Table extends BaseDbTableResource
             $builder = $this->dbConn->table($tableSchema->internalName);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
-            return $this->runQuery($table, $fields, $builder, $extras);
+            return $this->runQuery($table, $builder, $extras);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
@@ -221,15 +218,23 @@ class Table extends BaseDbTableResource
         return true;
     }
 
-    protected function runQuery($table, $fields, Builder $builder, $extras)
+    /**
+     * @param              $table
+     * @param Builder      $builder
+     * @param array        $extras
+     * @return int|array
+     * @throws BadRequestException
+     * @throws InternalServerErrorException
+     * @throws NotFoundException
+     * @throws RestException
+     */
+    protected function runQuery($table, Builder $builder, $extras)
     {
         $schema = $this->getTableSchema(null, $table);
         if (!$schema) {
             throw new NotFoundException("Table '$table' does not exist in the database.");
         }
 
-        $order = trim(array_get($extras, ApiOptions::ORDER));
-        $group = trim(array_get($extras, ApiOptions::GROUP));
         $limit = intval(array_get($extras, ApiOptions::LIMIT, 0));
         $offset = intval(array_get($extras, ApiOptions::OFFSET, 0));
         $countOnly = Scalar::boolval(array_get($extras, ApiOptions::COUNT_ONLY));
@@ -250,29 +255,12 @@ class Table extends BaseDbTableResource
             return $count;
         }
 
-        $fields = static::fieldsToArray($fields);
-        /** @type ColumnSchema[] $availableFields */
-        $availableFields = $schema->getColumns(true);
-        /** @type RelationSchema[] $availableRelations */
-        $availableRelations = $schema->getRelations(true);
-        $related = array_get($extras, ApiOptions::RELATED);
-
-        // see if we need to add anymore fields to select for related retrieval
-        if (!empty($fields)) {
-            if (!empty($availableRelations) && (!empty($related) || $schema->fetchRequiresRelations)) {
-                foreach ($availableRelations as $relation) {
-                    if (false === array_search($relation->field, $fields)) {
-                        $fields[] = $relation->field;
-                    }
-                }
-            }
-        }
-        $select = $this->parseSelect($fields, $availableFields);
-
         // apply the selected fields
+        $select = $this->parseSelect($schema, $extras);
         $builder->select($select);
 
         // apply the rest of the parameters
+        $order = trim(array_get($extras, ApiOptions::ORDER));
         if (!empty($order)) {
             if (false !== strpos($order, ';')) {
                 throw new BadRequestException('Invalid order by clause in request.');
@@ -293,32 +281,26 @@ class Table extends BaseDbTableResource
                     break;
             }
         }
+        $group = trim(array_get($extras, ApiOptions::GROUP));
         if (!empty($group)) {
             $group = static::fieldsToArray($group);
             if (false !== strpos($group, ';')) {
                 throw new BadRequestException('Invalid group by clause in request.');
             }
-            $groups = $this->parseGroupBy($group, $availableFields);
+            $groups = $this->parseGroupBy($schema, $group);
             $builder->groupBy($groups);
         }
         $builder->take($limit);
         $builder->skip($offset);
 
-        $result = $builder->get();
-
-        $result->transform(function ($item) use ($availableFields) {
-            $item = (array)$item;
-            foreach ($item as $field => &$value) {
-                if (!is_null($value) && ($fieldInfo = array_get($availableFields, strtolower($field)))) {
-                    $value = $this->schema->formatValue($value, $fieldInfo->phpType);
-                }
-            }
-
-            return $item;
-        });
+        $result = $this->getQueryResults($schema, $builder, $extras);
 
         if (!empty($result)) {
+            $related = array_get($extras, ApiOptions::RELATED);
             if (!empty($related) || $schema->fetchRequiresRelations) {
+                $related = static::fieldsToArray($related);
+                /** @type RelationSchema[] $availableRelations */
+                $availableRelations = $schema->getRelations(true);
                 if (!empty($availableRelations)) {
                     // until this is refactored to collections
                     $data = $result->toArray();
@@ -355,6 +337,30 @@ class Table extends BaseDbTableResource
         }
 
         return $data;
+    }
+
+    /**
+     * @param TableSchema $schema
+     * @param Builder     $builder
+     * @param array       $extras
+     * @return Collection
+     */
+    protected function getQueryResults(TableSchema $schema, Builder $builder, $extras)
+    {
+        $result = $builder->get();
+
+        $result->transform(function ($item) use ($schema) {
+            $item = (array)$item;
+            foreach ($item as $field => &$value) {
+                if (!is_null($value) && ($fieldInfo = $schema->getColumn($field, true))) {
+                    $value = $this->schema->formatValue($value, $fieldInfo->phpType);
+                }
+            }
+
+            return $item;
+        });
+
+        return $result;
     }
 
     /**
@@ -748,7 +754,7 @@ class Table extends BaseDbTableResource
     /**
      * @param ColumnSchema $field
      *
-     * @return \Illuminate\Database\Query\Expression|string
+     * @return \Illuminate\Database\Query\Expression|string|array
      */
     protected function parseFieldForSelect($field)
     {
@@ -774,32 +780,65 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param  array          $fields
-     * @param  ColumnSchema[] $avail_fields
+     * @param  TableSchema $schema
+     * @param  array|null  $extras
      *
      * @return array
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
      * @throws \Exception
      */
-    protected function parseSelect(array $fields, $avail_fields)
+    protected function parseSelect($schema, $extras)
     {
+        $idFields = array_get($extras, ApiOptions::ID_FIELD);
+        if (empty($idFields)) {
+            $idFields = $schema->primaryKey;
+        }
+        $idFields = static::fieldsToArray($idFields);
+        $fields = array_get($extras, ApiOptions::FIELDS);
+        if (empty($fields)) {
+            $fields = $idFields;
+        }
+        $fields = static::fieldsToArray($fields);
         $outArray = [];
         if (empty($fields)) {
-            foreach ($avail_fields as $fieldInfo) {
+            foreach ($schema->getColumns() as $fieldInfo) {
                 if ($fieldInfo->isAggregate) {
                     continue;
                 }
-                $outArray[] = $this->parseFieldForSelect($fieldInfo);
+                $out = $this->parseFieldForSelect($fieldInfo);
+                if (is_array($out)) {
+                    $outArray = array_merge($outArray, $out);
+                } else {
+                    $outArray[] = $out;
+                }
             }
         } else {
+            $related = array_get($extras, ApiOptions::RELATED);
+            $related = static::fieldsToArray($related);
+            if (!empty($related) || $schema->fetchRequiresRelations) {
+                // add any required relationship mapping fields
+                foreach ($schema->getRelations() as $relation) {
+                    if ($relation->alwaysFetch || in_array($relation->getName(true), $related)) {
+                        if ($fieldInfo = $schema->getColumn($relation->field)) {
+                            $relationField = $fieldInfo->getName(true); // account for aliasing
+                            if (false === array_search($relationField, $fields)) {
+                                $fields[] = $relationField;
+                            }
+                        }
+                    }
+                }
+            }
             foreach ($fields as $field) {
-                $ndx = strtolower($field);
-                if (!isset($avail_fields[$ndx])) {
+                if ($fieldInfo = $schema->getColumn($field, true)) {
+                    $out = $this->parseFieldForSelect($fieldInfo);
+                    if (is_array($out)) {
+                        $outArray = array_merge($outArray, $out);
+                    } else {
+                        $outArray[] = $out;
+                    }
+                } else {
                     throw new BadRequestException('Invalid field requested: ' . $field);
                 }
-
-                $fieldInfo = $avail_fields[$ndx];
-                $outArray[] = $this->parseFieldForSelect($fieldInfo);
             }
         }
 
@@ -865,7 +904,12 @@ class Table extends BaseDbTableResource
                     'name'     => $fieldInfo->getName(true),
                     'php_type' => $fieldInfo->phpType
                 ];
-                $outArray[] = $this->parseFieldForSelect($fieldInfo);
+                $out = $this->parseFieldForSelect($fieldInfo);
+                if (is_array($out)) {
+                    $outArray = array_merge($outArray, $out);
+                } else {
+                    $outArray[] = $out;
+                }
             }
         } else {
             foreach ($avail_fields as $fieldInfo) {
@@ -876,7 +920,12 @@ class Table extends BaseDbTableResource
                     'name'     => $fieldInfo->getName(true),
                     'php_type' => $fieldInfo->phpType
                 ];
-                $outArray[] = $this->parseFieldForSelect($fieldInfo);
+                $out = $this->parseFieldForSelect($fieldInfo);
+                if (is_array($out)) {
+                    $outArray = array_merge($outArray, $out);
+                } else {
+                    $outArray[] = $out;
+                }
             }
         }
 
@@ -884,24 +933,22 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * @param  array          $fields
-     * @param  ColumnSchema[] $avail_fields
+     * @param  TableSchema $schema
+     * @param  array       $fields
      *
      * @return array
      * @throws \DreamFactory\Core\Exceptions\BadRequestException
      * @throws \Exception
      */
-    protected function parseGroupBy(array $fields, $avail_fields)
+    protected function parseGroupBy($schema, $fields = null)
     {
         $outArray = [];
         if (!empty($fields)) {
             foreach ($fields as $field) {
-                $ndx = strtolower($field);
-                if (!isset($avail_fields[$ndx])) {
-                    $outArray[] = DB::raw($field);
-                } else {
-                    $fieldInfo = $avail_fields[$ndx];
+                if ($fieldInfo = $schema->getColumn($field, true)) {
                     $outArray[] = $fieldInfo->name;
+                } else {
+                    $outArray[] = DB::raw($field); // todo better checks on group by clause
                 }
             }
         }
@@ -1016,9 +1063,6 @@ class Table extends BaseDbTableResource
             }
         }
 
-        $fields = array_get($extras, ApiOptions::FIELDS);
-        $fields = (empty($fields)) ? $idFields : $fields;
-
         $serverFilter = $this->buildQueryStringFromData($ssFilters);
         if (!empty($serverFilter)) {
             Session::replaceLookups($serverFilter);
@@ -1101,7 +1145,6 @@ class Table extends BaseDbTableResource
                         // could have just not updated anything, or could be bad id
                         $result = $this->runQuery(
                             $this->transactionTable,
-                            $fields,
                             $builder,
                             $extras
                         );
@@ -1150,7 +1193,6 @@ class Table extends BaseDbTableResource
                 if ($requireMore) {
                     $result = $this->runQuery(
                         $this->transactionTable,
-                        $fields,
                         $builder,
                         $extras
                     );
@@ -1180,7 +1222,7 @@ class Table extends BaseDbTableResource
                     return parent::addToTransaction(null, $id);
                 }
 
-                $result = $this->runQuery($this->transactionTable, $fields, $builder, $extras);
+                $result = $this->runQuery($this->transactionTable, $builder, $extras);
                 if (empty($result)) {
                     throw new NotFoundException("Record with identifier '" . print_r($id, true) . "' not found.");
                 }
@@ -1207,8 +1249,6 @@ class Table extends BaseDbTableResource
 
         $updates = array_get($extras, 'updates');
         $ssFilters = array_get($extras, 'ss_filters');
-        $fields = array_get($extras, ApiOptions::FIELDS);
-        $idFields = array_get($extras, 'id_fields');
         $related = array_get($extras, 'related');
         $requireMore = Scalar::boolval(array_get($extras, 'require_more')) || !empty($related);
         $allowRelatedDelete = Scalar::boolval(array_get($extras, 'allow_related_delete'));
@@ -1251,8 +1291,7 @@ class Table extends BaseDbTableResource
             if (1 == count($this->tableIdsInfo)) {
                 // records are used to retrieve extras
                 // ids array are now more like records
-                $fields = (empty($fields)) ? $idFields : $fields;
-                $result = $this->runQuery($this->transactionTable, $fields, $builder, $extras);
+                $result = $this->runQuery($this->transactionTable, $builder, $extras);
                 if (empty($result)) {
                     throw new NotFoundException('No records were found using the given identifiers.');
                 }
@@ -1288,10 +1327,8 @@ class Table extends BaseDbTableResource
                         }
 
                         if ($requireMore) {
-                            $fields = (empty($fields)) ? $idFields : $fields;
                             $result = $this->runQuery(
                                 $this->transactionTable,
-                                $fields,
                                 $builder,
                                 $extras
                             );
@@ -1302,10 +1339,8 @@ class Table extends BaseDbTableResource
                     break;
 
                 case Verbs::DELETE:
-                    $fields = (empty($fields)) ? $idFields : $fields;
                     $result = $this->runQuery(
                         $this->transactionTable,
-                        $fields,
                         $builder,
                         $extras
                     );
@@ -1335,10 +1370,8 @@ class Table extends BaseDbTableResource
                     break;
 
                 case Verbs::GET:
-                    $fields = (empty($fields)) ? $idFields : $fields;
                     $result = $this->runQuery(
                         $this->transactionTable,
-                        $fields,
                         $builder,
                         $extras
                     );
