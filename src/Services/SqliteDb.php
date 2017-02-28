@@ -2,6 +2,9 @@
 
 namespace DreamFactory\Core\SqlDb\Services;
 
+use DreamFactory\Core\SqlDb\Resources\Schema;
+use DreamFactory\Core\SqlDb\Resources\Table;
+
 /**
  * Class SqliteDb
  *
@@ -9,6 +12,26 @@ namespace DreamFactory\Core\SqlDb\Services;
  */
 class SqliteDb extends SqlDb
 {
+    //*************************************************************************
+    //	Members
+    //*************************************************************************
+
+    /**
+     * @var array
+     */
+    protected static $resources = [
+        Schema::RESOURCE_NAME          => [
+            'name'       => Schema::RESOURCE_NAME,
+            'class_name' => Schema::class,
+            'label'      => 'Schema',
+        ],
+        Table::RESOURCE_NAME           => [
+            'name'       => Table::RESOURCE_NAME,
+            'class_name' => Table::class,
+            'label'      => 'Tables',
+        ],
+    ];
+
     //*************************************************************************
     //	Methods
     //*************************************************************************
