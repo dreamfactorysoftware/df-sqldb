@@ -285,7 +285,7 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         } catch (\Exception $ex) {
             $this->assertInstanceOf('\DreamFactory\Core\Exceptions\BadRequestException', $ex);
             $this->assertEquals(400, $ex->getCode());
-            $this->assertContains('Batch Error: Not all records could be created.', $ex->getMessage());
+            $this->assertContains('Batch Error: Not all requested records could be created.', $ex->getMessage());
 //            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
         }
     }
@@ -522,7 +522,7 @@ class SqlDbTest extends \DreamFactory\Core\Testing\DbServiceTestCase
         } catch (\Exception $ex) {
             $this->assertInstanceOf('\DreamFactory\Core\Exceptions\BadRequestException', $ex);
             $this->assertEquals(400, $ex->getCode());
-            $this->assertContains('Batch Error: Not all records could be patched.', $ex->getMessage());
+            $this->assertContains('Batch Error: Not all requested records could be updated.', $ex->getMessage());
 //            $this->assertContains( "Duplicate entry 'test5'", $ex->getMessage() );
         }
 //        $this->assertContains( '{"error":{"context":{"errors":[1],"record":[{"id":1},', $rs->getContent() );

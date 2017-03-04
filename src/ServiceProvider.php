@@ -91,4 +91,10 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
             $df->addMapping('sql_db_config', SqlDbConfig::class);
         });
     }
+
+    public function boot()
+    {
+        // add migrations
+        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+    }
 }

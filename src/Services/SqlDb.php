@@ -53,6 +53,9 @@ class SqlDb extends BaseDbService
     //	Methods
     //*************************************************************************
 
+    /**
+     * {@inheritdoc}
+     */
     public static function adaptConfig(array &$config)
     {
         if (!isset($config['charset'])) {
