@@ -1095,7 +1095,16 @@ class Table extends BaseDbTableResource
                     throw new BadRequestException('No valid fields were found in record.');
                 }
 
-                if (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
+                if (!empty($id) && Scalar::boolval(array_get($extras, ApiOptions::UPSERT, false))) {
+                    if (is_array($id)) {
+                        $match = $id;
+                    } else {
+                        $match[array_get($idFields, 0)] = $id;
+                    }
+                    if (!$builder->updateOrInsert($match, $parsed)) {
+                        throw new InternalServerErrorException("Record upsert failed.");
+                    }
+                } elseif (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
                     $idName = $this->tableIdsInfo[0]->name;
                     $id[$idName] = $builder->insertGetId($parsed, $idName);
                     $record[$idName] = $id[$idName];
