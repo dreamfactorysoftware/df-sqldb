@@ -249,7 +249,10 @@ class Table extends BaseDbTableResource
         }
 
         // count total records
-        $count = ($countOnly || $includeCount || $needLimit) ? $builder->count() : 0;
+        $count = 0;
+        if ($countOnly || $includeCount || $needLimit) {
+            $count = $builder->count([DB::raw('1')]);
+        }
 
         if ($countOnly) {
             return $count;
