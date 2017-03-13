@@ -1095,7 +1095,8 @@ class Table extends BaseDbTableResource
 
                 if (!empty($match) && Scalar::boolval(array_get($extras, ApiOptions::UPSERT, false))) {
                     if (!$builder->updateOrInsert($match, $parsed)) {
-                        throw new InternalServerErrorException("Record upsert failed.");
+                        // this may return false if there is no change while updating a record
+//                        throw new InternalServerErrorException("Record upsert failed.");
                     }
                 } elseif (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
                     $idName = $this->tableIdsInfo[0]->name;
@@ -1141,7 +1142,8 @@ class Table extends BaseDbTableResource
                 if (!empty($parsed)) {
                     if (!empty($match) && Scalar::boolval(array_get($extras, ApiOptions::UPSERT, false))) {
                         if (!$builder->updateOrInsert($match, $parsed)) {
-                            throw new InternalServerErrorException("Record upsert failed.");
+                            // this may return false if there is no change while updating a record
+//                            throw new InternalServerErrorException("Record upsert failed.");
                         }
                     } else {
                         $rows = $builder->update($parsed);
