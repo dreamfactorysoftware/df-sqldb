@@ -1051,17 +1051,19 @@ class Table extends BaseDbTableResource
 
         $related = array_get($extras, 'related');
         $requireMore = Scalar::boolval(array_get($extras, 'require_more')) || !empty($related);
-        $allowRelatedDelete = Scalar::boolval(array_get($extras, 'allow_related_delete'));
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
         $builder = $this->dbConn->table($this->transactionTableSchema->internalName);
+        $match = [];
         if (!empty($id)) {
             if (is_array($id)) {
+                $match = $id;
                 foreach ($idFields as $name) {
                     $builder->where($name, array_get($id, $name));
                 }
             } else {
                 $name = array_get($idFields, 0);
+                $match[$name] = $id;
                 $builder->where($name, $id);
             }
         }
@@ -1078,12 +1080,8 @@ class Table extends BaseDbTableResource
         switch ($this->getAction()) {
             case Verbs::POST:
                 // need the id back in the record
-                if (!empty($id)) {
-                    if (is_array($id)) {
-                        $record = array_merge($record, $id);
-                    } else {
-                        $record[array_get($idFields, 0)] = $id;
-                    }
+                if (!empty($match)) {
+                    $record = array_merge($record, $match);
                 }
 
                 if (!empty($relatedInfo)) {
@@ -1095,12 +1093,7 @@ class Table extends BaseDbTableResource
                     throw new BadRequestException('No valid fields were found in record.');
                 }
 
-                if (!empty($id) && Scalar::boolval(array_get($extras, ApiOptions::UPSERT, false))) {
-                    if (is_array($id)) {
-                        $match = $id;
-                    } else {
-                        $match[array_get($idFields, 0)] = $id;
-                    }
+                if (!empty($match) && Scalar::boolval(array_get($extras, ApiOptions::UPSERT, false))) {
                     if (!$builder->updateOrInsert($match, $parsed)) {
                         throw new InternalServerErrorException("Record upsert failed.");
                     }
@@ -1119,7 +1112,7 @@ class Table extends BaseDbTableResource
                         $this->transactionTable,
                         $record,
                         $relatedInfo,
-                        $allowRelatedDelete
+                        Scalar::boolval(array_get($extras, 'allow_related_delete'))
                     );
                 }
 
@@ -1143,45 +1136,41 @@ class Table extends BaseDbTableResource
                 if (!empty($relatedInfo)) {
                     $this->updatePreRelations($record, $relatedInfo);
                 }
+
                 $parsed = $this->parseRecord($record, $this->tableFieldsInfo, $ssFilters, true);
-
-                // only update by ids can use batching, too complicated with ssFilters and related update
-//                if ( !$needToIterate && !empty( $updates ) )
-//                {
-//                    return parent::addToTransaction( null, $id );
-//                }
-
                 if (!empty($parsed)) {
-                    $rows = $builder->update($parsed);
-                    if (0 >= $rows) {
-                        // could have just not updated anything, or could be bad id
-                        $result = $this->runQuery(
-                            $this->transactionTable,
-                            $builder,
-                            $extras
-                        );
-                        if (empty($result)) {
-                            throw new NotFoundException("Record with identifier '" .
-                                print_r($id, true) .
-                                "' not found.");
+                    if (!empty($match) && Scalar::boolval(array_get($extras, ApiOptions::UPSERT, false))) {
+                        if (!$builder->updateOrInsert($match, $parsed)) {
+                            throw new InternalServerErrorException("Record upsert failed.");
+                        }
+                    } else {
+                        $rows = $builder->update($parsed);
+                        if (0 >= $rows) {
+                            // could have just not updated anything, or could be bad id
+                            $result = $this->runQuery(
+                                $this->transactionTable,
+                                $builder,
+                                $extras
+                            );
+                            if (empty($result)) {
+                                throw new NotFoundException("Record with identifier '" .
+                                    print_r($id, true) .
+                                    "' not found.");
+                            }
                         }
                     }
                 }
 
                 if (!empty($relatedInfo)) {
                     // need the id back in the record
-                    if (!empty($id)) {
-                        if (is_array($id)) {
-                            $record = array_merge($record, $id);
-                        } else {
-                            $record[array_get($idFields, 0)] = $id;
-                        }
+                    if (!empty($match)) {
+                        $record = array_merge($record, $match);
                     }
                     $this->updatePostRelations(
                         $this->transactionTable,
                         $record,
                         $relatedInfo,
-                        $allowRelatedDelete
+                        Scalar::boolval(array_get($extras, 'allow_related_delete'))
                     );
                 }
 
