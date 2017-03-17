@@ -301,7 +301,7 @@ class Table extends BaseDbTableResource
         if (!empty($result)) {
             $related = array_get($extras, ApiOptions::RELATED);
             if (!empty($related) || $schema->fetchRequiresRelations) {
-                $related = static::fieldsToArray($related);
+                $related = ('*' === $related) ? '*' : static::fieldsToArray($related);
                 /** @type RelationSchema[] $availableRelations */
                 $availableRelations = $schema->getRelations(true);
                 if (!empty($availableRelations)) {
