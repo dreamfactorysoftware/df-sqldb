@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 - Use new service config handling for database configuration
 ### Fixed
 
+## [0.8.2] - 2017-03-29
+### Fixed
+- Broken usage of group "GROUP BY" option
+
 ## [0.8.1] - 2017-03-20
 ### Fixed
 - Using '*' for related parameter getting overwritten
@@ -132,7 +136,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.8.1...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.8.2...HEAD
+[0.8.2]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.8.1...0.8.2
 [0.8.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.8.0...0.8.1
 [0.8.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.7.1...0.8.0
 [0.7.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.7.0...0.7.1

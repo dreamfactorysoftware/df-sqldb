@@ -287,9 +287,6 @@ class Table extends BaseDbTableResource
         $group = trim(array_get($extras, ApiOptions::GROUP));
         if (!empty($group)) {
             $group = static::fieldsToArray($group);
-            if (false !== strpos($group, ';')) {
-                throw new BadRequestException('Invalid group by clause in request.');
-            }
             $groups = $this->parseGroupBy($schema, $group);
             $builder->groupBy($groups);
         }
@@ -951,6 +948,9 @@ class Table extends BaseDbTableResource
                 if ($fieldInfo = $schema->getColumn($field, true)) {
                     $outArray[] = $fieldInfo->name;
                 } else {
+                    if (false !== strpos($field, ';')) {
+                        throw new BadRequestException('Invalid group by clause in request.');
+                    }
                     $outArray[] = DB::raw($field); // todo better checks on group by clause
                 }
             }
