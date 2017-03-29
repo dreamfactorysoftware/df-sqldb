@@ -1051,6 +1051,7 @@ class Table extends BaseDbTableResource
 
         $related = array_get($extras, 'related');
         $requireMore = Scalar::boolval(array_get($extras, 'require_more')) || !empty($related);
+        $allowRelatedDelete = Scalar::boolval(array_get($extras, 'allow_related_delete'));
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
         $builder = $this->dbConn->table($this->transactionTableSchema->internalName);
@@ -1093,12 +1094,7 @@ class Table extends BaseDbTableResource
                     throw new BadRequestException('No valid fields were found in record.');
                 }
 
-                if (!empty($match) && Scalar::boolval(array_get($extras, ApiOptions::UPSERT, false))) {
-                    if (!$builder->updateOrInsert($match, $parsed)) {
-                        // this may return false if there is no change while updating a record
-//                        throw new InternalServerErrorException("Record upsert failed.");
-                    }
-                } elseif (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
+                if (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
                     $idName = $this->tableIdsInfo[0]->name;
                     $id[$idName] = $builder->insertGetId($parsed, $idName);
                     $record[$idName] = $id[$idName];
@@ -1113,7 +1109,7 @@ class Table extends BaseDbTableResource
                         $this->transactionTable,
                         $record,
                         $relatedInfo,
-                        Scalar::boolval(array_get($extras, 'allow_related_delete'))
+                        $allowRelatedDelete
                     );
                 }
 
@@ -1140,21 +1136,15 @@ class Table extends BaseDbTableResource
 
                 $parsed = $this->parseRecord($record, $this->tableFieldsInfo, $ssFilters, true);
                 if (!empty($parsed)) {
-                    if (!empty($match) && Scalar::boolval(array_get($extras, ApiOptions::UPSERT, false))) {
-                        if (!$builder->updateOrInsert($match, $parsed)) {
-                            // this may return false if there is no change while updating a record
-//                            throw new InternalServerErrorException("Record upsert failed.");
+                    if (!empty($match) && $this->parent->upsertAllowed() && !$builder->exists()) {
+                        if ($builder->insert(array_merge($match, $parsed))) {
+                            throw new InternalServerErrorException("Record upsert failed.");
                         }
                     } else {
                         $rows = $builder->update($parsed);
                         if (0 >= $rows) {
                             // could have just not updated anything, or could be bad id
-                            $result = $this->runQuery(
-                                $this->transactionTable,
-                                $builder,
-                                $extras
-                            );
-                            if (empty($result)) {
+                            if (empty($this->runQuery($this->transactionTable, $builder, $extras))) {
                                 throw new NotFoundException("Record with identifier '" .
                                     print_r($id, true) .
                                     "' not found.");
@@ -1172,7 +1162,7 @@ class Table extends BaseDbTableResource
                         $this->transactionTable,
                         $record,
                         $relatedInfo,
-                        Scalar::boolval(array_get($extras, 'allow_related_delete'))
+                        $allowRelatedDelete
                     );
                 }
 

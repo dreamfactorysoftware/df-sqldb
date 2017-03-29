@@ -6,6 +6,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Added
 - DF-811 Add support for upsert
 ### Changed
+- Use new service config handling for database configuration
 ### Fixed
 
 ## [0.8.1] - 2017-03-20

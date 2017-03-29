@@ -9,13 +9,6 @@ use DreamFactory\Core\Exceptions\BadRequestException;
  */
 class SqliteDbConfig extends BaseSqlDbConfig
 {
-    protected $appends = ['database'];
-
-    protected function getConnectionFields()
-    {
-        return ['database'];
-    }
-
     public static function getDriverName()
     {
         return 'sqlite';
@@ -26,19 +19,18 @@ class SqliteDbConfig extends BaseSqlDbConfig
         return null;
     }
 
-    public static function getDefaultConnectionInfo()
+    public static function getSchema()
     {
-        $defaults = [
+        $extras = [
             [
                 'name'        => 'database',
                 'label'       => 'Database',
                 'type'        => 'string',
-                'description' =>
-                    'The name or path of the database to connect to. This can be a lookup key.'
+                'description' => 'The name or path of the database to connect to. This can be a lookup key.'
             ],
         ];
 
-        return $defaults;
+        return array_merge($extras, parent::getSchema());
     }
 
     public static function validateConfig($config, $create = true)
