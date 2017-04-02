@@ -1,14 +1,21 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Models;
 
-use DreamFactory\Core\Exceptions\BadRequestException;
-
 /**
  * SqliteDbConfig
  *
  */
 class SqliteDbConfig extends BaseSqlDbConfig
 {
+    protected $appends = ['database'];
+
+    protected $rules = ['database' => 'required'];
+
+    protected function getConnectionFields()
+    {
+        return ['database'];
+    }
+
     public static function getDriverName()
     {
         return 'sqlite';
@@ -19,9 +26,9 @@ class SqliteDbConfig extends BaseSqlDbConfig
         return null;
     }
 
-    public static function getSchema()
+    public static function getDefaultConnectionInfo()
     {
-        $extras = [
+        $defaults = [
             [
                 'name'        => 'database',
                 'label'       => 'Database',
@@ -30,15 +37,6 @@ class SqliteDbConfig extends BaseSqlDbConfig
             ],
         ];
 
-        return array_merge($extras, parent::getSchema());
-    }
-
-    public static function validateConfig($config, $create = true)
-    {
-        if (empty($db = array_get($config, 'database'))) {
-            throw new BadRequestException('Database name must be provided.');
-        }
-
-        return true;
+        return $defaults;
     }
 }
