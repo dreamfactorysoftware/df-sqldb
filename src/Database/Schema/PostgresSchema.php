@@ -602,18 +602,20 @@ EOD;
         return parent::parseValueForSet($value, $field_info);
     }
 
-    public function formatValue($value, $type)
+    protected function formatValueToPhpType($value, $type)
     {
-        switch (strtolower(strval($type))) {
-            case 'int':
-            case 'integer':
+        if (!is_null($value)) {
+            switch (strtolower(strval($type))) {
+                case 'int':
+                case 'integer':
                 if ('' === $value) {
                     // Postgresql strangely returns "" for null integers
                     return null;
                 }
+            }
         }
 
-        return parent::formatValue($value, $type);
+        return parent::formatValueToPhpType($value, $type);
     }
 
     /**

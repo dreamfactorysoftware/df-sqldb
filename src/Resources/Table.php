@@ -353,7 +353,7 @@ class Table extends BaseDbTableResource
             $item = (array)$item;
             foreach ($item as $field => &$value) {
                 if (!is_null($value) && ($fieldInfo = $schema->getColumn($field, true))) {
-                    $value = $this->schema->formatValue($value, $fieldInfo->phpType);
+                    $value = $this->schema->formatValue($value, $fieldInfo);
                 }
             }
 
@@ -655,19 +655,19 @@ class Table extends BaseDbTableResource
 
             // special checks
             case DbSimpleTypes::TYPE_DATE:
-                $cfgFormat = Config::get('df.db_date_format');
+                $cfgFormat = Config::get('df.db.date_format');
                 $outFormat = 'Y-m-d';
                 $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
                 break;
 
             case DbSimpleTypes::TYPE_TIME:
-                $cfgFormat = Config::get('df.db_time_format');
+                $cfgFormat = Config::get('df.db.time_format');
                 $outFormat = 'H:i:s.u';
                 $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
                 break;
 
             case DbSimpleTypes::TYPE_DATETIME:
-                $cfgFormat = Config::get('df.db_datetime_format');
+                $cfgFormat = Config::get('df.db.datetime_format');
                 $outFormat = 'Y-m-d H:i:s';
                 $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
                 break;
@@ -675,7 +675,7 @@ class Table extends BaseDbTableResource
             case DbSimpleTypes::TYPE_TIMESTAMP:
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
-                $cfgFormat = Config::get('df.db_timestamp_format');
+                $cfgFormat = Config::get('df.db.timestamp_format');
                 $outFormat = 'Y-m-d H:i:s';
                 $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
                 break;
@@ -843,93 +843,6 @@ class Table extends BaseDbTableResource
         }
 
         return $outArray;
-    }
-
-    /**
-     * @param  array          $fields
-     * @param  ColumnSchema[] $avail_fields
-     *
-     * @return array
-     * @throws \DreamFactory\Core\Exceptions\BadRequestException
-     * @throws \Exception
-     */
-    protected function parseBindings(array $fields, $avail_fields)
-    {
-        $bindArray = [];
-        if (empty($fields)) {
-            foreach ($avail_fields as $fieldInfo) {
-                if ($fieldInfo->isAggregate) {
-                    continue;
-                }
-                $bindArray[] = [
-                    'name'     => $fieldInfo->getName(true),
-                    'php_type' => $fieldInfo->phpType
-                ];
-            }
-        } else {
-            foreach ($fields as $field) {
-                if ($fieldInfo = array_get($avail_fields, strtolower($field))) {
-                    $bindArray[] = [
-                        'name'     => $fieldInfo->getName(true),
-                        'php_type' => $fieldInfo->phpType
-                    ];
-                }
-            }
-        }
-
-        return $bindArray;
-    }
-
-    /**
-     * @param  string|array   $fields
-     * @param  ColumnSchema[] $avail_fields
-     *
-     * @return array
-     * @throws \DreamFactory\Core\Exceptions\BadRequestException
-     * @throws \Exception
-     */
-    protected function parseOrderBy(array $fields, $avail_fields)
-    {
-        $outArray = [];
-        $bindArray = [];
-        if (!empty($fields)) {
-            foreach ($fields as $field) {
-                $ndx = strtolower($field);
-                if (!isset($avail_fields[$ndx])) {
-                    throw new BadRequestException('Invalid field requested: ' . $field);
-                }
-
-                $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = [
-                    'name'     => $fieldInfo->getName(true),
-                    'php_type' => $fieldInfo->phpType
-                ];
-                $out = $this->parseFieldForSelect($fieldInfo);
-                if (is_array($out)) {
-                    $outArray = array_merge($outArray, $out);
-                } else {
-                    $outArray[] = $out;
-                }
-            }
-        } else {
-            foreach ($avail_fields as $fieldInfo) {
-                if ($fieldInfo->isAggregate) {
-                    continue;
-                }
-                $bindArray[] = [
-                    'name'     => $fieldInfo->getName(true),
-                    'php_type' => $fieldInfo->phpType
-                ];
-                $out = $this->parseFieldForSelect($fieldInfo);
-                if (is_array($out)) {
-                    $outArray = array_merge($outArray, $out);
-                } else {
-                    $outArray[] = $out;
-                }
-            }
-        }
-
-        return ['fields' => $outArray, 'bindings' => $bindArray];
     }
 
     /**
