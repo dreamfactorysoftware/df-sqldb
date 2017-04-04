@@ -591,18 +591,20 @@ EOD;
         return 'DROP INDEX ' . $this->quoteTableName($name);
     }
 
-    public function parseValueForSet($value, $field_info)
+    public function typecastToNative($value, $field_info, $allow_null = true)
     {
+        $value = parent::typecastToNative($value, $field_info, $allow_null);
+
         switch ($field_info->type) {
             case DbSimpleTypes::TYPE_BOOLEAN:
                 $value = ($value ? 'TRUE' : 'FALSE');
                 break;
         }
 
-        return parent::parseValueForSet($value, $field_info);
+        return $value;
     }
 
-    protected function formatValueToPhpType($value, $type)
+    protected function formatValueToPhpType($value, $type, $allow_null = true)
     {
         if (!is_null($value)) {
             switch (strtolower(strval($type))) {
@@ -615,7 +617,36 @@ EOD;
             }
         }
 
-        return parent::formatValueToPhpType($value, $type);
+        return parent::formatValueToPhpType($value, $type, $allow_null);
+    }
+
+    /**
+     * @param $type
+     *
+     * @return mixed|null
+     */
+    public static function getNativeDateTimeFormat($type)
+    {
+        switch (strtolower(strval($type))) {
+            case DbSimpleTypes::TYPE_TIME:
+            case DbSimpleTypes::TYPE_TIME_TZ:
+                return 'H:i:s';
+
+            case DbSimpleTypes::TYPE_DATE:
+                return 'Y-m-d';
+
+            case DbSimpleTypes::TYPE_DATETIME:
+            case DbSimpleTypes::TYPE_DATETIME_TZ:
+                return 'Y-m-d H:i:s';
+
+            case DbSimpleTypes::TYPE_TIMESTAMP:
+            case DbSimpleTypes::TYPE_TIMESTAMP_TZ:
+            case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
+            case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
+                return 'Y-m-d H:i:s.u';
+        }
+
+        return null;
     }
 
     /**
@@ -687,9 +718,9 @@ EOD;
         } elseif (strpos($defaultValue, 'nextval') === 0) {
             $field->defaultValue = null;
         } elseif (preg_match('/^\'(.*)\'::/', $defaultValue, $matches)) {
-            $field->defaultValue = $this->typecast($field, str_replace("''", "'", $matches[1]));
+            parent::extractDefault($field, str_replace("''", "'", $matches[1]));
         } elseif (preg_match('/^(-?\d+(\.\d*)?)(::.*)?$/', $defaultValue, $matches)) {
-            $field->defaultValue = $this->typecast($field, $matches[1]);
+            parent::extractDefault($field, $matches[1]);
         } else {
             // could be a internal function call like setting uuids
             $field->defaultValue = $defaultValue;

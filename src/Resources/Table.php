@@ -2,7 +2,6 @@
 
 namespace DreamFactory\Core\SqlDb\Resources;
 
-use Config;
 use DB;
 use DreamFactory\Core\Database\Components\Expression;
 use DreamFactory\Core\Database\Enums\DbFunctionUses;
@@ -13,14 +12,12 @@ use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\DbComparisonOperators;
 use DreamFactory\Core\Enums\DbLogicalOperators;
-use DreamFactory\Core\Enums\DbSimpleTypes;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\BatchException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
-use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Scalar;
@@ -352,8 +349,8 @@ class Table extends BaseDbTableResource
         $result->transform(function ($item) use ($schema) {
             $item = (array)$item;
             foreach ($item as $field => &$value) {
-                if (!is_null($value) && ($fieldInfo = $schema->getColumn($field, true))) {
-                    $value = $this->schema->formatValue($value, $fieldInfo);
+                if ($fieldInfo = $schema->getColumn($field, true)) {
+                    $value = $this->schema->typecastToClient($value, $fieldInfo);
                 }
             }
 
@@ -623,69 +620,8 @@ class Table extends BaseDbTableResource
             }
         }
 
-        switch ($info->type) {
-            case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = filter_var($value, FILTER_VALIDATE_BOOLEAN);
-                break;
-
-            case DbSimpleTypes::TYPE_INTEGER:
-            case DbSimpleTypes::TYPE_ID:
-            case DbSimpleTypes::TYPE_REF:
-            case DbSimpleTypes::TYPE_USER_ID:
-            case DbSimpleTypes::TYPE_USER_ID_ON_CREATE:
-            case DbSimpleTypes::TYPE_USER_ID_ON_UPDATE:
-                if (!is_int($value)) {
-                    if (!(ctype_digit($value))) {
-                        throw new BadRequestException("Field '{$info->getName(true)}' must be a valid integer.");
-                    } else {
-                        $value = intval($value);
-                    }
-                }
-                break;
-
-            case DbSimpleTypes::TYPE_DECIMAL:
-            case DbSimpleTypes::TYPE_DOUBLE:
-            case DbSimpleTypes::TYPE_FLOAT:
-                $value = floatval($value);
-                break;
-
-            case DbSimpleTypes::TYPE_STRING:
-            case DbSimpleTypes::TYPE_TEXT:
-                break;
-
-            // special checks
-            case DbSimpleTypes::TYPE_DATE:
-                $cfgFormat = Config::get('df.db.date_format');
-                $outFormat = 'Y-m-d';
-                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                break;
-
-            case DbSimpleTypes::TYPE_TIME:
-                $cfgFormat = Config::get('df.db.time_format');
-                $outFormat = 'H:i:s.u';
-                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                break;
-
-            case DbSimpleTypes::TYPE_DATETIME:
-                $cfgFormat = Config::get('df.db.datetime_format');
-                $outFormat = 'Y-m-d H:i:s';
-                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                break;
-
-            case DbSimpleTypes::TYPE_TIMESTAMP:
-            case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
-            case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
-                $cfgFormat = Config::get('df.db.timestamp_format');
-                $outFormat = 'Y-m-d H:i:s';
-                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                break;
-
-            default:
-                break;
-        }
-
         // anything else schema specific
-        $value = $this->schema->parseValueForSet($value, $info);
+        $value = $this->schema->typecastToNative($value, $info);
 
         $out_params[] = $value;
         $value = '?';

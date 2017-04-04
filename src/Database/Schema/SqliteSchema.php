@@ -535,17 +535,6 @@ class SqliteSchema extends Schema
         return false;
     }
 
-    public function parseValueForSet($value, $field_info)
-    {
-        switch ($field_info->type) {
-            case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = ($value ? 1 : 0);
-                break;
-        }
-
-        return parent::parseValueForSet($value, $field_info);
-    }
-
     /**
      * Extracts the default value for the column.
      * The value is typecasted to correct PHP type.
@@ -556,16 +545,16 @@ class SqliteSchema extends Schema
     public function extractDefault(ColumnSchema $field, $defaultValue)
     {
         if ($field->dbType === 'timestamp' && $defaultValue === 'CURRENT_TIMESTAMP') {
-            $field->defaultValue = null;
+            $defaultValue = null;
         } else {
-            $field->defaultValue = $this->typecast($field, strcasecmp($defaultValue, 'null') ? $defaultValue : null);
+            $defaultValue = strcasecmp($defaultValue, 'null') ? $defaultValue : null;
         }
 
-        if ($field->phpType === 'string' &&
-            $field->defaultValue !== null
-        ) // PHP 5.2.6 adds single quotes while 5.2.0 doesn't
+        if (is_string($defaultValue)) // PHP 5.2.6 adds single quotes while 5.2.0 doesn't
         {
-            $field->defaultValue = trim($field->defaultValue, "'\"");
+            $defaultValue = trim($defaultValue, "'\"");
         }
+
+        parent::extractDefault($field, $defaultValue);
     }
 }
