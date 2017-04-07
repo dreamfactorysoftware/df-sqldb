@@ -573,7 +573,6 @@ class Table extends BaseDbTableResource
                     $out = $info->quotedName;
                 }
                 $out .= " $sqlOp";
-
                 $out .= (isset($value) ? " $value" : null);
                 if ($leftParen) {
                     $out = $leftParen . $out;
@@ -690,7 +689,7 @@ class Table extends BaseDbTableResource
     /**
      * @param ColumnSchema $field
      *
-     * @return \Illuminate\Database\Query\Expression|string|array
+     * @return \Illuminate\Database\Query\Expression|string
      */
     protected function parseFieldForSelect($field)
     {
@@ -905,7 +904,7 @@ class Table extends BaseDbTableResource
 
         $builder = $this->dbConn->table($this->transactionTableSchema->internalName);
         $match = [];
-        if (!empty($id)) {
+        if (!is_null($id)) {
             if (is_array($id)) {
                 $match = $id;
                 foreach ($idFields as $name) {
@@ -943,7 +942,7 @@ class Table extends BaseDbTableResource
                     throw new BadRequestException('No valid fields were found in record.');
                 }
 
-                if (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
+                if (is_null($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
                     $idName = $this->tableIdsInfo[0]->name;
                     $id[$idName] = $builder->insertGetId($parsed, $idName);
                     $record[$idName] = $id[$idName];
