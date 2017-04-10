@@ -1,6 +1,8 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Models;
 
+use DreamFactory\Core\Exceptions\BadRequestException;
+
 /**
  * SqliteDbConfig
  *
@@ -9,7 +11,15 @@ class SqliteDbConfig extends BaseSqlDbConfig
 {
     protected $appends = ['database'];
 
-    protected $rules = ['database' => 'required'];
+    public function validate($data, $throwException = true)
+    {
+        $connection = $this->getAttribute('connection');
+        if (empty(array_get($connection, 'database'))) {
+            throw new BadRequestException("Database connection information must contain at least database name.");
+        }
+
+        return parent::validate($data, $throwException);
+    }
 
     protected function getConnectionFields()
     {
