@@ -512,8 +512,9 @@ EOD;
     public function alterColumn($table, $column, $definition)
     {
         $sql = "ALTER TABLE $table ALTER COLUMN " . $this->quoteColumnName($column);
+        $definition = $this->getColumnType($definition);
         if (false !== $pos = strpos($definition, ' ')) {
-            $sql .= ' TYPE ' . $this->getColumnType(substr($definition, 0, $pos));
+            $sql .= ' TYPE ' . substr($definition, 0, $pos);
             switch (substr($definition, $pos + 1)) {
                 case 'NULL':
                     $sql .= ', ALTER COLUMN ' . $this->quoteColumnName($column) . ' DROP NOT NULL';
@@ -523,7 +524,7 @@ EOD;
                     break;
             }
         } else {
-            $sql .= ' TYPE ' . $this->getColumnType($definition);
+            $sql .= ' TYPE ' . $definition;
         }
 
         return $sql;
