@@ -9,6 +9,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 - Use new service config handling for database configuration
 ### Fixed
 - DF-1033 Correct datetime config option usage
+- DF-1008 Correct inconsistent behavior regarding selected fields and related data
 
 ## [0.8.2] - 2017-03-29
 ### Fixed

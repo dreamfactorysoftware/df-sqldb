@@ -86,7 +86,7 @@ class Table extends BaseDbTableResource
             if (!empty($relatedInfo)) {
                 // update related info
                 foreach ($results as $row) {
-                    static::checkForIds($row, $idsInfo, $extras);
+                    $this->checkForIds($row, $idsInfo, $extras);
                     $this->updatePostRelations($table, array_merge($row, $record), $relatedInfo, $allowRelatedDelete);
                 }
                 // get latest with related changes if requested
@@ -724,18 +724,16 @@ class Table extends BaseDbTableResource
      */
     protected function parseSelect($schema, $extras)
     {
-        $idFields = array_get($extras, ApiOptions::ID_FIELD);
-        if (empty($idFields)) {
-            $idFields = $schema->primaryKey;
-        }
-        $idFields = static::fieldsToArray($idFields);
         $fields = array_get($extras, ApiOptions::FIELDS);
         if (empty($fields)) {
+            $idFields = array_get($extras, ApiOptions::ID_FIELD);
+            if (empty($idFields)) {
+                $idFields = $schema->primaryKey;
+            }
             $fields = $idFields;
         }
-        $fields = static::fieldsToArray($fields);
         $outArray = [];
-        if (empty($fields)) {
+        if (empty($fields) || (ApiOptions::FIELDS_ALL === $fields)) {
             foreach ($schema->getColumns() as $fieldInfo) {
                 if ($fieldInfo->isAggregate) {
                     continue;
@@ -748,12 +746,14 @@ class Table extends BaseDbTableResource
                 }
             }
         } else {
+            $fields = static::fieldsToArray($fields);
             $related = array_get($extras, ApiOptions::RELATED);
+            $allRelated = ('*' === $related);
             $related = static::fieldsToArray($related);
-            if (!empty($related) || $schema->fetchRequiresRelations) {
+            if ($allRelated || !empty($related) || $schema->fetchRequiresRelations) {
                 // add any required relationship mapping fields
                 foreach ($schema->getRelations() as $relation) {
-                    if ($relation->alwaysFetch || in_array($relation->getName(true), $related)) {
+                    if ($relation->alwaysFetch || $allRelated || array_key_exists($relation->getName(true), $related)) {
                         if ($fieldInfo = $schema->getColumn($relation->field)) {
                             $relationField = $fieldInfo->getName(true); // account for aliasing
                             if (false === array_search($relationField, $fields)) {
