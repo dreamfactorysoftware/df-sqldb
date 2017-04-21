@@ -595,17 +595,6 @@ MYSQL;
         return $this->selectValue($sql);
     }
 
-    public function parseValueForSet($value, $field_info)
-    {
-        switch ($field_info->type) {
-            case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = ($value ? 1 : 0);
-                break;
-        }
-
-        return parent::parseValueForSet($value, $field_info);
-    }
-
     /**
      * Extracts the default value for the column.
      * The value is typecasted to correct PHP type.

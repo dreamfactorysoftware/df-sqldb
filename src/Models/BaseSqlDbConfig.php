@@ -2,9 +2,9 @@
 namespace DreamFactory\Core\SqlDb\Models;
 
 use DreamFactory\Core\Components\RequireExtensions;
+use DreamFactory\Core\Database\Components\SupportsUpsert;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
-use DreamFactory\Core\Models\CacheableServiceConfig;
-use Crypt;
+use DreamFactory\Core\Models\BaseServiceConfigModel;
 
 /**
  * BaseSqlDbConfig
@@ -16,14 +16,16 @@ use Crypt;
  * @property array   $statements
  * @method static BaseSqlDbConfig whereServiceId($value)
  */
-class BaseSqlDbConfig extends CacheableServiceConfig
+class BaseSqlDbConfig extends BaseServiceConfigModel
 {
-    use RequireExtensions;
+    use RequireExtensions, SupportsUpsert;
 
     protected $table = 'sql_db_config';
 
     // deprecated, service has type designation now
     protected $hidden = ['connection', 'driver', 'dsn'];
+
+    protected $fillable = ['service_id', 'options', 'attributes', 'statements'];
 
     protected $casts = [
         'service_id' => 'integer',
@@ -33,7 +35,18 @@ class BaseSqlDbConfig extends CacheableServiceConfig
         'statements' => 'array',
     ];
 
+    public function getFillable()
+    {
+        return array_merge(parent::getFillable(), $this->getConnectionFields());
+    }
+
     protected function getConnectionFields()
+    {
+        return [];
+    }
+
+
+    public static function getDefaultConnectionInfo()
     {
         return [];
     }
@@ -56,13 +69,14 @@ class BaseSqlDbConfig extends CacheableServiceConfig
         return $attributes;
     }
 
+    /**
+     * {@inheritdoc}
+     */
     protected function getAttributeFromArray($key)
     {
         if (in_array($key, $this->getConnectionFields())) {
             $value = array_get($this->getAttribute('connection'), $key);
-            if (in_array($key, $this->encrypted) && !empty($value)) {
-                $value = Crypt::decrypt($value);
-            }
+            $this->decryptAttribute($key, $value);
 
             return $value;
         }
@@ -70,18 +84,20 @@ class BaseSqlDbConfig extends CacheableServiceConfig
         return parent::getAttributeFromArray($key);
     }
 
+    /**
+     * {@inheritdoc}
+     */
     public function setAttribute($key, $value)
     {
         // wish they had a setAttributeToArray() to override
         if (in_array($key, $this->getConnectionFields())) {
             // if protected, and trying to set the mask, throw it away
-            if (in_array($key, $this->protected) && ($value === static::PROTECTION_MASK)) {
+            if ($this->isProtectedAttribute($key, $value)) {
                 return $this;
             }
 
-            if (in_array($key, $this->encrypted) && !is_null($value)) {
-                $value = Crypt::encrypt($value);
-            }
+            $this->encryptAttribute($key, $value);
+
             $connection = (array)$this->getAttribute('connection');
             array_set($connection, $key, $value);
             parent::setAttribute('connection', $connection);
@@ -90,6 +106,92 @@ class BaseSqlDbConfig extends CacheableServiceConfig
         }
 
         return parent::setAttribute($key, $value);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public static function getConfigSchema()
+    {
+        $model = new static;
+
+        $schema = $model->getTableSchema();
+        if ($schema) {
+            $out = [];
+            foreach ($schema->columns as $name => $column) {
+                if ('connection' === $name) {
+                    // specific attributes to the different databases
+                    $temp = static::getDefaultConnectionInfo();
+                    $out = array_merge($out, $temp);
+                }
+
+                // Skip if column is hidden
+                if (in_array($name, $model->getHidden())) {
+                    continue;
+                }
+                /** @var ColumnSchema $column */
+                if (('service_id' === $name) || $column->autoIncrement) {
+                    continue;
+                }
+
+                $temp = $column->toArray();
+                static::prepareConfigSchemaField($temp);
+                $out[] = $temp;
+            }
+
+            // Add allow upsert here
+            $out[] = [
+                'name'        => 'allow_upsert',
+                'label'       => 'Allow Upsert',
+                'type'        => 'boolean',
+                'allow_null'  => false,
+                'default'     => false,
+                'description' => 'Allow PUT to create records if they do not exist and the service is capable.',
+            ];
+
+            return $out;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array $schema
+     */
+    protected static function prepareConfigSchemaField(array &$schema)
+    {
+        parent::prepareConfigSchemaField($schema);
+
+        switch ($schema['name']) {
+            case 'options':
+                $schema['label'] = 'Driver Options';
+                $schema['type'] = 'object';
+                $schema['object'] =
+                    [
+                        'key'   => ['label' => 'Name', 'type' => 'string'],
+                        'value' => ['label' => 'Value', 'type' => 'string']
+                    ];
+                $schema['description'] = 'A key-value array of driver-specific connection options.';
+                break;
+            case 'attributes':
+                $schema['label'] = 'Driver Attributes';
+                $schema['type'] = 'object';
+                $schema['object'] =
+                    [
+                        'key'   => ['label' => 'Name', 'type' => 'string'],
+                        'value' => ['label' => 'Value', 'type' => 'string']
+                    ];
+                $schema['description'] =
+                    'A key-value array of attributes to be set after connection.' .
+                    ' For further information, see http://php.net/manual/en/pdo.setattribute.php';
+                break;
+            case 'statements':
+                $schema['label'] = 'Additional SQL Statements';
+                $schema['type'] = 'array';
+                $schema['items'] = 'string';
+                $schema['description'] = 'An array of SQL statements to run during connection initialization.';
+                break;
+        }
     }
 
     public static function getDriverName()
@@ -205,87 +307,6 @@ class BaseSqlDbConfig extends CacheableServiceConfig
         $drivers = \PDO::getAvailableDrivers();
         if (!in_array($driver, $drivers)) {
             throw new \Exception("Required PDO driver '$driver' is not installed or loaded properly.");
-        }
-    }
-
-    public static function getDefaultConnectionInfo()
-    {
-        return [];
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public static function getConfigSchema()
-    {
-        $model = new static;
-
-        $schema = $model->getTableSchema();
-        if ($schema) {
-            $out = [];
-            foreach ($schema->columns as $name => $column) {
-                if ('connection' === $name) {
-                    // specific attributes to the different databases
-                    $temp = static::getDefaultConnectionInfo();
-                    $out = array_merge($out, $temp);
-                }
-
-                // Skip if column is hidden
-                if (in_array($name, $model->getHidden())) {
-                    continue;
-                }
-                /** @var ColumnSchema $column */
-                if (('service_id' === $name) || $column->autoIncrement) {
-                    continue;
-                }
-
-                $temp = $column->toArray();
-                static::prepareConfigSchemaField($temp);
-                $out[] = $temp;
-            }
-
-            return $out;
-        }
-
-        return null;
-    }
-
-    /**
-     * @param array $schema
-     */
-    protected static function prepareConfigSchemaField(array &$schema)
-    {
-        parent::prepareConfigSchemaField($schema);
-
-        switch ($schema['name']) {
-            case 'options':
-                $schema['label'] = 'Driver Options';
-                $schema['type'] = 'object';
-                $schema['object'] =
-                    [
-                        'key'   => ['label' => 'Name', 'type' => 'string'],
-                        'value' => ['label' => 'Value', 'type' => 'string']
-                    ];
-                $schema['description'] = 'A key-value array of driver-specific connection options.';
-                break;
-            case 'attributes':
-                $schema['label'] = 'Driver Attributes';
-                $schema['type'] = 'object';
-                $schema['object'] =
-                    [
-                        'key'   => ['label' => 'Name', 'type' => 'string'],
-                        'value' => ['label' => 'Value', 'type' => 'string']
-                    ];
-                $schema['description'] =
-                    'A key-value array of attributes to be set after connection.' .
-                    ' For further information, see http://php.net/manual/en/pdo.setattribute.php';
-                break;
-            case 'statements':
-                $schema['label'] = 'Additional SQL Statements';
-                $schema['type'] = 'array';
-                $schema['items'] = 'string';
-                $schema['description'] = 'An array of SQL statements to run during connection initialization.';
-                break;
         }
     }
 }

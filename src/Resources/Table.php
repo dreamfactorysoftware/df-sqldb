@@ -2,7 +2,6 @@
 
 namespace DreamFactory\Core\SqlDb\Resources;
 
-use Config;
 use DB;
 use DreamFactory\Core\Database\Components\Expression;
 use DreamFactory\Core\Database\Enums\DbFunctionUses;
@@ -13,14 +12,12 @@ use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\DbComparisonOperators;
 use DreamFactory\Core\Enums\DbLogicalOperators;
-use DreamFactory\Core\Enums\DbSimpleTypes;
 use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\Exceptions\BatchException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\SqlDb\Components\TableDescriber;
-use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Library\Utility\Enums\Verbs;
 use DreamFactory\Library\Utility\Scalar;
@@ -89,7 +86,7 @@ class Table extends BaseDbTableResource
             if (!empty($relatedInfo)) {
                 // update related info
                 foreach ($results as $row) {
-                    static::checkForIds($row, $idsInfo, $extras);
+                    $this->checkForIds($row, $idsInfo, $extras);
                     $this->updatePostRelations($table, array_merge($row, $record), $relatedInfo, $allowRelatedDelete);
                 }
                 // get latest with related changes if requested
@@ -249,7 +246,10 @@ class Table extends BaseDbTableResource
         }
 
         // count total records
-        $count = ($countOnly || $includeCount || $needLimit) ? $builder->count() : 0;
+        $count = 0;
+        if ($countOnly || $includeCount || $needLimit) {
+            $count = $builder->count([DB::raw('1')]);
+        }
 
         if ($countOnly) {
             return $count;
@@ -349,8 +349,8 @@ class Table extends BaseDbTableResource
         $result->transform(function ($item) use ($schema) {
             $item = (array)$item;
             foreach ($item as $field => &$value) {
-                if (!is_null($value) && ($fieldInfo = $schema->getColumn($field, true))) {
-                    $value = $this->schema->formatValue($value, $fieldInfo->phpType);
+                if ($fieldInfo = $schema->getColumn($field, true)) {
+                    $value = $this->schema->typecastToClient($value, $fieldInfo);
                 }
             }
 
@@ -573,7 +573,6 @@ class Table extends BaseDbTableResource
                     $out = $info->quotedName;
                 }
                 $out .= " $sqlOp";
-
                 $out .= (isset($value) ? " $value" : null);
                 if ($leftParen) {
                     $out = $leftParen . $out;
@@ -620,69 +619,8 @@ class Table extends BaseDbTableResource
             }
         }
 
-        switch ($info->type) {
-            case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = filter_var($value, FILTER_VALIDATE_BOOLEAN);
-                break;
-
-            case DbSimpleTypes::TYPE_INTEGER:
-            case DbSimpleTypes::TYPE_ID:
-            case DbSimpleTypes::TYPE_REF:
-            case DbSimpleTypes::TYPE_USER_ID:
-            case DbSimpleTypes::TYPE_USER_ID_ON_CREATE:
-            case DbSimpleTypes::TYPE_USER_ID_ON_UPDATE:
-                if (!is_int($value)) {
-                    if (!(ctype_digit($value))) {
-                        throw new BadRequestException("Field '{$info->getName(true)}' must be a valid integer.");
-                    } else {
-                        $value = intval($value);
-                    }
-                }
-                break;
-
-            case DbSimpleTypes::TYPE_DECIMAL:
-            case DbSimpleTypes::TYPE_DOUBLE:
-            case DbSimpleTypes::TYPE_FLOAT:
-                $value = floatval($value);
-                break;
-
-            case DbSimpleTypes::TYPE_STRING:
-            case DbSimpleTypes::TYPE_TEXT:
-                break;
-
-            // special checks
-            case DbSimpleTypes::TYPE_DATE:
-                $cfgFormat = Config::get('df.db_date_format');
-                $outFormat = 'Y-m-d';
-                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                break;
-
-            case DbSimpleTypes::TYPE_TIME:
-                $cfgFormat = Config::get('df.db_time_format');
-                $outFormat = 'H:i:s.u';
-                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                break;
-
-            case DbSimpleTypes::TYPE_DATETIME:
-                $cfgFormat = Config::get('df.db_datetime_format');
-                $outFormat = 'Y-m-d H:i:s';
-                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                break;
-
-            case DbSimpleTypes::TYPE_TIMESTAMP:
-            case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
-            case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
-                $cfgFormat = Config::get('df.db_timestamp_format');
-                $outFormat = 'Y-m-d H:i:s';
-                $value = DataFormatter::formatDateTime($outFormat, $value, $cfgFormat);
-                break;
-
-            default:
-                break;
-        }
-
         // anything else schema specific
-        $value = $this->schema->parseValueForSet($value, $info);
+        $value = $this->schema->typecastToNative($value, $info);
 
         $out_params[] = $value;
         $value = '?';
@@ -751,7 +689,7 @@ class Table extends BaseDbTableResource
     /**
      * @param ColumnSchema $field
      *
-     * @return \Illuminate\Database\Query\Expression|string|array
+     * @return \Illuminate\Database\Query\Expression|string
      */
     protected function parseFieldForSelect($field)
     {
@@ -786,18 +724,16 @@ class Table extends BaseDbTableResource
      */
     protected function parseSelect($schema, $extras)
     {
-        $idFields = array_get($extras, ApiOptions::ID_FIELD);
-        if (empty($idFields)) {
-            $idFields = $schema->primaryKey;
-        }
-        $idFields = static::fieldsToArray($idFields);
         $fields = array_get($extras, ApiOptions::FIELDS);
         if (empty($fields)) {
+            $idFields = array_get($extras, ApiOptions::ID_FIELD);
+            if (empty($idFields)) {
+                $idFields = $schema->primaryKey;
+            }
             $fields = $idFields;
         }
-        $fields = static::fieldsToArray($fields);
         $outArray = [];
-        if (empty($fields)) {
+        if (empty($fields) || (ApiOptions::FIELDS_ALL === $fields)) {
             foreach ($schema->getColumns() as $fieldInfo) {
                 if ($fieldInfo->isAggregate) {
                     continue;
@@ -810,12 +746,14 @@ class Table extends BaseDbTableResource
                 }
             }
         } else {
+            $fields = static::fieldsToArray($fields);
             $related = array_get($extras, ApiOptions::RELATED);
+            $allRelated = ('*' === $related);
             $related = static::fieldsToArray($related);
-            if (!empty($related) || $schema->fetchRequiresRelations) {
+            if ($allRelated || !empty($related) || $schema->fetchRequiresRelations) {
                 // add any required relationship mapping fields
                 foreach ($schema->getRelations() as $relation) {
-                    if ($relation->alwaysFetch || in_array($relation->getName(true), $related)) {
+                    if ($relation->alwaysFetch || $allRelated || array_key_exists($relation->getName(true), $related)) {
                         if ($fieldInfo = $schema->getColumn($relation->field)) {
                             $relationField = $fieldInfo->getName(true); // account for aliasing
                             if (false === array_search($relationField, $fields)) {
@@ -840,93 +778,6 @@ class Table extends BaseDbTableResource
         }
 
         return $outArray;
-    }
-
-    /**
-     * @param  array          $fields
-     * @param  ColumnSchema[] $avail_fields
-     *
-     * @return array
-     * @throws \DreamFactory\Core\Exceptions\BadRequestException
-     * @throws \Exception
-     */
-    protected function parseBindings(array $fields, $avail_fields)
-    {
-        $bindArray = [];
-        if (empty($fields)) {
-            foreach ($avail_fields as $fieldInfo) {
-                if ($fieldInfo->isAggregate) {
-                    continue;
-                }
-                $bindArray[] = [
-                    'name'     => $fieldInfo->getName(true),
-                    'php_type' => $fieldInfo->phpType
-                ];
-            }
-        } else {
-            foreach ($fields as $field) {
-                if ($fieldInfo = array_get($avail_fields, strtolower($field))) {
-                    $bindArray[] = [
-                        'name'     => $fieldInfo->getName(true),
-                        'php_type' => $fieldInfo->phpType
-                    ];
-                }
-            }
-        }
-
-        return $bindArray;
-    }
-
-    /**
-     * @param  string|array   $fields
-     * @param  ColumnSchema[] $avail_fields
-     *
-     * @return array
-     * @throws \DreamFactory\Core\Exceptions\BadRequestException
-     * @throws \Exception
-     */
-    protected function parseOrderBy(array $fields, $avail_fields)
-    {
-        $outArray = [];
-        $bindArray = [];
-        if (!empty($fields)) {
-            foreach ($fields as $field) {
-                $ndx = strtolower($field);
-                if (!isset($avail_fields[$ndx])) {
-                    throw new BadRequestException('Invalid field requested: ' . $field);
-                }
-
-                $fieldInfo = $avail_fields[$ndx];
-                $bindArray[] = [
-                    'name'     => $fieldInfo->getName(true),
-                    'php_type' => $fieldInfo->phpType
-                ];
-                $out = $this->parseFieldForSelect($fieldInfo);
-                if (is_array($out)) {
-                    $outArray = array_merge($outArray, $out);
-                } else {
-                    $outArray[] = $out;
-                }
-            }
-        } else {
-            foreach ($avail_fields as $fieldInfo) {
-                if ($fieldInfo->isAggregate) {
-                    continue;
-                }
-                $bindArray[] = [
-                    'name'     => $fieldInfo->getName(true),
-                    'php_type' => $fieldInfo->phpType
-                ];
-                $out = $this->parseFieldForSelect($fieldInfo);
-                if (is_array($out)) {
-                    $outArray = array_merge($outArray, $out);
-                } else {
-                    $outArray[] = $out;
-                }
-            }
-        }
-
-        return ['fields' => $outArray, 'bindings' => $bindArray];
     }
 
     /**
@@ -1052,13 +903,16 @@ class Table extends BaseDbTableResource
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
         $builder = $this->dbConn->table($this->transactionTableSchema->internalName);
-        if (!empty($id)) {
+        $match = [];
+        if (!is_null($id)) {
             if (is_array($id)) {
+                $match = $id;
                 foreach ($idFields as $name) {
                     $builder->where($name, array_get($id, $name));
                 }
             } else {
                 $name = array_get($idFields, 0);
+                $match[$name] = $id;
                 $builder->where($name, $id);
             }
         }
@@ -1075,12 +929,8 @@ class Table extends BaseDbTableResource
         switch ($this->getAction()) {
             case Verbs::POST:
                 // need the id back in the record
-                if (!empty($id)) {
-                    if (is_array($id)) {
-                        $record = array_merge($record, $id);
-                    } else {
-                        $record[array_get($idFields, 0)] = $id;
-                    }
+                if (!empty($match)) {
+                    $record = array_merge($record, $match);
                 }
 
                 if (!empty($relatedInfo)) {
@@ -1092,7 +942,7 @@ class Table extends BaseDbTableResource
                     throw new BadRequestException('No valid fields were found in record.');
                 }
 
-                if (empty($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
+                if (is_null($id) && (1 === count($this->tableIdsInfo)) && $this->tableIdsInfo[0]->autoIncrement) {
                     $idName = $this->tableIdsInfo[0]->name;
                     $id[$idName] = $builder->insertGetId($parsed, $idName);
                     $record[$idName] = $id[$idName];
@@ -1131,39 +981,30 @@ class Table extends BaseDbTableResource
                 if (!empty($relatedInfo)) {
                     $this->updatePreRelations($record, $relatedInfo);
                 }
+
                 $parsed = $this->parseRecord($record, $this->tableFieldsInfo, $ssFilters, true);
-
-                // only update by ids can use batching, too complicated with ssFilters and related update
-//                if ( !$needToIterate && !empty( $updates ) )
-//                {
-//                    return parent::addToTransaction( null, $id );
-//                }
-
                 if (!empty($parsed)) {
-                    $rows = $builder->update($parsed);
-                    if (0 >= $rows) {
-                        // could have just not updated anything, or could be bad id
-                        $result = $this->runQuery(
-                            $this->transactionTable,
-                            $builder,
-                            $extras
-                        );
-                        if (empty($result)) {
-                            throw new NotFoundException("Record with identifier '" .
-                                print_r($id, true) .
-                                "' not found.");
+                    if (!empty($match) && $this->parent->upsertAllowed() && !$builder->exists()) {
+                        if ($builder->insert(array_merge($match, $parsed))) {
+                            throw new InternalServerErrorException("Record upsert failed.");
+                        }
+                    } else {
+                        $rows = $builder->update($parsed);
+                        if (0 >= $rows) {
+                            // could have just not updated anything, or could be bad id
+                            if (empty($this->runQuery($this->transactionTable, $builder, $extras))) {
+                                throw new NotFoundException("Record with identifier '" .
+                                    print_r($id, true) .
+                                    "' not found.");
+                            }
                         }
                     }
                 }
 
                 if (!empty($relatedInfo)) {
                     // need the id back in the record
-                    if (!empty($id)) {
-                        if (is_array($id)) {
-                            $record = array_merge($record, $id);
-                        } else {
-                            $record[array_get($idFields, 0)] = $id;
-                        }
+                    if (!empty($match)) {
+                        $record = array_merge($record, $match);
                     }
                     $this->updatePostRelations(
                         $this->transactionTable,

@@ -79,15 +79,14 @@ class SqlDbConfig extends BaseSqlDbConfig
         return $defaults;
     }
 
-    public static function validateConfig($config, $create = true)
+    public function validate($data, $throwException = true)
     {
-        if ($create) {
-            if (empty(array_get($config, 'host')) || empty(array_get($config, 'database'))) {
-                throw new BadRequestException("Database connection information must contain at least host and database name.");
-            }
+        $connection = $this->getAttribute('connection');
+        if (empty(array_get($connection, 'host')) || empty(array_get($connection, 'database'))) {
+            throw new BadRequestException("Database connection information must contain at least host and database name.");
         }
 
-        return parent::validateConfig($config, $create);
+        return parent::validate($data, $throwException);
     }
 
     /**

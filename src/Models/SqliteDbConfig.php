@@ -11,6 +11,16 @@ class SqliteDbConfig extends BaseSqlDbConfig
 {
     protected $appends = ['database'];
 
+    public function validate($data, $throwException = true)
+    {
+        $connection = $this->getAttribute('connection');
+        if (empty(array_get($connection, 'database'))) {
+            throw new BadRequestException("Database connection information must contain at least database name.");
+        }
+
+        return parent::validate($data, $throwException);
+    }
+
     protected function getConnectionFields()
     {
         return ['database'];
@@ -33,20 +43,10 @@ class SqliteDbConfig extends BaseSqlDbConfig
                 'name'        => 'database',
                 'label'       => 'Database',
                 'type'        => 'string',
-                'description' =>
-                    'The name or path of the database to connect to. This can be a lookup key.'
+                'description' => 'The name or path of the database to connect to. This can be a lookup key.'
             ],
         ];
 
         return $defaults;
-    }
-
-    public static function validateConfig($config, $create = true)
-    {
-        if (empty($db = array_get($config, 'database'))) {
-            throw new BadRequestException('Database name must be provided.');
-        }
-
-        return true;
     }
 }
