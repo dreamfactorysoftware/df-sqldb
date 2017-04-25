@@ -985,7 +985,7 @@ class Table extends BaseDbTableResource
                 $parsed = $this->parseRecord($record, $this->tableFieldsInfo, $ssFilters, true);
                 if (!empty($parsed)) {
                     if (!empty($match) && $this->parent->upsertAllowed() && !$builder->exists()) {
-                        if ($builder->insert(array_merge($match, $parsed))) {
+                        if (!$builder->insert(array_merge($match, $parsed))) {
                             throw new InternalServerErrorException("Record upsert failed.");
                         }
                     } else {
