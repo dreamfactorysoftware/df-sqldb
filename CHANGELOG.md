@@ -4,6 +4,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.1] - 2017-04-25
+### Fixed
+- Fix upsert response
+
 ## [0.9.0] - 2017-04-21
 ### Added
 - DF-811 Add support for upsert
@@ -140,7 +144,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.9.0...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.9.1...HEAD
+[0.9.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.9.0...0.9.1
 [0.9.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.8.2...0.9.0
 [0.8.2]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.8.1...0.8.2
 [0.8.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.8.0...0.8.1
