@@ -14,8 +14,7 @@ use DreamFactory\Core\Database\Resources\BaseDbResource;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
-use DreamFactory\Library\Utility\Enums\Verbs;
-use DreamFactory\Library\Utility\Inflector;
+use DreamFactory\Core\Enums\Verbs;
 
 class StoredProcedure extends BaseDbResource
 {
@@ -382,7 +381,7 @@ class StoredProcedure extends BaseDbResource
     public static function getApiDocInfo($service, array $resource = [])
     {
         $serviceName = strtolower($service);
-        $capitalized = Inflector::camelize($service);
+        $capitalized = camelize($service);
         $class = trim(strrchr(static::class, '\\'), '\\');
         $resourceName = strtolower(array_get($resource, 'name', $class));
         $path = '/' . $serviceName . '/' . $resourceName;

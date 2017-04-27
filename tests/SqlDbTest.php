@@ -1,6 +1,6 @@
 <?php
 
-use DreamFactory\Library\Utility\Enums\Verbs;
+use DreamFactory\Core\Enums\Verbs;
 use DreamFactory\Core\Enums\DataFormats;
 use DreamFactory\Core\SqlDb\Services\SqlDb;
 use DreamFactory\Core\SqlDb\Resources\Schema;

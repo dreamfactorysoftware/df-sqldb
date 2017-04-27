@@ -1,7 +1,7 @@
 <?php
 
 use DreamFactory\Core\Enums\ApiOptions;
-use DreamFactory\Library\Utility\Enums\Verbs;
+use DreamFactory\Core\Enums\Verbs;
 
 class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 {
