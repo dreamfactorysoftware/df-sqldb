@@ -22,6 +22,7 @@ use DreamFactory\Core\Utility\Session;
 use DreamFactory\Core\Enums\Verbs;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
+use Log;
 
 /**
  * Class Table
@@ -891,6 +892,9 @@ class Table extends BaseDbTableResource
             }
         }
 
+        if (!isset($extras['limit'])) {
+            $extras['limit'] = 1;
+        }
         $ssFilters = array_get($extras, 'ss_filters');
         $updates = array_get($extras, 'updates');
         $idFields = array_get($extras, 'id_fields');
