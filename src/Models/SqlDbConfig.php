@@ -11,7 +11,6 @@ use DreamFactory\Core\Exceptions\BadRequestException;
  * @property array   $options
  * @property array   $attributes
  * @property array   $statements
- * @method static SqlDbConfig whereServiceId($value)
  */
 class SqlDbConfig extends BaseSqlDbConfig
 {

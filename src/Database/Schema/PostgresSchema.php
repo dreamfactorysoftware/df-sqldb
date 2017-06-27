@@ -1,4 +1,5 @@
 <?php
+
 namespace DreamFactory\Core\SqlDb\Database\Schema;
 
 use DreamFactory\Core\Database\Components\Schema;
@@ -457,7 +458,7 @@ EOD;
             $internalName = $schemaName . '.' . $resourceName;
             $name = ($addSchema) ? $internalName : $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
-            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $names[strtolower($name)] = new TableSchema($settings);
         }
 
@@ -490,7 +491,7 @@ EOD;
             $internalName = $schemaName . '.' . $resourceName;
             $name = ($addSchema) ? $internalName : $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
-            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $settings['isView'] = true;
             $names[strtolower($name)] = new TableSchema($settings);
         }
@@ -594,11 +595,14 @@ EOD;
 
     public function typecastToNative($value, $field_info, $allow_null = true)
     {
-        $value = parent::typecastToNative($value, $field_info, $allow_null);
-
         switch ($field_info->type) {
             case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = ($value ? 'TRUE' : 'FALSE');
+                if (!(is_null($value) && $field_info->allowNull)) {
+                    $value = ($value ? 'TRUE' : 'FALSE');
+                }
+                break;
+            default:
+                $value = parent::typecastToNative($value, $field_info, $allow_null);
                 break;
         }
 
@@ -611,10 +615,10 @@ EOD;
             switch (strtolower(strval($type))) {
                 case 'int':
                 case 'integer':
-                if ('' === $value) {
-                    // Postgresql strangely returns "" for null integers
-                    return null;
-                }
+                    if ('' === $value) {
+                        // Postgresql strangely returns "" for null integers
+                        return null;
+                    }
             }
         }
 
