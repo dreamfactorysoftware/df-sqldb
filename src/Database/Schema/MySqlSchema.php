@@ -1,42 +1,22 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Database\Schema;
 
-use DreamFactory\Core\Database\Components\Schema;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
 use DreamFactory\Core\Database\Schema\TableSchema;
-use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\DbSimpleTypes;
 
 /**
  * Schema is the class for retrieving metadata information from a MySQL database (version 4.1.x and 5.x).
  */
-class MySqlSchema extends Schema
+class MySqlSchema extends SqlSchema
 {
-    /**
-     * Underlying database provides field-level schema, i.e. SQL (true) vs NoSQL (false)
-     */
-    const PROVIDES_FIELD_SCHEMA = true;
-
     /**
      * @const string Quoting characters
      */
     const LEFT_QUOTE_CHARACTER = '`';
 
     const RIGHT_QUOTE_CHARACTER = '`';
-
-    /**
-     * @inheritdoc
-     */
-    public function getSupportedResourceTypes()
-    {
-        return [
-            DbResourceTypes::TYPE_TABLE,
-            DbResourceTypes::TYPE_VIEW,
-            DbResourceTypes::TYPE_PROCEDURE,
-            DbResourceTypes::TYPE_FUNCTION
-        ];
-    }
 
     /**
      * @inheritdoc
