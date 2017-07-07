@@ -80,6 +80,17 @@ class SqlDb extends BaseDbService
         if (!is_array($options)) {
             // laravel database config requires options to be [], not null
             $config['options'] = [];
+        } else {
+            foreach ($options as $key => $value) {
+                // Convert key and value constants like PDO::XXX
+                if (is_string($key) && defined($key)) {
+                    $key = constant($key);
+                }
+                if (is_string($value) && defined($value)) {
+                    $value = constant($value);
+                }
+                $config['options'][$key] = $value;
+            }
         }
     }
 
