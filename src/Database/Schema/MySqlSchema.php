@@ -19,6 +19,35 @@ class MySqlSchema extends SqlSchema
     const RIGHT_QUOTE_CHARACTER = '`';
 
     /**
+     * @param $type
+     *
+     * @return mixed|null
+     */
+    public static function getNativeDateTimeFormat($type)
+    {
+        switch (strtolower(strval($type))) {
+            case DbSimpleTypes::TYPE_DATE:
+                return 'Y-m-d';
+
+            case DbSimpleTypes::TYPE_DATETIME:
+            case DbSimpleTypes::TYPE_DATETIME_TZ:
+                return 'Y-m-d H:i:s.u';
+
+            case DbSimpleTypes::TYPE_TIME:
+            case DbSimpleTypes::TYPE_TIME_TZ:
+                return 'H:i:s.u';
+
+            case DbSimpleTypes::TYPE_TIMESTAMP:
+            case DbSimpleTypes::TYPE_TIMESTAMP_TZ:
+            case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
+            case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
+                return 'Y-m-d H:i:s.u'; // No support for timezone being passed in
+        }
+
+        return null;
+    }
+
+    /**
      * @inheritdoc
      */
     protected function translateSimpleColumnTypes(array &$info)

@@ -51,7 +51,21 @@ class PostgresSchema extends SqlSchema
                 break;
 
             case DbSimpleTypes::TYPE_DATETIME:
+            case DbSimpleTypes::TYPE_TIMESTAMP:
                 $info['type'] = 'timestamp';
+                break;
+
+            case DbSimpleTypes::TYPE_DATETIME_TZ:
+            case DbSimpleTypes::TYPE_TIMESTAMP_TZ:
+                $info['type'] = 'timestamp with time zone';
+                break;
+
+            case DbSimpleTypes::TYPE_TIME:
+                $info['type'] = 'time';
+                break;
+
+            case DbSimpleTypes::TYPE_TIME_TZ:
+                $info['type'] = 'time with time zone';
                 break;
 
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
@@ -185,7 +199,9 @@ class PostgresSchema extends SqlSchema
                 break;
 
             case 'time':
+            case 'time with time zone':
             case 'timestamp':
+            case 'timestamp with time zone':
                 $length = (isset($info['length'])) ? $info['length'] : ((isset($info['size'])) ? $info['size'] : null);
                 if (isset($length)) {
                     $info['type_extras'] = "($length)";
@@ -205,7 +221,13 @@ class PostgresSchema extends SqlSchema
         $type = (isset($info['type'])) ? $info['type'] : null;
         $typeExtras = (isset($info['type_extras'])) ? $info['type_extras'] : null;
 
-        $definition = $type . $typeExtras;
+        if ('time with time zone' === $type) {
+            $definition = 'time' . $typeExtras . ' with time zone';
+        } elseif ('timestamp with time zone' === $type) {
+            $definition = 'timestamp' . $typeExtras . ' with time zone';
+        } else {
+            $definition = $type . $typeExtras;
+        }
 
         $allowNull = (isset($info['allow_null'])) ? filter_var($info['allow_null'], FILTER_VALIDATE_BOOLEAN) : false;
         $definition .= ($allowNull) ? ' NULL' : ' NOT NULL';
@@ -616,22 +638,23 @@ EOD;
     public static function getNativeDateTimeFormat($type)
     {
         switch (strtolower(strval($type))) {
-            case DbSimpleTypes::TYPE_TIME:
-            case DbSimpleTypes::TYPE_TIME_TZ:
-                return 'H:i:s';
-
             case DbSimpleTypes::TYPE_DATE:
                 return 'Y-m-d';
 
-            case DbSimpleTypes::TYPE_DATETIME:
-            case DbSimpleTypes::TYPE_DATETIME_TZ:
-                return 'Y-m-d H:i:s';
+            case DbSimpleTypes::TYPE_TIME:
+                return 'H:i:s.u';
+            case DbSimpleTypes::TYPE_TIME_TZ:
+                return 'H:i:s.uP';
 
+            case DbSimpleTypes::TYPE_DATETIME:
             case DbSimpleTypes::TYPE_TIMESTAMP:
-            case DbSimpleTypes::TYPE_TIMESTAMP_TZ:
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
                 return 'Y-m-d H:i:s.u';
+
+            case DbSimpleTypes::TYPE_DATETIME_TZ:
+            case DbSimpleTypes::TYPE_TIMESTAMP_TZ:
+                return 'Y-m-d H:i:s.uP';
         }
 
         return null;
@@ -649,6 +672,16 @@ EOD;
             $column->type = DbSimpleTypes::TYPE_DOUBLE;
         } elseif (preg_match('/(integer|oid|serial|smallint)/', $dbType)) {
             $column->type = DbSimpleTypes::TYPE_INTEGER;
+        } elseif (false !== strpos($dbType, ' with time zone')) {
+            switch ($column->type) {
+                case DbSimpleTypes::TYPE_TIME:
+                    $column->type = DbSimpleTypes::TYPE_TIME_TZ;
+                    break;
+                case DbSimpleTypes::TYPE_TIMESTAMP:
+                    $column->type = DbSimpleTypes::TYPE_TIMESTAMP_TZ;
+                    break;
+
+            }
         }
     }
 
