@@ -8,7 +8,6 @@ use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\StoredFunction;
 use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
-use DreamFactory\Core\Utility\Session;
 use Illuminate\Database\DatabaseManager;
 use DbSchemaExtensions;
 
