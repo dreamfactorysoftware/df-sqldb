@@ -591,7 +591,6 @@ EOD;
      * @param string $table the table whose index is to be dropped. The name will be properly quoted by the method.
      *
      * @return string the SQL statement for dropping an index.
-     * @since 1.1.6
      */
     public function dropIndex($name, $table)
     {
@@ -603,7 +602,7 @@ EOD;
         switch ($field_info->type) {
             case DbSimpleTypes::TYPE_BOOLEAN:
                 if (!(is_null($value) && $field_info->allowNull)) {
-                    $value = ($value ? 'TRUE' : 'FALSE');
+                    $value = (to_bool($value) ? 't' : 'f');
                 }
                 break;
             default:
