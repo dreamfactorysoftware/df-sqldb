@@ -22,7 +22,6 @@ use DreamFactory\Core\Utility\Session;
 use DreamFactory\Core\Enums\Verbs;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
-use Log;
 
 /**
  * Class Table

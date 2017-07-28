@@ -1,25 +1,19 @@
 <?php
+
 namespace DreamFactory\Core\SqlDb\Database\Schema;
 
-use DreamFactory\Core\Database\Components\Schema;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\FunctionSchema;
 use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
 use DreamFactory\Core\Database\Schema\TableSchema;
-use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\DbSimpleTypes;
 
 /**
  * Schema is the class for retrieving metadata information from a PostgreSQL database.
  */
-class PostgresSchema extends Schema
+class PostgresSchema extends SqlSchema
 {
-    /**
-     * Underlying database provides field-level schema, i.e. SQL (true) vs NoSQL (false)
-     */
-    const PROVIDES_FIELD_SCHEMA = true;
-
     const DEFAULT_SCHEMA = 'public';
 
     /**
@@ -35,16 +29,6 @@ class PostgresSchema extends Schema
     /**
      * @inheritdoc
      */
-    public function getSupportedResourceTypes()
-    {
-        return [
-            DbResourceTypes::TYPE_TABLE,
-            DbResourceTypes::TYPE_VIEW,
-            DbResourceTypes::TYPE_PROCEDURE,
-            DbResourceTypes::TYPE_FUNCTION
-        ];
-    }
-
     protected function translateSimpleColumnTypes(array &$info)
     {
         // override this in each schema class
@@ -67,7 +51,21 @@ class PostgresSchema extends Schema
                 break;
 
             case DbSimpleTypes::TYPE_DATETIME:
+            case DbSimpleTypes::TYPE_TIMESTAMP:
                 $info['type'] = 'timestamp';
+                break;
+
+            case DbSimpleTypes::TYPE_DATETIME_TZ:
+            case DbSimpleTypes::TYPE_TIMESTAMP_TZ:
+                $info['type'] = 'timestamp with time zone';
+                break;
+
+            case DbSimpleTypes::TYPE_TIME:
+                $info['type'] = 'time';
+                break;
+
+            case DbSimpleTypes::TYPE_TIME_TZ:
+                $info['type'] = 'time with time zone';
                 break;
 
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
@@ -201,7 +199,9 @@ class PostgresSchema extends Schema
                 break;
 
             case 'time':
+            case 'time with time zone':
             case 'timestamp':
+            case 'timestamp with time zone':
                 $length = (isset($info['length'])) ? $info['length'] : ((isset($info['size'])) ? $info['size'] : null);
                 if (isset($length)) {
                     $info['type_extras'] = "($length)";
@@ -221,7 +221,13 @@ class PostgresSchema extends Schema
         $type = (isset($info['type'])) ? $info['type'] : null;
         $typeExtras = (isset($info['type_extras'])) ? $info['type_extras'] : null;
 
-        $definition = $type . $typeExtras;
+        if ('time with time zone' === $type) {
+            $definition = 'time' . $typeExtras . ' with time zone';
+        } elseif ('timestamp with time zone' === $type) {
+            $definition = 'timestamp' . $typeExtras . ' with time zone';
+        } else {
+            $definition = $type . $typeExtras;
+        }
 
         $allowNull = (isset($info['allow_null'])) ? filter_var($info['allow_null'], FILTER_VALIDATE_BOOLEAN) : false;
         $definition .= ($allowNull) ? ' NULL' : ' NOT NULL';
@@ -457,7 +463,7 @@ EOD;
             $internalName = $schemaName . '.' . $resourceName;
             $name = ($addSchema) ? $internalName : $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
-            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $names[strtolower($name)] = new TableSchema($settings);
         }
 
@@ -490,7 +496,7 @@ EOD;
             $internalName = $schemaName . '.' . $resourceName;
             $name = ($addSchema) ? $internalName : $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
-            $settings = compact('schemaName', 'resourceName', 'name', 'internalName','quotedName');
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $settings['isView'] = true;
             $names[strtolower($name)] = new TableSchema($settings);
         }
@@ -585,7 +591,6 @@ EOD;
      * @param string $table the table whose index is to be dropped. The name will be properly quoted by the method.
      *
      * @return string the SQL statement for dropping an index.
-     * @since 1.1.6
      */
     public function dropIndex($name, $table)
     {
@@ -594,11 +599,14 @@ EOD;
 
     public function typecastToNative($value, $field_info, $allow_null = true)
     {
-        $value = parent::typecastToNative($value, $field_info, $allow_null);
-
         switch ($field_info->type) {
             case DbSimpleTypes::TYPE_BOOLEAN:
-                $value = ($value ? 'TRUE' : 'FALSE');
+                if (!(is_null($value) && $field_info->allowNull)) {
+                    $value = (to_bool($value) ? 't' : 'f');
+                }
+                break;
+            default:
+                $value = parent::typecastToNative($value, $field_info, $allow_null);
                 break;
         }
 
@@ -611,10 +619,10 @@ EOD;
             switch (strtolower(strval($type))) {
                 case 'int':
                 case 'integer':
-                if ('' === $value) {
-                    // Postgresql strangely returns "" for null integers
-                    return null;
-                }
+                    if ('' === $value) {
+                        // Postgresql strangely returns "" for null integers
+                        return null;
+                    }
             }
         }
 
@@ -629,22 +637,23 @@ EOD;
     public static function getNativeDateTimeFormat($type)
     {
         switch (strtolower(strval($type))) {
-            case DbSimpleTypes::TYPE_TIME:
-            case DbSimpleTypes::TYPE_TIME_TZ:
-                return 'H:i:s';
-
             case DbSimpleTypes::TYPE_DATE:
                 return 'Y-m-d';
 
-            case DbSimpleTypes::TYPE_DATETIME:
-            case DbSimpleTypes::TYPE_DATETIME_TZ:
-                return 'Y-m-d H:i:s';
+            case DbSimpleTypes::TYPE_TIME:
+                return 'H:i:s.u';
+            case DbSimpleTypes::TYPE_TIME_TZ:
+                return 'H:i:s.uP';
 
+            case DbSimpleTypes::TYPE_DATETIME:
             case DbSimpleTypes::TYPE_TIMESTAMP:
-            case DbSimpleTypes::TYPE_TIMESTAMP_TZ:
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
             case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
                 return 'Y-m-d H:i:s.u';
+
+            case DbSimpleTypes::TYPE_DATETIME_TZ:
+            case DbSimpleTypes::TYPE_TIMESTAMP_TZ:
+                return 'Y-m-d H:i:s.uP';
         }
 
         return null;
@@ -662,6 +671,16 @@ EOD;
             $column->type = DbSimpleTypes::TYPE_DOUBLE;
         } elseif (preg_match('/(integer|oid|serial|smallint)/', $dbType)) {
             $column->type = DbSimpleTypes::TYPE_INTEGER;
+        } elseif (false !== strpos($dbType, ' with time zone')) {
+            switch ($column->type) {
+                case DbSimpleTypes::TYPE_TIME:
+                    $column->type = DbSimpleTypes::TYPE_TIME_TZ;
+                    break;
+                case DbSimpleTypes::TYPE_TIMESTAMP:
+                    $column->type = DbSimpleTypes::TYPE_TIMESTAMP_TZ;
+                    break;
+
+            }
         }
     }
 

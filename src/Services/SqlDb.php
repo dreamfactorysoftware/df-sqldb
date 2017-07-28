@@ -8,7 +8,6 @@ use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\StoredFunction;
 use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
-use DreamFactory\Core\Utility\Session;
 use Illuminate\Database\DatabaseManager;
 use DbSchemaExtensions;
 
@@ -75,6 +74,23 @@ class SqlDb extends BaseDbService
         if (!array_key_exists('prefix', $config)) {
             $config['prefix'] = null;
         }
+
+        $options = array_get($config, 'options', []);
+        if (!is_array($options)) {
+            // laravel database config requires options to be [], not null
+            $config['options'] = [];
+        } else {
+            foreach ($options as $key => $value) {
+                // Convert key and value constants like PDO::XXX
+                if (is_string($key) && defined($key)) {
+                    $key = constant($key);
+                }
+                if (is_string($value) && defined($value)) {
+                    $value = constant($value);
+                }
+                $config['options'][$key] = $value;
+            }
+        }
     }
 
     /**
@@ -89,26 +105,21 @@ class SqlDb extends BaseDbService
     {
         parent::__construct($settings);
 
-        $config = array_get($settings, 'config', []);
-        Session::replaceLookups($config, true);
+        static::adaptConfig($this->config);
+    }
 
-        static::adaptConfig($config);
-
-        $options = array_get($config, 'options', []);
-        if (!is_array($options)) {
-            // laravel database config requires options to be [], not null
-            $config['options'] = [];
-        }
-
+    protected function initializeConnection()
+    {
         $name = 'service.' . $this->name;
-        $config['name'] = $name;
+        $this->config['name'] = $name;
         // add config to global for reuse, todo check existence and update?
-        config(['database.connections.service.' . $this->name => $config]);
+        config(['database.connections.service.' . $this->name => $this->config]);
+
         /** @type DatabaseManager $db */
         $db = app('db');
-        $this->dbConn = $db->connection($name);
+        $this->dbConn = $db->connection('service.'.$this->name);
 
-        $this->initStatements(array_get($config, 'statements', []));
+        $this->initStatements(array_get($this->config, 'statements', []));
 
         $driver = $this->dbConn->getDriverName();
         if (null === $this->schema = DbSchemaExtensions::getSchemaExtension($driver, $this->dbConn)) {
@@ -118,7 +129,7 @@ class SqlDb extends BaseDbService
         $this->schema->setCache($this);
         $this->schema->setExtraStore($this);
 
-        $schema = array_get($config, 'schema');
+        $schema = array_get($this->config, 'schema');
         $this->schema->setUserSchema($schema);
     }
 
@@ -139,7 +150,7 @@ class SqlDb extends BaseDbService
      */
     public function getResources($only_handlers = false)
     {
-        $types = $this->schema->getSupportedResourceTypes();
+        $types = $this->getSchema()->getSupportedResourceTypes();
         $resources = [
             Schema::RESOURCE_NAME => [
                 'name'       => Schema::RESOURCE_NAME,

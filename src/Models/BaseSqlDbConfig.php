@@ -14,7 +14,6 @@ use DreamFactory\Core\Models\BaseServiceConfigModel;
  * @property array   $options
  * @property array   $attributes
  * @property array   $statements
- * @method static BaseSqlDbConfig whereServiceId($value)
  */
 class BaseSqlDbConfig extends BaseServiceConfigModel
 {

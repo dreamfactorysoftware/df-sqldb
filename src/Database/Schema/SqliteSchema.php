@@ -1,20 +1,24 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Database\Schema;
 
-use DreamFactory\Core\Database\Components\Schema;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\TableSchema;
+use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\DbSimpleTypes;
 
 /**
  * Schema is the class for retrieving metadata information from a SQLite (2/3) database.
  */
-class SqliteSchema extends Schema
+class SqliteSchema extends SqlSchema
 {
-    /**
-     * Underlying database provides field-level schema, i.e. SQL (true) vs NoSQL (false)
-     */
-    const PROVIDES_FIELD_SCHEMA = true;
+    public function getSupportedResourceTypes()
+    {
+        return [
+            DbResourceTypes::TYPE_TABLE,
+            DbResourceTypes::TYPE_TABLE_FIELD,
+            DbResourceTypes::TYPE_TABLE_RELATIONSHIP,
+        ];
+    }
 
     protected function translateSimpleColumnTypes(array &$info)
     {

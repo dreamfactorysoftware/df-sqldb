@@ -1,23 +1,16 @@
 <?php
 namespace DreamFactory\Core\SqlDb\Database\Schema;
 
-use DreamFactory\Core\Database\Components\Schema;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
 use DreamFactory\Core\Database\Schema\TableSchema;
-use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Enums\DbSimpleTypes;
 
 /**
  * Schema is the class for retrieving metadata information from a MySQL database (version 4.1.x and 5.x).
  */
-class MySqlSchema extends Schema
+class MySqlSchema extends SqlSchema
 {
-    /**
-     * Underlying database provides field-level schema, i.e. SQL (true) vs NoSQL (false)
-     */
-    const PROVIDES_FIELD_SCHEMA = true;
-
     /**
      * @const string Quoting characters
      */
@@ -26,16 +19,32 @@ class MySqlSchema extends Schema
     const RIGHT_QUOTE_CHARACTER = '`';
 
     /**
-     * @inheritdoc
+     * @param $type
+     *
+     * @return mixed|null
      */
-    public function getSupportedResourceTypes()
+    public static function getNativeDateTimeFormat($type)
     {
-        return [
-            DbResourceTypes::TYPE_TABLE,
-            DbResourceTypes::TYPE_VIEW,
-            DbResourceTypes::TYPE_PROCEDURE,
-            DbResourceTypes::TYPE_FUNCTION
-        ];
+        switch (strtolower(strval($type))) {
+            case DbSimpleTypes::TYPE_DATE:
+                return 'Y-m-d';
+
+            case DbSimpleTypes::TYPE_DATETIME:
+            case DbSimpleTypes::TYPE_DATETIME_TZ:
+                return 'Y-m-d H:i:s.u';
+
+            case DbSimpleTypes::TYPE_TIME:
+            case DbSimpleTypes::TYPE_TIME_TZ:
+                return 'H:i:s.u';
+
+            case DbSimpleTypes::TYPE_TIMESTAMP:
+            case DbSimpleTypes::TYPE_TIMESTAMP_TZ:
+            case DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE:
+            case DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE:
+                return 'Y-m-d H:i:s.u'; // No support for timezone being passed in
+        }
+
+        return null;
     }
 
     /**
