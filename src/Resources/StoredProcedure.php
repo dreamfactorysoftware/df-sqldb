@@ -64,7 +64,7 @@ class StoredProcedure extends BaseDbResource
     public function listResources($schema = null, $refresh = false)
     {
         /** @type ProcedureSchema[] $result */
-        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
+        $result = $this->parent->getSchema()->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $proc) {
             $name = $proc->name;
@@ -89,7 +89,7 @@ class StoredProcedure extends BaseDbResource
         $schema = $this->request->getParameter('schema', '');
 
         /** @type ProcedureSchema[] $result */
-        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
+        $result = $this->parent->getSchema()->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
         $resources = [];
         foreach ($result as $procedure) {
             $access = $this->getPermissions($procedure->name);
@@ -270,7 +270,7 @@ class StoredProcedure extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
-            $procedure = $this->schema->getResource(DbResourceTypes::TYPE_PROCEDURE, $name, $refresh);
+            $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $name, $refresh);
             if (!$procedure) {
                 throw new NotFoundException("Procedure '$name' does not exist in the database.");
             }
@@ -306,7 +306,7 @@ class StoredProcedure extends BaseDbResource
 
         $outParams = [];
         try {
-            $result = $this->schema->callProcedure($this->resource, $params, $outParams);
+            $result = $this->parent->getSchema()->callProcedure($this->resource, $params, $outParams);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {

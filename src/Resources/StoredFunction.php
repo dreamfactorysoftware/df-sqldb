@@ -64,7 +64,7 @@ class StoredFunction extends BaseDbResource
     public function listResources($schema = null, $refresh = false)
     {
         /** @type FunctionSchema[] $result */
-        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_FUNCTION, $schema, $refresh);
+        $result = $this->parent->getSchema()->getResourceNames(DbResourceTypes::TYPE_FUNCTION, $schema, $refresh);
         $resources = [];
         foreach ($result as $proc) {
             $name = $proc->name;
@@ -89,7 +89,7 @@ class StoredFunction extends BaseDbResource
         $schema = $this->request->getParameter('schema', '');
 
         /** @type FunctionSchema[] $result */
-        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_FUNCTION, $schema, $refresh);
+        $result = $this->parent->getSchema()->getResourceNames(DbResourceTypes::TYPE_FUNCTION, $schema, $refresh);
 
         $resources = [];
         foreach ($result as $function) {
@@ -271,7 +271,7 @@ class StoredFunction extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
-            $procedure = $this->schema->getResource(DbResourceTypes::TYPE_FUNCTION, $name, $refresh);
+            $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION, $name, $refresh);
             if (!$procedure) {
                 throw new NotFoundException("Function '$name' does not exist in the database.");
             }
@@ -306,7 +306,7 @@ class StoredFunction extends BaseDbResource
         Session::replaceLookups($params);
 
         try {
-            $result = $this->schema->callFunction($this->resource, $params);
+            $result = $this->parent->getSchema()->callFunction($this->resource, $params);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
