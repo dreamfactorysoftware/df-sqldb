@@ -125,7 +125,6 @@ class SqlDb extends BaseDbService
             throw new \Exception("Driver '$driver' is not supported by this software.");
         }
 
-        $this->schema->setCache($this);
         $this->schema->setExtraStore($this);
 
         $schema = array_get($this->config, 'schema');
