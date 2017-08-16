@@ -299,11 +299,12 @@ class StoredFunction extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
+            $cacheKey = 'function:' . strtolower($name);
             /** @type FunctionSchema $function */
-            if ($refresh || (empty($function = $this->parent->getFromCache('function:'.strtolower($name))))) {
+            if ($refresh || (empty($function = $this->parent->getFromCache($cacheKey)))) {
                 if ($functionSchema = array_get($this->getFunctions(), strtolower($name))) {
                     $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION, $functionSchema);
-                    $this->parent->addToCache('function:' . strtolower($name), $function, true);
+                    $this->parent->addToCache($cacheKey, $function, true);
                 }
             }
             if (!$function) {
@@ -339,11 +340,12 @@ class StoredFunction extends BaseDbResource
 
         Session::replaceLookups($params);
 
+        $cacheKey = 'function:' . strtolower($this->resource);
         /** @type FunctionSchema $function */
-        if (empty($function = $this->parent->getFromCache('function:' . strtolower($this->resource)))) {
+        if (empty($function = $this->parent->getFromCache($cacheKey))) {
             if ($functionSchema = array_get($this->getFunctions(), strtolower($this->resource))) {
                 $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $functionSchema);
-                $this->parent->addToCache('function:' . strtolower($this->resource), $function, true);
+                $this->parent->addToCache($cacheKey, $function, true);
             }
         }
         if (!$function) {

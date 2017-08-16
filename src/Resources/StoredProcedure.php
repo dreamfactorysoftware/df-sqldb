@@ -301,11 +301,12 @@ class StoredProcedure extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
+            $cacheKey = 'procedure:' . strtolower($name);
             /** @type ProcedureSchema $procedure */
-            if ($refresh || (empty($procedure = $this->parent->getFromCache('procedure:' . strtolower($name))))) {
+            if ($refresh || (empty($procedure = $this->parent->getFromCache($cacheKey)))) {
                 if ($procedureSchema = array_get($this->getProcedures(), strtolower($name))) {
                     $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $procedureSchema);
-                    $this->parent->addToCache('procedure:' . strtolower($name), $procedure, true);
+                    $this->parent->addToCache($cacheKey, $procedure, true);
                 }
             }
             if (!$procedure) {
@@ -341,11 +342,12 @@ class StoredProcedure extends BaseDbResource
 
         Session::replaceLookups($params);
 
+        $cacheKey = 'procedure:' . strtolower($this->resource);
         /** @type ProcedureSchema $procedure */
-        if (empty($procedure = $this->parent->getFromCache('procedure:' . strtolower($this->resource)))) {
+        if (empty($procedure = $this->parent->getFromCache($cacheKey))) {
             if ($procedureSchema = array_get($this->getProcedures(), strtolower($this->resource))) {
                 $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $procedureSchema);
-                $this->parent->addToCache('procedure:' . strtolower($this->resource), $procedure, true);
+                $this->parent->addToCache($cacheKey, $procedure, true);
             }
         }
         if (!$procedure) {

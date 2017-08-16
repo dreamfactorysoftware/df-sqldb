@@ -55,4 +55,9 @@ class SqliteDb extends SqlDb
             $this->dbConn->statement($statement);
         }
     }
+
+    public function getConfigBasedCachePrefix()
+    {
+        return array_get($this->config, 'database') . ':';
+    }
 }
