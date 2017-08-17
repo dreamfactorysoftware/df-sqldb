@@ -52,6 +52,29 @@ class SqlDb extends BaseDbService
     //*************************************************************************
 
     /**
+     * Create a new SqlDbSvc
+     *
+     * @param array $settings
+     *
+     * @throws \InvalidArgumentException
+     * @throws \Exception
+     */
+    public function __construct($settings = [])
+    {
+        parent::__construct($settings);
+
+        static::adaptConfig($this->config);
+
+        $prefix = '';
+        $parts = ['host', 'port', 'database', 'username', 'schema'];
+        foreach ($parts as $part) {
+            $prefix .= array_get($this->config, $part);
+        }
+
+        $this->setConfigBasedCachePrefix($prefix . ':');
+    }
+
+    /**
      * {@inheritdoc}
      */
     public static function adaptConfig(array &$config)
@@ -90,21 +113,6 @@ class SqlDb extends BaseDbService
                 $config['options'][$key] = $value;
             }
         }
-    }
-
-    /**
-     * Create a new SqlDbSvc
-     *
-     * @param array $settings
-     *
-     * @throws \InvalidArgumentException
-     * @throws \Exception
-     */
-    public function __construct($settings = [])
-    {
-        parent::__construct($settings);
-
-        static::adaptConfig($this->config);
     }
 
     protected function initializeConnection()
