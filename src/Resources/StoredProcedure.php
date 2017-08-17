@@ -110,7 +110,7 @@ class StoredProcedure extends BaseDbResource
      */
     protected function getProcedures($schema = '', $refresh = false)
     {
-        if ($refresh || (empty($procedures = $this->parent->getFromCache('procedures')))) {
+        if ($refresh || (is_null($procedures = $this->parent->getFromCache('procedures')))) {
             $procedures = [];
             foreach ($this->parent->getSchemas() as $schemaName) {
                 $result = $this->parent->getSchema()->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schemaName);
@@ -303,7 +303,7 @@ class StoredProcedure extends BaseDbResource
         try {
             $cacheKey = 'procedure:' . strtolower($name);
             /** @type ProcedureSchema $procedure */
-            if ($refresh || (empty($procedure = $this->parent->getFromCache($cacheKey)))) {
+            if ($refresh || (is_null($procedure = $this->parent->getFromCache($cacheKey)))) {
                 if ($procedureSchema = array_get($this->getProcedures(), strtolower($name))) {
                     $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $procedureSchema);
                     $this->parent->addToCache($cacheKey, $procedure, true);
@@ -344,7 +344,7 @@ class StoredProcedure extends BaseDbResource
 
         $cacheKey = 'procedure:' . strtolower($this->resource);
         /** @type ProcedureSchema $procedure */
-        if (empty($procedure = $this->parent->getFromCache($cacheKey))) {
+        if (is_null($procedure = $this->parent->getFromCache($cacheKey))) {
             if ($procedureSchema = array_get($this->getProcedures(), strtolower($this->resource))) {
                 $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $procedureSchema);
                 $this->parent->addToCache($cacheKey, $procedure, true);
