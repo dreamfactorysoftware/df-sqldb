@@ -1,7 +1,6 @@
 <?php
 namespace DreamFactory\Core\SqlDb;
 
-use DreamFactory\Core\Components\ServiceDocBuilder;
 use DreamFactory\Core\Components\DbSchemaExtensions;
 use DreamFactory\Core\Enums\ServiceTypeGroups;
 use DreamFactory\Core\Models\SystemTableModelMapper;
@@ -20,8 +19,6 @@ use DreamFactory\Core\SqlDb\Services\SqliteDb;
 
 class ServiceProvider extends \Illuminate\Support\ServiceProvider
 {
-    use ServiceDocBuilder;
-
     public function register()
     {
         // Add our database extensions.
@@ -46,9 +43,6 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
                     'description'     => 'Database service supporting MySQL connections.',
                     'group'           => ServiceTypeGroups::DATABASE,
                     'config_handler'  => MySqlDbConfig::class,
-                    'default_api_doc' => function ($service) {
-                        return $this->buildServiceDoc($service->id, MySqlDb::getApiDocInfo($service));
-                    },
                     'factory'         => function ($config) {
                         return new MySqlDb($config);
                     },
@@ -61,9 +55,6 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
                     'description'     => 'Database service supporting PostgreSQL connections.',
                     'group'           => ServiceTypeGroups::DATABASE,
                     'config_handler'  => PgSqlDbConfig::class,
-                    'default_api_doc' => function ($service) {
-                        return $this->buildServiceDoc($service->id, PostgreSqlDb::getApiDocInfo($service));
-                    },
                     'factory'         => function ($config) {
                         return new PostgreSqlDb($config);
                     },
@@ -76,9 +67,6 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
                     'description'     => 'Database service supporting SQLite connections.',
                     'group'           => ServiceTypeGroups::DATABASE,
                     'config_handler'  => SqliteDbConfig::class,
-                    'default_api_doc' => function ($service) {
-                        return $this->buildServiceDoc($service->id, SqliteDb::getApiDocInfo($service));
-                    },
                     'factory'         => function ($config) {
                         return new SqliteDb($config);
                     },

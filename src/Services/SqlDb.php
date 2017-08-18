@@ -2,7 +2,6 @@
 
 namespace DreamFactory\Core\SqlDb\Services;
 
-use DreamFactory\Core\Enums\DbResourceTypes;
 use DreamFactory\Core\Database\Services\BaseDbService;
 use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\StoredFunction;
@@ -53,6 +52,29 @@ class SqlDb extends BaseDbService
     //*************************************************************************
 
     /**
+     * Create a new SqlDbSvc
+     *
+     * @param array $settings
+     *
+     * @throws \InvalidArgumentException
+     * @throws \Exception
+     */
+    public function __construct($settings = [])
+    {
+        parent::__construct($settings);
+
+        static::adaptConfig($this->config);
+
+        $prefix = '';
+        $parts = ['host', 'port', 'database', 'username', 'schema'];
+        foreach ($parts as $part) {
+            $prefix .= array_get($this->config, $part);
+        }
+
+        $this->setConfigBasedCachePrefix($prefix . ':');
+    }
+
+    /**
      * {@inheritdoc}
      */
     public static function adaptConfig(array &$config)
@@ -93,21 +115,6 @@ class SqlDb extends BaseDbService
         }
     }
 
-    /**
-     * Create a new SqlDbSvc
-     *
-     * @param array $settings
-     *
-     * @throws \InvalidArgumentException
-     * @throws \Exception
-     */
-    public function __construct($settings = [])
-    {
-        parent::__construct($settings);
-
-        static::adaptConfig($this->config);
-    }
-
     protected function initializeConnection()
     {
         $name = 'service.' . $this->name;
@@ -126,9 +133,6 @@ class SqlDb extends BaseDbService
             throw new \Exception("Driver '$driver' is not supported by this software.");
         }
 
-        $this->schema->setCache($this);
-        $this->schema->setExtraStore($this);
-
         $schema = array_get($this->config, 'schema');
         $this->schema->setUserSchema($schema);
     }
@@ -143,42 +147,6 @@ class SqlDb extends BaseDbService
         $db->disconnect('service.' . $this->name);
 
         parent::__destruct();
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function getResources($only_handlers = false)
-    {
-        $types = $this->getSchema()->getSupportedResourceTypes();
-        $resources = [
-            Schema::RESOURCE_NAME => [
-                'name'       => Schema::RESOURCE_NAME,
-                'class_name' => Schema::class,
-                'label'      => 'Schema',
-            ],
-            Table::RESOURCE_NAME  => [
-                'name'       => Table::RESOURCE_NAME,
-                'class_name' => Table::class,
-                'label'      => 'Tables',
-            ]
-        ];
-        if (in_array(DbResourceTypes::TYPE_PROCEDURE, $types)) {
-            $resources[StoredProcedure::RESOURCE_NAME] = [
-                'name'       => StoredProcedure::RESOURCE_NAME,
-                'class_name' => StoredProcedure::class,
-                'label'      => 'Stored Procedures',
-            ];
-        }
-        if (in_array(DbResourceTypes::TYPE_FUNCTION, $types)) {
-            $resources[StoredFunction::RESOURCE_NAME] = [
-                'name'       => StoredFunction::RESOURCE_NAME,
-                'class_name' => StoredFunction::class,
-                'label'      => 'Stored Functions',
-            ];
-        }
-
-        return ($only_handlers) ? $resources : array_values($resources);
     }
 
     protected function initStatements($statements = [])

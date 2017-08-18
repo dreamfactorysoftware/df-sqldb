@@ -17,7 +17,6 @@ use DreamFactory\Core\Exceptions\BatchException;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
-use DreamFactory\Core\SqlDb\Components\TableDescriber;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Core\Enums\Verbs;
 use Illuminate\Database\Query\Builder;
@@ -30,12 +29,6 @@ use Illuminate\Support\Collection;
  */
 class Table extends BaseDbTableResource
 {
-    //*************************************************************************
-    //	Traits
-    //*************************************************************************
-
-    use TableDescriber;
-
     //*************************************************************************
     //	Members
     //*************************************************************************
@@ -73,7 +66,7 @@ class Table extends BaseDbTableResource
             $parsed = $this->parseRecord($record, $fieldsInfo, $ssFilters, true);
 
             // build filter string if necessary, add server-side filters if necessary
-            $builder = $this->dbConn->table($tableSchema->internalName);
+            $builder = $this->parent->getConnection()->table($tableSchema->internalName);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
             if (!empty($parsed)) {
@@ -122,7 +115,7 @@ class Table extends BaseDbTableResource
                 throw new NotFoundException("Table '$table' does not exist in the database.");
             }
             // build filter string if necessary, add server-side filters if necessary
-            $builder = $this->dbConn->table($tableSchema->internalName);
+            $builder = $this->parent->getConnection()->table($tableSchema->internalName);
             $ssFilters = array_get($extras, 'ss_filters');
             $params = [];
             $serverFilter = $this->buildQueryStringFromData($ssFilters);
@@ -165,7 +158,7 @@ class Table extends BaseDbTableResource
             $this->getIdsInfo($table, $fieldsInfo, $idFields, $idTypes);
 
             // build filter string if necessary, add server-side filters if necessary
-            $builder = $this->dbConn->table($tableSchema->internalName);
+            $builder = $this->parent->getConnection()->table($tableSchema->internalName);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
             $results = $this->runQuery($table, $builder, $extras);
@@ -196,7 +189,7 @@ class Table extends BaseDbTableResource
             $fieldsInfo = $tableSchema->getColumns(true);
 
             // build filter string if necessary, add server-side filters if necessary
-            $builder = $this->dbConn->table($tableSchema->internalName);
+            $builder = $this->parent->getConnection()->table($tableSchema->internalName);
             $this->convertFilterToNative($builder, $filter, $params, $ssFilters, $fieldsInfo);
 
             return $this->runQuery($table, $builder, $extras);
@@ -349,7 +342,7 @@ class Table extends BaseDbTableResource
             $item = (array)$item;
             foreach ($item as $field => &$value) {
                 if ($fieldInfo = $schema->getColumn($field, true)) {
-                    $value = $this->schema->typecastToClient($value, $fieldInfo);
+                    $value = $this->parent->getSchema()->typecastToClient($value, $fieldInfo);
                 }
             }
 
@@ -567,7 +560,7 @@ class Table extends BaseDbTableResource
                 }
 
                 if ($function = $info->getDbFunction(DbFunctionUses::FILTER)) {
-                    $out = $this->dbConn->raw($function);
+                    $out = $this->parent->getConnection()->raw($function);
                 } else {
                     $out = $info->quotedName;
                 }
@@ -619,7 +612,7 @@ class Table extends BaseDbTableResource
         }
 
         // anything else schema specific
-        $value = $this->schema->typecastToNative($value, $info);
+        $value = $this->parent->getSchema()->typecastToNative($value, $info);
 
         $out_params[] = $value;
         $value = '?';
@@ -632,7 +625,7 @@ class Table extends BaseDbTableResource
      */
     protected function getCurrentTimestamp()
     {
-        return $this->schema->getTimestampForSet();
+        return $this->parent->getSchema()->getTimestampForSet();
     }
 
     /**
@@ -693,7 +686,7 @@ class Table extends BaseDbTableResource
     protected function parseFieldForSelect($field)
     {
         if ($function = $field->getDbFunction(DbFunctionUses::SELECT)) {
-            return $this->dbConn->raw($function . ' AS ' . $field->getName(true, true));
+            return $this->parent->getConnection()->raw($function . ' AS ' . $field->getName(true, true));
         }
 
         $out = $field->name;
@@ -884,10 +877,11 @@ class Table extends BaseDbTableResource
         $continue = false,
         $single = false
     ) {
+        $dbConn = $this->parent->getConnection();
         if ($rollback) {
             // sql transaction really only for rollback scenario, not batching
-            if (0 >= $this->dbConn->transactionLevel()) {
-                $this->dbConn->beginTransaction();
+            if (0 >= $dbConn->transactionLevel()) {
+                $dbConn->beginTransaction();
             }
         }
 
@@ -904,7 +898,7 @@ class Table extends BaseDbTableResource
         $allowRelatedDelete = array_get_bool($extras, 'allow_related_delete');
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
-        $builder = $this->dbConn->table($this->transactionTableSchema->internalName);
+        $builder = $dbConn->table($this->transactionTableSchema->internalName);
         $match = [];
         if (!is_null($id)) {
             if (is_array($id)) {
@@ -1082,9 +1076,10 @@ class Table extends BaseDbTableResource
      */
     protected function commitTransaction($extras = null)
     {
+        $dbConn = $this->parent->getConnection();
         if (empty($this->batchRecords) && empty($this->batchIds)) {
-            if (0 < $this->dbConn->transactionLevel()) {
-                $this->dbConn->commit();
+            if (0 < $dbConn->transactionLevel()) {
+                $dbConn->commit();
             }
 
             return null;
@@ -1097,7 +1092,7 @@ class Table extends BaseDbTableResource
         $allowRelatedDelete = array_get_bool($extras, 'allow_related_delete');
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
-        $builder = $this->dbConn->table($this->transactionTableSchema->internalName);
+        $builder = $dbConn->table($this->transactionTableSchema->internalName);
 
         /** @type ColumnSchema $idName */
         $idName = (isset($this->tableIdsInfo, $this->tableIdsInfo[0])) ? $this->tableIdsInfo[0] : null;
@@ -1255,8 +1250,8 @@ class Table extends BaseDbTableResource
             $this->batchIds = [];
         }
 
-        if (0 < $this->dbConn->transactionLevel()) {
-            $this->dbConn->commit();
+        if (0 < $dbConn->transactionLevel()) {
+            $dbConn->commit();
         }
 
         return $out;
@@ -1267,33 +1262,11 @@ class Table extends BaseDbTableResource
      */
     protected function rollbackTransaction()
     {
-        if (0 < $this->dbConn->transactionLevel()) {
-            $this->dbConn->rollBack();
+        $dbConn = $this->parent->getConnection();
+        if (0 < $dbConn->transactionLevel()) {
+            $dbConn->rollBack();
         }
 
         return true;
-    }
-
-    public static function getApiDocInfo($service, array $resource = [])
-    {
-        $base = parent::getApiDocInfo($service, $resource);
-
-//        $addTableParameters = [
-//            [
-//                'name'          => 'related',
-//                'description'   => 'Comma-delimited list of relationship names to retrieve for each record, or \'*\' to retrieve all.',
-//                'type'          => 'string',
-//                'in'     => 'query',
-//                'required'      => false,
-//            ]
-//        ];
-//
-//        $addTableNotes =
-//            'Use the <b>related</b> parameter to return related records for each resource. ' .
-//            'By default, no related records are returned.<br/> ';
-
-        $base['definitions'] = array_merge($base['definitions'], static::getApiDocCommonModels());
-
-        return $base;
     }
 }

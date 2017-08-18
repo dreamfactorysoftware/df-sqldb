@@ -36,6 +36,13 @@ class SqliteDb extends SqlDb
     //	Methods
     //*************************************************************************
 
+    public function __construct($settings = [])
+    {
+        parent::__construct($settings);
+
+        $this->setConfigBasedCachePrefix(array_get($this->config, 'database') . ':');
+    }
+
     public static function adaptConfig(array &$config)
     {
         $config['driver'] = 'sqlite';

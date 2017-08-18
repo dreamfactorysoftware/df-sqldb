@@ -1,4 +1,5 @@
 <?php
+
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use DreamFactory\Core\Components\DataValidator;
@@ -63,8 +64,7 @@ class StoredProcedure extends BaseDbResource
      */
     public function listResources($schema = null, $refresh = false)
     {
-        /** @type ProcedureSchema[] $result */
-        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
+        $result = $this->getProcedures($schema, $refresh);
         $resources = [];
         foreach ($result as $proc) {
             $name = $proc->name;
@@ -88,8 +88,8 @@ class StoredProcedure extends BaseDbResource
         $refresh = $this->request->getParameterAsBool('refresh');
         $schema = $this->request->getParameter('schema', '');
 
-        /** @type ProcedureSchema[] $result */
-        $result = $this->schema->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schema, $refresh);
+        $result = $this->getProcedures($schema, $refresh);
+
         $resources = [];
         foreach ($result as $procedure) {
             $access = $this->getPermissions($procedure->name);
@@ -101,6 +101,37 @@ class StoredProcedure extends BaseDbResource
         }
 
         return $resources;
+    }
+
+    /**
+     * @param string $schema
+     * @param bool   $refresh
+     * @return ProcedureSchema[]
+     */
+    protected function getProcedures($schema = '', $refresh = false)
+    {
+        if ($refresh || (is_null($procedures = $this->parent->getFromCache('procedures')))) {
+            $procedures = [];
+            foreach ($this->parent->getSchemas() as $schemaName) {
+                $result = $this->parent->getSchema()->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schemaName);
+                $procedures = array_merge($procedures, $result);
+            }
+            ksort($procedures, SORT_NATURAL); // sort alphabetically
+            $this->parent->addToCache('procedures', $procedures, true);
+        }
+
+        if (!empty($schema)) {
+            $out = [];
+            foreach ($procedures as $procedure => $info) {
+                if (starts_with($procedure, $schema . '.')) {
+                    $out[$procedure] = $info;
+                }
+            }
+
+            $procedures = $out;
+        }
+
+        return $procedures;
     }
 
     /**
@@ -270,7 +301,14 @@ class StoredProcedure extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
-            $procedure = $this->schema->getResource(DbResourceTypes::TYPE_PROCEDURE, $name, $refresh);
+            $cacheKey = 'procedure:' . strtolower($name);
+            /** @type ProcedureSchema $procedure */
+            if ($refresh || (is_null($procedure = $this->parent->getFromCache($cacheKey)))) {
+                if ($procedureSchema = array_get($this->getProcedures(), strtolower($name))) {
+                    $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $procedureSchema);
+                    $this->parent->addToCache($cacheKey, $procedure, true);
+                }
+            }
             if (!$procedure) {
                 throw new NotFoundException("Procedure '$name' does not exist in the database.");
             }
@@ -304,9 +342,21 @@ class StoredProcedure extends BaseDbResource
 
         Session::replaceLookups($params);
 
+        $cacheKey = 'procedure:' . strtolower($this->resource);
+        /** @type ProcedureSchema $procedure */
+        if (is_null($procedure = $this->parent->getFromCache($cacheKey))) {
+            if ($procedureSchema = array_get($this->getProcedures(), strtolower($this->resource))) {
+                $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $procedureSchema);
+                $this->parent->addToCache($cacheKey, $procedure, true);
+            }
+        }
+        if (!$procedure) {
+            throw new NotFoundException("Procedure '{$this->resource}' does not exist in the database.");
+        }
+
         $outParams = [];
         try {
-            $result = $this->schema->callProcedure($this->resource, $params, $outParams);
+            $result = $this->parent->getSchema()->callProcedure($procedure, $params, $outParams);
         } catch (RestException $ex) {
             throw $ex;
         } catch (\Exception $ex) {
