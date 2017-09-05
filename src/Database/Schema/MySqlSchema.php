@@ -407,9 +407,11 @@ MYSQL;
     {
         $schemas = implode("','", $this->getSchemas());
         $sql = <<<MYSQL
-SELECT table_schema, table_name, column_name, referenced_table_schema, referenced_table_name, referenced_column_name
-FROM information_schema.KEY_COLUMN_USAGE 
-WHERE referenced_table_name IS NOT NULL AND table_schema IN ('{$schemas}');
+SELECT kcu.table_schema, kcu.table_name, kcu.column_name, tc.constraint_type, kcu.referenced_table_schema, kcu.referenced_table_name, kcu.referenced_column_name
+FROM information_schema.KEY_COLUMN_USAGE kcu
+LEFT JOIN information_schema.KEY_COLUMN_USAGE as uc on uc.table_schema = kcu.table_schema AND uc.table_name = kcu.table_name AND uc.column_name = kcu.column_name
+LEFT JOIN information_schema.TABLE_CONSTRAINTS as tc on tc.constraint_schema = uc.constraint_schema AND tc.constraint_name = uc.constraint_name
+WHERE kcu.referenced_table_name IS NOT NULL AND kcu.table_schema IN ('{$schemas}');
 MYSQL;
 
         return $this->connection->select($sql);

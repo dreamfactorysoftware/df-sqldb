@@ -1,4 +1,5 @@
 <?php
+
 namespace DreamFactory\Core\SqlDb\Database\Schema;
 
 use DreamFactory\Core\Database\Schema\ColumnSchema;
@@ -371,12 +372,23 @@ class SqliteSchema extends SqlSchema
         foreach ($this->getTableNames() as $each) {
             $sql = "PRAGMA foreign_key_list({$each->quotedName})";
             $fks = $this->connection->select($sql);
+            $sql = "PRAGMA table_info({$each->quotedName})";
+            $info = $this->connection->select($sql);
             foreach ($fks as $key) {
                 $key = (array)$key;
+                $field = [];
+                foreach ($info as $eachField) {
+                    $eachField = (array)$eachField;
+                    if (0 === strcasecmp($eachField['name'], $key['from'])) {
+                        $field = $eachField;
+                        continue 1;
+                    }
+                }
                 $references[] = [
                     'table_schema'            => '',
                     'table_name'              => $each->name,
                     'column_name'             => $key['from'],
+                    'constraint_type'         => (array_get_bool($field, 'pk') ? 'primary key' : ''),
                     'referenced_table_schema' => '',
                     'referenced_table_name'   => $key['table'],
                     'referenced_column_name'  => $key['to'],
