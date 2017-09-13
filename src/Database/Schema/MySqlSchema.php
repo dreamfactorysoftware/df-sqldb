@@ -400,11 +400,15 @@ MYSQL;
     {
         $schemas = implode("','", $this->getSchemas());
         $sql = <<<MYSQL
-SELECT kcu.table_schema, kcu.table_name, kcu.column_name, tc.constraint_type, kcu.referenced_table_schema, kcu.referenced_table_name, kcu.referenced_column_name
-FROM information_schema.KEY_COLUMN_USAGE kcu
-LEFT JOIN information_schema.KEY_COLUMN_USAGE as uc on uc.table_schema = kcu.table_schema AND uc.table_name = kcu.table_name AND uc.column_name = kcu.column_name
-LEFT JOIN information_schema.TABLE_CONSTRAINTS as tc on tc.constraint_schema = uc.constraint_schema AND tc.constraint_name = uc.constraint_name
-WHERE kcu.referenced_table_name IS NOT NULL AND kcu.table_schema IN ('{$schemas}');
+SELECT kcu.table_schema, kcu.table_name, kcu.column_name, kcu.referenced_table_schema, kcu.referenced_table_name, kcu.referenced_column_name,
+putc.constraint_type
+FROM information_schema.TABLE_CONSTRAINTS tc
+JOIN information_schema.KEY_COLUMN_USAGE kcu ON tc.constraint_schema = kcu.constraint_schema AND tc.constraint_name = kcu.constraint_name
+LEFT JOIN information_schema.KEY_COLUMN_USAGE puc ON kcu.table_schema = puc.table_schema AND kcu.table_name = puc.table_name AND 
+kcu.column_name = puc.column_name AND puc.POSITION_IN_UNIQUE_CONSTRAINT IS NULL
+LEFT JOIN information_schema.TABLE_CONSTRAINTS putc ON putc.table_schema = puc.table_schema AND putc.table_name = puc.table_name AND 
+putc.constraint_name = puc.constraint_name AND putc.constraint_type IN ('PRIMARY KEY','UNIQUE')
+WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.constraint_schema IN ('{$schemas}');
 MYSQL;
 
         return $this->connection->select($sql);
