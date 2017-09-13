@@ -290,12 +290,13 @@ class Table extends BaseDbTableResource
                 if (ApiOptions::FIELDS_ALL !== $related) {
                     $related = static::fieldsToArray($related);
                 }
+                $refresh = array_get_bool($extras, ApiOptions::REFRESH);
                 /** @type RelationSchema[] $availableRelations */
                 $availableRelations = $schema->getRelations(true);
                 if (!empty($availableRelations)) {
                     // until this is refactored to collections
                     $data = $result->toArray();
-                    $this->retrieveRelatedRecords($schema, $availableRelations, $related, $data);
+                    $this->retrieveRelatedRecords($schema, $availableRelations, $related, $data, $refresh);
                     $result = collect($data);
                 }
             }
