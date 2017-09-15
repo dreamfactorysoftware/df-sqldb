@@ -3,6 +3,8 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+### Fixed
+- DF-1165 Only squelch empty row set (2053) general MySQL error, propagate others
 
 ## [0.12.0] - 2017-08-17
 ### Changed
@@ -14,8 +16,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 - Fix caching for empty query results
 
 ## [0.11.0] - 2017-07-27
+### Changed
 - Separating base schema from SQL schema
 - Support PDO constants in config options
+### Fixed
 - Datetime settings handling
 - Fix boolean filter value
 

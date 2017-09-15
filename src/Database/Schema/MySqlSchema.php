@@ -732,7 +732,9 @@ MYSQL;
 
     protected function handleRoutineException(\Exception $ex)
     {
-        if (false !== stripos($ex->getMessage(), 'SQLSTATE[HY000]: General error')) {
+        // catch 2053 https://dev.mysql.com/doc/refman/5.7/en/error-messages-client.html#error_cr_no_result_set
+        // this may happen as we try to get as many result sets from routine calls as possible
+        if (false !== stripos($ex->getMessage(), 'SQLSTATE[HY000]: General error: 2053')) {
             return true;
         }
 
