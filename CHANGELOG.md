@@ -3,8 +3,15 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+
+## [0.13.0] - 2017-09-18
+### Added
+- Support for HAS_ONE relationship in schema management and relationship handling
+- DF-1060 Support for data retrieval (GET) caching and configuration
 ### Fixed
 - DF-1165 Only squelch empty row set (2053) general MySQL error, propagate others
+- Cleanup primary and unique key handling
+- Correct foreign constraint discovery
 
 ## [0.12.0] - 2017-08-17
 ### Changed
@@ -168,7 +175,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.12.0...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.13.0...HEAD
+[0.13.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.12.0...0.13.0
 [0.12.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.11.0...0.12.0
 [0.11.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.9.1...0.10.0
