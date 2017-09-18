@@ -2,9 +2,10 @@
 namespace DreamFactory\Core\SqlDb\Models;
 
 use DreamFactory\Core\Components\RequireExtensions;
-use DreamFactory\Core\Database\Components\SupportsUpsert;
+use DreamFactory\Core\Database\Components\SupportsUpsertAndCache;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Models\BaseServiceConfigModel;
+use DreamFactory\Core\Models\ServiceCacheConfig;
 
 /**
  * BaseSqlDbConfig
@@ -17,7 +18,7 @@ use DreamFactory\Core\Models\BaseServiceConfigModel;
  */
 class BaseSqlDbConfig extends BaseServiceConfigModel
 {
-    use RequireExtensions, SupportsUpsert;
+    use RequireExtensions, SupportsUpsertAndCache;
 
     protected $table = 'sql_db_config';
 
@@ -147,6 +148,7 @@ class BaseSqlDbConfig extends BaseServiceConfigModel
                 'default'     => false,
                 'description' => 'Allow PUT to create records if they do not exist and the service is capable.',
             ];
+            $out = array_merge($out, ServiceCacheConfig::getConfigSchema());
 
             return $out;
         }

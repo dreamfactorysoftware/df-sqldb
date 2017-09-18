@@ -259,17 +259,10 @@ class MySqlSchema extends SqlSchema
             $definition .= ' AUTO_INCREMENT';
         }
 
-        $isUniqueKey = (isset($info['is_unique'])) ? filter_var($info['is_unique'], FILTER_VALIDATE_BOOLEAN) : false;
-        $isPrimaryKey =
-            (isset($info['is_primary_key'])) ? filter_var($info['is_primary_key'], FILTER_VALIDATE_BOOLEAN) : false;
-        if ($isPrimaryKey && $isUniqueKey) {
-            throw new \Exception('Unique and Primary designations not allowed simultaneously.');
-        }
-
-        if ($isUniqueKey) {
-            $definition .= ' UNIQUE KEY';
-        } elseif ($isPrimaryKey) {
+        if (isset($info['is_primary_key']) && filter_var($info['is_primary_key'], FILTER_VALIDATE_BOOLEAN)) {
             $definition .= ' PRIMARY KEY';
+        } elseif (isset($info['is_unique']) && filter_var($info['is_unique'], FILTER_VALIDATE_BOOLEAN)) {
+            $definition .= ' UNIQUE KEY';
         }
 
         return $definition;
@@ -407,9 +400,15 @@ MYSQL;
     {
         $schemas = implode("','", $this->getSchemas());
         $sql = <<<MYSQL
-SELECT table_schema, table_name, column_name, referenced_table_schema, referenced_table_name, referenced_column_name
-FROM information_schema.KEY_COLUMN_USAGE 
-WHERE referenced_table_name IS NOT NULL AND table_schema IN ('{$schemas}');
+SELECT kcu.table_schema, kcu.table_name, kcu.column_name, kcu.referenced_table_schema, kcu.referenced_table_name, kcu.referenced_column_name,
+putc.constraint_type
+FROM information_schema.TABLE_CONSTRAINTS tc
+JOIN information_schema.KEY_COLUMN_USAGE kcu ON tc.constraint_schema = kcu.constraint_schema AND tc.constraint_name = kcu.constraint_name
+LEFT JOIN information_schema.KEY_COLUMN_USAGE puc ON kcu.table_schema = puc.table_schema AND kcu.table_name = puc.table_name AND 
+kcu.column_name = puc.column_name AND puc.POSITION_IN_UNIQUE_CONSTRAINT IS NULL
+LEFT JOIN information_schema.TABLE_CONSTRAINTS putc ON putc.table_schema = puc.table_schema AND putc.table_name = puc.table_name AND 
+putc.constraint_name = puc.constraint_name AND putc.constraint_type IN ('PRIMARY KEY','UNIQUE')
+WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.constraint_schema IN ('{$schemas}');
 MYSQL;
 
         return $this->connection->select($sql);
@@ -733,7 +732,9 @@ MYSQL;
 
     protected function handleRoutineException(\Exception $ex)
     {
-        if (false !== stripos($ex->getMessage(), 'SQLSTATE[HY000]: General error')) {
+        // catch 2053 https://dev.mysql.com/doc/refman/5.7/en/error-messages-client.html#error_cr_no_result_set
+        // this may happen as we try to get as many result sets from routine calls as possible
+        if (false !== stripos($ex->getMessage(), 'SQLSTATE[HY000]: General error: 2053')) {
             return true;
         }
 

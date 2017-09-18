@@ -1,4 +1,5 @@
 <?php
+
 namespace DreamFactory\Core\SqlDb\Database\Schema;
 
 use DreamFactory\Core\Database\Schema\ColumnSchema;
@@ -219,17 +220,10 @@ class SqliteSchema extends SqlSchema
             }
         }
 
-        $isUniqueKey = (isset($info['is_unique'])) ? filter_var($info['is_unique'], FILTER_VALIDATE_BOOLEAN) : false;
-        $isPrimaryKey =
-            (isset($info['is_primary_key'])) ? filter_var($info['is_primary_key'], FILTER_VALIDATE_BOOLEAN) : false;
-        if ($isPrimaryKey && $isUniqueKey) {
-            throw new \Exception('Unique and Primary designations not allowed simultaneously.');
-        }
-
-        if ($isUniqueKey) {
-            $definition .= ' UNIQUE';
-        } elseif ($isPrimaryKey) {
+        if (isset($info['is_primary_key']) && filter_var($info['is_primary_key'], FILTER_VALIDATE_BOOLEAN)) {
             $definition .= ' PRIMARY KEY';
+        } elseif (isset($info['is_unique']) && filter_var($info['is_unique'], FILTER_VALIDATE_BOOLEAN)) {
+            $definition .= ' UNIQUE';
         }
 
         $isForeignKey = (isset($info['is_foreign_key'])) ? boolval($info['is_foreign_key']) : false;
@@ -371,12 +365,23 @@ class SqliteSchema extends SqlSchema
         foreach ($this->getTableNames() as $each) {
             $sql = "PRAGMA foreign_key_list({$each->quotedName})";
             $fks = $this->connection->select($sql);
+            $sql = "PRAGMA table_info({$each->quotedName})";
+            $info = $this->connection->select($sql);
             foreach ($fks as $key) {
                 $key = (array)$key;
+                $field = [];
+                foreach ($info as $eachField) {
+                    $eachField = (array)$eachField;
+                    if (0 === strcasecmp($eachField['name'], $key['from'])) {
+                        $field = $eachField;
+                        continue 1;
+                    }
+                }
                 $references[] = [
                     'table_schema'            => '',
                     'table_name'              => $each->name,
                     'column_name'             => $key['from'],
+                    'constraint_type'         => (array_get_bool($field, 'pk') ? 'primary key' : ''),
                     'referenced_table_schema' => '',
                     'referenced_table_name'   => $key['table'],
                     'referenced_column_name'  => $key['to'],

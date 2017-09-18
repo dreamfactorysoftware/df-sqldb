@@ -112,7 +112,7 @@ class StoredProcedure extends BaseDbResource
     {
         if ($refresh || (is_null($procedures = $this->parent->getFromCache('procedures')))) {
             $procedures = [];
-            foreach ($this->parent->getSchemas() as $schemaName) {
+            foreach ($this->parent->getSchemas($refresh) as $schemaName) {
                 $result = $this->parent->getSchema()->getResourceNames(DbResourceTypes::TYPE_PROCEDURE, $schemaName);
                 $procedures = array_merge($procedures, $result);
             }
@@ -303,8 +303,9 @@ class StoredProcedure extends BaseDbResource
         try {
             $cacheKey = 'procedure:' . strtolower($name);
             /** @type ProcedureSchema $procedure */
+            $procedure = null;
             if ($refresh || (is_null($procedure = $this->parent->getFromCache($cacheKey)))) {
-                if ($procedureSchema = array_get($this->getProcedures(), strtolower($name))) {
+                if ($procedureSchema = array_get($this->getProcedures(null, $refresh), strtolower($name))) {
                     $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $procedureSchema);
                     $this->parent->addToCache($cacheKey, $procedure, true);
                 }

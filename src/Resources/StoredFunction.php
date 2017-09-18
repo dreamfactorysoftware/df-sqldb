@@ -110,7 +110,7 @@ class StoredFunction extends BaseDbResource
     {
         if ($refresh || (is_null($functions = $this->parent->getFromCache('functions')))) {
             $functions = [];
-            foreach ($this->parent->getSchemas() as $schemaName) {
+            foreach ($this->parent->getSchemas($refresh) as $schemaName) {
                 $result = $this->parent->getSchema()->getResourceNames(DbResourceTypes::TYPE_FUNCTION, $schemaName);
                 $functions = array_merge($functions, $result);
             }
@@ -301,8 +301,9 @@ class StoredFunction extends BaseDbResource
         try {
             $cacheKey = 'function:' . strtolower($name);
             /** @type FunctionSchema $function */
+            $function = null;
             if ($refresh || (is_null($function = $this->parent->getFromCache($cacheKey)))) {
-                if ($functionSchema = array_get($this->getFunctions(), strtolower($name))) {
+                if ($functionSchema = array_get($this->getFunctions(null, $refresh), strtolower($name))) {
                     $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION, $functionSchema);
                     $this->parent->addToCache($cacheKey, $function, true);
                 }
