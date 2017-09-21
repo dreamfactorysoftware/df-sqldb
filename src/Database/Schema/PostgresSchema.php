@@ -4,6 +4,7 @@ namespace DreamFactory\Core\SqlDb\Database\Schema;
 
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\FunctionSchema;
+use DreamFactory\Core\Database\Schema\ParameterSchema;
 use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
 use DreamFactory\Core\Database\Schema\TableSchema;
@@ -642,13 +643,16 @@ EOD;
         return parent::formatValueToPhpType($value, $type, $allow_null);
     }
 
-    /**
-     * @param $type
-     *
-     * @return mixed|null
-     */
-    public static function getNativeDateTimeFormat($type)
+    public static function getNativeDateTimeFormat($field_info)
     {
+        $type = DbSimpleTypes::TYPE_STRING;
+        if (is_string($field_info)) {
+            $type = $field_info;
+        } elseif ($field_info instanceof ColumnSchema) {
+            $type = $field_info->type;
+        } elseif ($field_info instanceof ParameterSchema) {
+            $type = $field_info->type;
+        }
         switch (strtolower(strval($type))) {
             case DbSimpleTypes::TYPE_DATE:
                 return 'Y-m-d';
