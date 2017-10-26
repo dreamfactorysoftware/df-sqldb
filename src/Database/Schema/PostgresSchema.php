@@ -282,23 +282,6 @@ class PostgresSchema extends SqlSchema
     }
 
     /**
-     * Enables or disables integrity check.
-     *
-     * @param boolean $check  whether to turn on or off the integrity check.
-     * @param string  $schema the schema of the tables. Defaults to empty string, meaning the current or default schema.
-     *
-     */
-    public function checkIntegrity($check = true, $schema = '')
-    {
-        $enable = $check ? 'ENABLE' : 'DISABLE';
-        $tableNames = $this->getTableNames($schema);
-        $db = $this->connection;
-        foreach ($tableNames as $table) {
-            $db->statement("ALTER TABLE {$table->quotedName} $enable TRIGGER ALL");
-        }
-    }
-
-    /**
      * @inheritdoc
      */
     protected function findColumns(TableSchema $table)
@@ -443,10 +426,6 @@ EOD;
 SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema','pg_catalog')
 MYSQL;
         $rows = $this->selectColumn($sql);
-
-        if (false === array_search(static::DEFAULT_SCHEMA, $rows)) {
-            $rows[] = static::DEFAULT_SCHEMA;
-        }
 
         return $rows;
     }
@@ -790,9 +769,6 @@ MYSQL;
 
         $procedures = $this->selectColumn($sql, $bindings);
 
-        $defaultSchema = $this->getNamingSchema();
-        $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
-
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
@@ -813,7 +789,7 @@ MYSQL;
             }
             $schemaName = $schema;
             $internalName = $schemaName . '.' . $resourceName;
-            $name = ($addSchema) ? $internalName : $resourceName;
+            $name = $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
             $returnType = array_get($row, 'DATA_TYPE');
             if (!empty($returnType) && (0 !== strcasecmp('void', $returnType))) {

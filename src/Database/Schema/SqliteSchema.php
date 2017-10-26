@@ -286,18 +286,6 @@ class SqliteSchema extends SqlSchema
     }
 
     /**
-     * Enables or disables integrity check.
-     *
-     * @param boolean $check  whether to turn on or off the integrity check.
-     * @param string  $schema the schema of the tables. Defaults to empty string, meaning the current or default schema.
-     *
-     */
-    public function checkIntegrity($check = true, $schema = '')
-    {
-        $this->connection->statement('PRAGMA foreign_keys=' . (int)$check);
-    }
-
-    /**
      * @inheritdoc
      */
     protected function findTableNames($schema = '')
