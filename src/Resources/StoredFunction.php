@@ -345,7 +345,7 @@ class StoredFunction extends BaseDbResource
         /** @type FunctionSchema $function */
         if (is_null($function = $this->parent->getFromCache($cacheKey))) {
             if ($functionSchema = array_get($this->getFunctions(), strtolower($this->resource))) {
-                $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $functionSchema);
+                $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION, $functionSchema);
                 $this->parent->addToCache($cacheKey, $function, true);
             }
         }
