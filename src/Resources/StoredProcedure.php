@@ -308,20 +308,7 @@ class StoredProcedure extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
-            $cacheKey = 'procedure:' . strtolower($name);
-            /** @type ProcedureSchema $procedure */
-            $procedure = null;
-            if ($refresh || (is_null($procedure = $this->parent->getFromCache($cacheKey)))) {
-                if ($procedureSchema = array_get($this->getProcedures(null, $refresh), strtolower($name))) {
-                    $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE,
-                        $procedureSchema);
-                    $this->parent->addToCache($cacheKey, $procedure, true);
-                }
-            }
-            if (!$procedure) {
-                throw new NotFoundException("Procedure '$name' does not exist in the database.");
-            }
-
+            $procedure = $this->getProcedure($name, $refresh);
             $result = $procedure->toArray();
             $result['access'] = $this->getPermissions($name);
 
@@ -331,6 +318,30 @@ class StoredProcedure extends BaseDbResource
         } catch (\Exception $ex) {
             throw new InternalServerErrorException("Failed to query database schema.\n{$ex->getMessage()}");
         }
+    }
+
+    /**
+     * @param string $name    Procedure name
+     * @param bool   $refresh Force a refresh of the schema from the database
+     * @return ProcedureSchema
+     * @throws NotFoundException
+     */
+    protected function getProcedure($name, $refresh = false)
+    {
+        $cacheKey = 'procedure:' . strtolower($name);
+        /** @type ProcedureSchema $procedure */
+        if ($refresh || is_null($procedure = $this->parent->getFromCache($cacheKey))) {
+            if ($procedureSchema = array_get($this->getProcedures(), strtolower($name))) {
+                $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $procedureSchema);
+                $procedure->discoveryCompleted = true;
+                $this->parent->addToCache($cacheKey, $procedure, true);
+            }
+        }
+        if (!$procedure) {
+            throw new NotFoundException("Procedure '$name' does not exist in the database.");
+        }
+
+        return $procedure;
     }
 
     /**
@@ -351,20 +362,9 @@ class StoredProcedure extends BaseDbResource
 
         Session::replaceLookups($params);
 
-        $cacheKey = 'procedure:' . strtolower($this->resource);
-        /** @type ProcedureSchema $procedure */
-        if (is_null($procedure = $this->parent->getFromCache($cacheKey))) {
-            if ($procedureSchema = array_get($this->getProcedures(), strtolower($this->resource))) {
-                $procedure = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_PROCEDURE, $procedureSchema);
-                $this->parent->addToCache($cacheKey, $procedure, true);
-            }
-        }
-        if (!$procedure) {
-            throw new NotFoundException("Procedure '{$this->resource}' does not exist in the database.");
-        }
-
         $outParams = [];
         try {
+            $procedure = $this->getProcedure($this->resource);
             $result = $this->parent->getSchema()->callProcedure($procedure, $params, $outParams);
         } catch (RestException $ex) {
             throw $ex;
@@ -451,8 +451,8 @@ class StoredProcedure extends BaseDbResource
         $path = '/' . $resourceName;
 
         $paths = [
-            $path => [
-                'get'   => [
+            $path                       => [
+                'get' => [
                     'summary'     => 'get' . $capitalized . $pluralClass . '() - Retrieve one or more ' . $pluralClass . '.',
                     'operationId' => 'get' . $capitalized . $pluralClass,
                     'parameters'  => [
@@ -624,7 +624,7 @@ class StoredProcedure extends BaseDbResource
                     ],
                 ],
             ],
-            'StoredProcedureSchemas' => [
+            'StoredProcedureSchemas'  => [
                 'description' => 'Stored Procedure Schemas',
                 'content'     => [
                     'application/json' => [

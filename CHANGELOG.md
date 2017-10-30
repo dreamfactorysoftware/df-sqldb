@@ -5,6 +5,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## [Unreleased]
 ### Changed
 - Change getNativeDateTimeFormat to handle column schema to detect detailed datetime format
+- Limit schema object displayed fields when discovery is not complete
 
 ## [0.13.1] - 2017-10-30
 ### Fixed

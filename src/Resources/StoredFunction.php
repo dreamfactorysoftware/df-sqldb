@@ -271,7 +271,7 @@ class StoredFunction extends BaseDbResource
      * @return array
      * @throws \Exception
      */
-    public function describeFunctions($names, $refresh = false)
+    protected function describeFunctions($names, $refresh = false)
     {
         $names = static::validateAsArray(
             $names,
@@ -297,7 +297,7 @@ class StoredFunction extends BaseDbResource
      * @return array
      * @throws \Exception
      */
-    public function describeFunction($name, $refresh = false)
+    protected function describeFunction($name, $refresh = false)
     {
         $name = (is_array($name) ? array_get($name, 'name') : $name);
         if (empty($name)) {
@@ -307,20 +307,7 @@ class StoredFunction extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
-            $cacheKey = 'function:' . strtolower($name);
-            /** @type FunctionSchema $function */
-            $function = null;
-            if ($refresh || (is_null($function = $this->parent->getFromCache($cacheKey)))) {
-                if ($functionSchema = array_get($this->getFunctions(null, $refresh), strtolower($name))) {
-                    $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION,
-                        $functionSchema);
-                    $this->parent->addToCache($cacheKey, $function, true);
-                }
-            }
-            if (!$function) {
-                throw new NotFoundException("Function '$name' does not exist in the database.");
-            }
-
+            $function = $this->getFunction($name, $refresh);
             $result = $function->toArray();
             $result['access'] = $this->getPermissions($name);
 
@@ -330,6 +317,30 @@ class StoredFunction extends BaseDbResource
         } catch (\Exception $ex) {
             throw new InternalServerErrorException("Failed to query database schema.\n{$ex->getMessage()}");
         }
+    }
+
+    /**
+     * @param string $name    Function name
+     * @param bool   $refresh Force a refresh of the schema from the database
+     * @return FunctionSchema
+     * @throws NotFoundException
+     */
+    protected function getFunction($name, $refresh = false)
+    {
+        $cacheKey = 'function:' . strtolower($name);
+        /** @type FunctionSchema $function */
+        if ($refresh || is_null($function = $this->parent->getFromCache($cacheKey))) {
+            if ($functionSchema = array_get($this->getFunctions(), strtolower($name))) {
+                $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION, $functionSchema);
+                $function->discoveryCompleted = true;
+                $this->parent->addToCache($cacheKey, $function, true);
+            }
+        }
+        if (!$function) {
+            throw new NotFoundException("Function '$name' does not exist in the database.");
+        }
+
+        return $function;
     }
 
     /**
@@ -350,19 +361,8 @@ class StoredFunction extends BaseDbResource
 
         Session::replaceLookups($params);
 
-        $cacheKey = 'function:' . strtolower($this->resource);
-        /** @type FunctionSchema $function */
-        if (is_null($function = $this->parent->getFromCache($cacheKey))) {
-            if ($functionSchema = array_get($this->getFunctions(), strtolower($this->resource))) {
-                $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION, $functionSchema);
-                $this->parent->addToCache($cacheKey, $function, true);
-            }
-        }
-        if (!$function) {
-            throw new NotFoundException("Function '{$this->resource}' does not exist in the database.");
-        }
-
         try {
+            $function = $this->getFunction($this->resource);
             $result = $this->parent->getSchema()->callFunction($function, $params);
         } catch (RestException $ex) {
             throw $ex;
