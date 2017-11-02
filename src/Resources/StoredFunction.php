@@ -427,9 +427,14 @@ class StoredFunction extends BaseDbResource
         $path = '/' . $resourceName;
 
         $paths = [
-            $path => [
-                'get'   => [
-                    'summary'     => 'get' . $capitalized . $pluralClass . '() - Retrieve one or more ' . $pluralClass . '.',
+            $path                      => [
+                'get' => [
+                    'summary'     => 'Retrieve one or more ' . $pluralClass . '.',
+                    'description' =>
+                        'Use the \'ids\' parameter to limit records that are returned. ' .
+                        'By default, all records up to the maximum are returned. ' .
+                        'Use the \'fields\' parameters to limit properties returned for each record. ' .
+                        'By default, all fields are returned for each record.',
                     'operationId' => 'get' . $capitalized . $pluralClass,
                     'parameters'  => [
                         ApiOptions::documentOption(ApiOptions::FIELDS),
@@ -438,11 +443,6 @@ class StoredFunction extends BaseDbResource
                     'responses'   => [
                         '200' => ['$ref' => '#/components/responses/StoredFunctionSchemas']
                     ],
-                    'description' =>
-                        'Use the \'ids\' parameter to limit records that are returned. ' .
-                        'By default, all records up to the maximum are returned. ' .
-                        'Use the \'fields\' parameters to limit properties returned for each record. ' .
-                        'By default, all fields are returned for each record.',
                 ],
             ],
             $path . '/{function_name}' => [
@@ -462,17 +462,17 @@ class StoredFunction extends BaseDbResource
                     ],
                 ],
                 'get'        => [
-                    'summary'     => 'call' . $capitalized . 'StoredFunction() - Call a stored function.',
-                    'operationId' => 'call' . $capitalized . 'StoredFunction',
+                    'summary'     => 'Call a stored function.',
                     'description' => 'Call a stored function with no parameters. ',
+                    'operationId' => 'call' . $capitalized . 'StoredFunction',
                     'responses'   => [
                         '200' => ['$ref' => '#/components/responses/StoredFunctionResponse']
                     ],
                 ],
                 'post'       => [
-                    'summary'     => 'call' . $capitalized . 'StoredFunctionWithParams() - Call a stored function.',
-                    'operationId' => 'call' . $capitalized . 'StoredFunctionWithParams',
+                    'summary'     => 'Call a stored function with parameters.',
                     'description' => 'Call a stored function with parameters. ',
+                    'operationId' => 'call' . $capitalized . 'StoredFunctionWithParams',
                     'requestBody' => [
                         '$ref' => '#/components/requestBodies/StoredFunctionRequest'
                     ],
@@ -581,7 +581,7 @@ class StoredFunction extends BaseDbResource
                     ],
                 ],
             ],
-            'StoredFunctionSchemas' => [
+            'StoredFunctionSchemas'  => [
                 'description' => 'Stored Function Schemas',
                 'content'     => [
                     'application/json' => [

@@ -453,7 +453,12 @@ class StoredProcedure extends BaseDbResource
         $paths = [
             $path                       => [
                 'get' => [
-                    'summary'     => 'get' . $capitalized . $pluralClass . '() - Retrieve one or more ' . $pluralClass . '.',
+                    'summary'     => 'Retrieve one or more ' . $pluralClass . '.',
+                    'description' =>
+                        'Use the \'ids\' parameter to limit records that are returned. ' .
+                        'By default, all records up to the maximum are returned. ' .
+                        'Use the \'fields\' parameters to limit properties returned for each record. ' .
+                        'By default, all fields are returned for each record.',
                     'operationId' => 'get' . $capitalized . $pluralClass,
                     'parameters'  => [
                         ApiOptions::documentOption(ApiOptions::FIELDS),
@@ -462,11 +467,6 @@ class StoredProcedure extends BaseDbResource
                     'responses'   => [
                         '200' => ['$ref' => '#/components/responses/StoredProcedureSchemas']
                     ],
-                    'description' =>
-                        'Use the \'ids\' parameter to limit records that are returned. ' .
-                        'By default, all records up to the maximum are returned. ' .
-                        'Use the \'fields\' parameters to limit properties returned for each record. ' .
-                        'By default, all fields are returned for each record.',
                 ],
             ],
             $path . '/{procedure_name}' => [
@@ -492,19 +492,19 @@ class StoredProcedure extends BaseDbResource
                     ],
                 ],
                 'get'        => [
-                    'summary'     => 'call' . $capitalized . 'StoredProcedure() - Call a stored procedure.',
-                    'operationId' => 'call' . $capitalized . 'StoredProcedure',
+                    'summary'     => 'Call a stored procedure.',
                     'description' => 'Call a stored procedure with no parameters. ' .
                         'Set an optional wrapper for the returned data set. ',
+                    'operationId' => 'call' . $capitalized . 'StoredProcedure',
                     'responses'   => [
                         '200' => ['$ref' => '#/components/responses/StoredProcedureResponse']
                     ],
                 ],
                 'post'       => [
-                    'summary'     => 'call' . $capitalized . 'StoredProcedureWithParams() - Call a stored procedure.',
-                    'operationId' => 'call' . $capitalized . 'StoredProcedureWithParams',
+                    'summary'     => 'Call a stored procedure.',
                     'description' => 'Call a stored procedure with parameters. ' .
                         'Set an optional wrapper and schema for the returned data set. ',
+                    'operationId' => 'call' . $capitalized . 'StoredProcedureWithParams',
                     'requestBody' => [
                         '$ref' => '#/components/requestBodies/StoredProcedureRequest'
                     ],
