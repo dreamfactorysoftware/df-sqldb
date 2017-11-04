@@ -7,6 +7,7 @@ use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\StoredFunction;
 use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
+use DreamFactory\Core\Utility\ResourcesWrapper;
 use Illuminate\Database\DatabaseManager;
 use DbSchemaExtensions;
 
@@ -132,9 +133,6 @@ class SqlDb extends BaseDbService
         if (null === $this->schema = DbSchemaExtensions::getSchemaExtension($driver, $this->dbConn)) {
             throw new \Exception("Driver '$driver' is not supported by this software.");
         }
-
-        $schema = array_get($this->config, 'schema');
-        $this->schema->setUserSchema($schema);
     }
 
     /**
@@ -160,5 +158,103 @@ class SqlDb extends BaseDbService
         foreach ($statements as $statement) {
             $this->dbConn->statement($statement);
         }
+    }
+
+    protected function getApiDocSchemas()
+    {
+        $wrapper = ResourcesWrapper::getWrapper();
+
+        $add = [
+            'StoredRoutineSchemas'  => [
+                'type'       => 'object',
+                'properties' => [
+                    $wrapper => [
+                        'type'        => 'array',
+                        'description' => 'An array of routine definitions.',
+                        'items'       => [
+                            '$ref' => '#/components/schemas/StoredRoutineSchema',
+                        ],
+                    ],
+                ],
+            ],
+            'StoredRoutineSchema' => [
+                'type'       => 'object',
+                'properties' => [
+                    'name'        => [
+                        'type'        => 'string',
+                        'description' => 'Identifier/Name for the routine.',
+                    ],
+                    'label'       => [
+                        'type'        => 'string',
+                        'description' => 'Displayable name for the routine.',
+                    ],
+                    'description'      => [
+                        'type'        => 'string',
+                        'description' => 'Description for the routine.',
+                    ],
+                    'return_type'      => [
+                        'type'        => 'string',
+                        'description' => 'Displayable plural name for the routine.',
+                    ],
+                    'return_schema' => [
+                        'type'        => 'string',
+                        'description' => 'Field(s), if any, that represent the primary key of each record.',
+                    ],
+                    'params'        => [
+                        'type'        => 'array',
+                        'description' => 'An array of available fields in each record.',
+                        'items'       => [
+                            '$ref' => '#/components/schemas/StoredRoutineParameterSchema',
+                        ],
+                    ],
+                ],
+            ],
+            'StoredRoutineParameterSchema' => [
+                'type'       => 'object',
+                'properties' => [
+                    'name'        => [
+                        'type'        => 'string',
+                        'description' => 'Identifier/Name for the parameter.',
+                    ],
+                    'position'       => [
+                        'type'        => 'string',
+                        'description' => 'Displayable singular name for the parameter.',
+                    ],
+                    'param_type'      => [
+                        'type'        => 'string',
+                        'description' => 'Displayable plural name for the parameter.',
+                    ],
+                    'type'               => [
+                        'type'        => 'string',
+                        'description' => 'The DreamFactory abstract data type for this parameter.',
+                    ],
+                    'db_type'            => [
+                        'type'        => 'string',
+                        'description' => 'The native database type used for this parameter.',
+                    ],
+                    'length'             => [
+                        'type'        => 'integer',
+                        'format'      => 'int32',
+                        'description' => 'The maximum length allowed (in characters for string, displayed for numbers).',
+                    ],
+                    'precision'          => [
+                        'type'        => 'integer',
+                        'format'      => 'int32',
+                        'description' => 'Total number of places for numbers.',
+                    ],
+                    'scale'              => [
+                        'type'        => 'integer',
+                        'format'      => 'int32',
+                        'description' => 'Number of decimal places allowed for numbers.',
+                    ],
+                    'default'      => [
+                        'type'        => 'string',
+                        'description' => 'Default value for this parameter.',
+                    ],
+                ],
+            ],
+        ];
+
+        return array_merge(parent::getApiDocSchemas(), $add);
     }
 }

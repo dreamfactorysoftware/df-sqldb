@@ -2,6 +2,7 @@
 namespace DreamFactory\Core\SqlDb\Database\Schema;
 
 use DreamFactory\Core\Database\Schema\ColumnSchema;
+use DreamFactory\Core\Database\Schema\ParameterSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
 use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Enums\DbSimpleTypes;
@@ -18,13 +19,16 @@ class MySqlSchema extends SqlSchema
 
     const RIGHT_QUOTE_CHARACTER = '`';
 
-    /**
-     * @param $type
-     *
-     * @return mixed|null
-     */
-    public static function getNativeDateTimeFormat($type)
+    public static function getNativeDateTimeFormat($field_info)
     {
+        $type = DbSimpleTypes::TYPE_STRING;
+        if (is_string($field_info)) {
+            $type = $field_info;
+        } elseif ($field_info instanceof ColumnSchema) {
+            $type = $field_info->type;
+        } elseif ($field_info instanceof ParameterSchema) {
+            $type = $field_info->type;
+        }
         switch (strtolower(strval($type))) {
             case DbSimpleTypes::TYPE_DATE:
                 return 'Y-m-d';
@@ -314,18 +318,6 @@ MYSQL;
     }
 
     /**
-     * Enables or disables integrity check.
-     *
-     * @param boolean $check  whether to turn on or off the integrity check.
-     * @param string  $schema the schema of the tables. Defaults to empty string, meaning the current or default schema.
-     *
-     */
-    public function checkIntegrity($check = true, $schema = '')
-    {
-        $this->connection->statement('SET FOREIGN_KEY_CHECKS=' . ($check ? 1 : 0));
-    }
-
-    /**
      * @inheritdoc
      */
     protected function findColumns(TableSchema $table)
@@ -441,9 +433,6 @@ MYSQL;
 
         $rows = $this->connection->select($sql);
 
-        $defaultSchema = $this->getNamingSchema();
-        $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
-
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
@@ -451,7 +440,7 @@ MYSQL;
             $schemaName = $schema;
             $resourceName = $row[0];
             $internalName = $schemaName . '.' . $resourceName;
-            $name = ($addSchema) ? $internalName : $resourceName;
+            $name = $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);;
             $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $names[strtolower($name)] = new TableSchema($settings);
@@ -475,9 +464,6 @@ MYSQL;
 
         $rows = $this->connection->select($sql);
 
-        $defaultSchema = $this->getNamingSchema();
-        $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
-
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
@@ -485,7 +471,7 @@ MYSQL;
             $schemaName = $schema;
             $resourceName = $row[0];
             $internalName = $schemaName . '.' . $resourceName;
-            $name = ($addSchema) ? $internalName : $resourceName;
+            $name = $resourceName;
             $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
             $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName');
             $settings['isView'] = true;

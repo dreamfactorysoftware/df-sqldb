@@ -3,6 +3,11 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+## [0.14.0] - 2017-11-03
+### Changed
+- Change getNativeDateTimeFormat to handle column schema to detect detailed datetime format
+- DF-1184 Limit schema object displayed fields when discovery is not complete
+- Upgrade Swagger to OpenAPI 3.0 specification
 
 ## [0.13.1] - 2017-10-30
 ### Fixed
@@ -179,7 +184,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.13.1...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.14.0...HEAD
+[0.14.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.13.1...0.14.0
 [0.13.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.13.0...0.13.1
 [0.13.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.12.0...0.13.0
 [0.12.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.11.0...0.12.0

@@ -1,4 +1,5 @@
 <?php
+
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use DreamFactory\Core\Components\DataValidator;
@@ -110,9 +111,16 @@ class StoredFunction extends BaseDbResource
     {
         if ($refresh || (is_null($functions = $this->parent->getFromCache('functions')))) {
             $functions = [];
+            $defaultSchema = $this->parent->getNamingSchema();
             foreach ($this->parent->getSchemas($refresh) as $schemaName) {
+                $addSchema = (!empty($schemaName) && ($defaultSchema !== $schemaName));
                 $result = $this->parent->getSchema()->getResourceNames(DbResourceTypes::TYPE_FUNCTION, $schemaName);
-                $functions = array_merge($functions, $result);
+                foreach ($result as &$function) {
+                    if ($addSchema) {
+                        $function->name = ($addSchema) ? $function->internalName : $function->resourceName;
+                    }
+                    $functions[strtolower($function->name)] = $function;
+                }
             }
             ksort($functions, SORT_NATURAL); // sort alphabetically
             $this->parent->addToCache('functions', $functions, true);
@@ -263,7 +271,7 @@ class StoredFunction extends BaseDbResource
      * @return array
      * @throws \Exception
      */
-    public function describeFunctions($names, $refresh = false)
+    protected function describeFunctions($names, $refresh = false)
     {
         $names = static::validateAsArray(
             $names,
@@ -289,7 +297,7 @@ class StoredFunction extends BaseDbResource
      * @return array
      * @throws \Exception
      */
-    public function describeFunction($name, $refresh = false)
+    protected function describeFunction($name, $refresh = false)
     {
         $name = (is_array($name) ? array_get($name, 'name') : $name);
         if (empty($name)) {
@@ -299,19 +307,7 @@ class StoredFunction extends BaseDbResource
         $this->checkPermission(Verbs::GET, $name);
 
         try {
-            $cacheKey = 'function:' . strtolower($name);
-            /** @type FunctionSchema $function */
-            $function = null;
-            if ($refresh || (is_null($function = $this->parent->getFromCache($cacheKey)))) {
-                if ($functionSchema = array_get($this->getFunctions(null, $refresh), strtolower($name))) {
-                    $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION, $functionSchema);
-                    $this->parent->addToCache($cacheKey, $function, true);
-                }
-            }
-            if (!$function) {
-                throw new NotFoundException("Function '$name' does not exist in the database.");
-            }
-
+            $function = $this->getFunction($name, $refresh);
             $result = $function->toArray();
             $result['access'] = $this->getPermissions($name);
 
@@ -321,6 +317,30 @@ class StoredFunction extends BaseDbResource
         } catch (\Exception $ex) {
             throw new InternalServerErrorException("Failed to query database schema.\n{$ex->getMessage()}");
         }
+    }
+
+    /**
+     * @param string $name    Function name
+     * @param bool   $refresh Force a refresh of the schema from the database
+     * @return FunctionSchema
+     * @throws NotFoundException
+     */
+    protected function getFunction($name, $refresh = false)
+    {
+        $cacheKey = 'function:' . strtolower($name);
+        /** @type FunctionSchema $function */
+        if ($refresh || is_null($function = $this->parent->getFromCache($cacheKey))) {
+            if ($functionSchema = array_get($this->getFunctions(), strtolower($name))) {
+                $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION, $functionSchema);
+                $function->discoveryCompleted = true;
+                $this->parent->addToCache($cacheKey, $function, true);
+            }
+        }
+        if (!$function) {
+            throw new NotFoundException("Function '$name' does not exist in the database.");
+        }
+
+        return $function;
     }
 
     /**
@@ -341,19 +361,8 @@ class StoredFunction extends BaseDbResource
 
         Session::replaceLookups($params);
 
-        $cacheKey = 'function:' . strtolower($this->resource);
-        /** @type FunctionSchema $function */
-        if (is_null($function = $this->parent->getFromCache($cacheKey))) {
-            if ($functionSchema = array_get($this->getFunctions(), strtolower($this->resource))) {
-                $function = $this->parent->getSchema()->getResource(DbResourceTypes::TYPE_FUNCTION, $functionSchema);
-                $this->parent->addToCache($cacheKey, $function, true);
-            }
-        }
-        if (!$function) {
-            throw new NotFoundException("Function '{$this->resource}' does not exist in the database.");
-        }
-
         try {
+            $function = $this->getFunction($this->resource);
             $result = $this->parent->getSchema()->callFunction($function, $params);
         } catch (RestException $ex) {
             throw $ex;
@@ -404,94 +413,101 @@ class StoredFunction extends BaseDbResource
         return $result;
     }
 
-    public static function getApiDocInfo($service, array $resource = [])
+    protected function getApiDocPaths()
     {
-        $serviceName = strtolower($service);
+        $service = $this->getServiceName();
         $capitalized = camelize($service);
         $class = trim(strrchr(static::class, '\\'), '\\');
-        $resourceName = strtolower(array_get($resource, 'name', $class));
-        $path = '/' . $serviceName . '/' . $resourceName;
-        $base = parent::getApiDocInfo($service, $resource);
+        $pluralClass = str_plural($class);
+        if ($pluralClass === $class) {
+            // method names can't be the same
+            $pluralClass = $class . 'Entries';
+        }
+        $resourceName = strtolower($this->name);
+        $path = '/' . $resourceName;
 
-        $apis = [
-            $path . '/{function_name}' => [
-                'get'  => [
-                    'tags'              => [$serviceName],
-                    'summary'           => 'call' . $capitalized . 'StoredFunction() - Call a stored function.',
-                    'operationId'       => 'call' . $capitalized . 'StoredFunction',
-                    'description'       => 'Call a stored function with no parameters. ',
-                    'parameters'        => [
-                        [
-                            'name'        => 'function_name',
-                            'description' => 'Name of the stored function to call.',
-                            'type'        => 'string',
-                            'in'          => 'path',
-                            'required'    => true,
-                        ],
-                        [
-                            'name'        => 'returns',
-                            'description' => 'If returning a single value, use this to set the type of that value.',
-                            'type'        => 'string',
-                            'in'          => 'query',
-                            'required'    => false,
-                        ],
+        $paths = [
+            $path                      => [
+                'get' => [
+                    'summary'     => 'Retrieve one or more ' . $pluralClass . '.',
+                    'description' =>
+                        'Use the \'ids\' parameter to limit records that are returned. ' .
+                        'By default, all records up to the maximum are returned. ' .
+                        'Use the \'fields\' parameters to limit properties returned for each record. ' .
+                        'By default, all fields are returned for each record.',
+                    'operationId' => 'get' . $capitalized . $pluralClass,
+                    'parameters'  => [
+                        ApiOptions::documentOption(ApiOptions::FIELDS),
+                        ApiOptions::documentOption(ApiOptions::IDS),
                     ],
-                    'responses'         => [
-                        '200'     => [
-                            'description' => 'Success',
-                            'schema'      => ['$ref' => '#/definitions/StoredFunctionResponse']
-                        ],
-                        'default' => [
-                            'description' => 'Error',
-                            'schema'      => ['$ref' => '#/definitions/Error']
-                        ]
+                    'responses'   => [
+                        '200' => ['$ref' => '#/components/responses/StoredFunctionSchemas']
                     ],
                 ],
-                'post' => [
-                    'tags'              => [$serviceName],
-                    'summary'           => 'call' .
-                        $capitalized .
-                        'StoredFunctionWithParams() - Call a stored function.',
-                    'operationId'       => 'call' . $capitalized . 'StoredFunctionWithParams',
-                    'description'       => 'Call a stored function with parameters. ',
-                    'parameters'        => [
-                        [
-                            'name'        => 'function_name',
-                            'description' => 'Name of the stored function to call.',
-                            'type'        => 'string',
-                            'in'          => 'path',
-                            'required'    => true,
-                        ],
-                        [
-                            'name'        => 'body',
-                            'description' => 'Data containing input parameters to pass to function.',
-                            'schema'      => ['$ref' => '#/definitions/StoredFunctionRequest'],
-                            'in'          => 'body',
-                            'required'    => true,
-                        ],
-                        [
-                            'name'        => 'returns',
-                            'description' => 'If returning a single value, use this to set the type of that value.',
-                            'type'        => 'string',
-                            'in'          => 'query',
-                            'required'    => false,
-                        ],
+            ],
+            $path . '/{function_name}' => [
+                'parameters' => [
+                    [
+                        'name'        => 'function_name',
+                        'description' => 'Name of the stored function to call.',
+                        'schema'      => ['type' => 'string'],
+                        'in'          => 'path',
+                        'required'    => true,
                     ],
-                    'responses'         => [
-                        '200'     => [
-                            'description' => 'Success',
-                            'schema'      => ['$ref' => '#/definitions/StoredFunctionResponse']
-                        ],
-                        'default' => [
-                            'description' => 'Error',
-                            'schema'      => ['$ref' => '#/definitions/Error']
-                        ]
+                    [
+                        'name'        => 'returns',
+                        'description' => 'If returning a single value, use this to set the type of that value.',
+                        'schema'      => ['type' => 'string'],
+                        'in'          => 'query',
+                    ],
+                ],
+                'get'        => [
+                    'summary'     => 'Call a stored function.',
+                    'description' => 'Call a stored function with no parameters. ',
+                    'operationId' => 'call' . $capitalized . 'StoredFunction',
+                    'responses'   => [
+                        '200' => ['$ref' => '#/components/responses/StoredFunctionResponse']
+                    ],
+                ],
+                'post'       => [
+                    'summary'     => 'Call a stored function with parameters.',
+                    'description' => 'Call a stored function with parameters. ',
+                    'operationId' => 'call' . $capitalized . 'StoredFunctionWithParams',
+                    'requestBody' => [
+                        '$ref' => '#/components/requestBodies/StoredFunctionRequest'
+                    ],
+                    'responses'   => [
+                        '200' => ['$ref' => '#/components/responses/StoredFunctionResponse']
                     ],
                 ],
             ],
         ];
 
-        $models = [
+        return $paths;
+    }
+
+    protected function getApiDocRequests()
+    {
+        $add = [
+            'StoredFunctionRequest' => [
+                'description' => 'Stored Function Request',
+                'content'     => [
+                    'application/json' => [
+                        'schema' => ['$ref' => '#/components/schemas/StoredFunctionRequest']
+                    ],
+                    'application/xml'  => [
+                        'schema' => ['$ref' => '#/components/schemas/StoredFunctionRequest']
+                    ],
+                ],
+            ],
+        ];
+
+        return array_merge(parent::getApiDocRequests(), $add);
+    }
+
+    protected function getApiDocSchemas()
+    {
+        $add = [
             'StoredFunctionResponse'     => [
                 'type'       => 'object',
                 'properties' => [
@@ -508,11 +524,11 @@ class StoredFunction extends BaseDbResource
                         'type'        => 'array',
                         'description' => 'Optional array of input and output parameters.',
                         'items'       => [
-                            '$ref' => '#/definitions/StoredFunctionParam',
+                            '$ref' => '#/components/schemas/StoredFunctionParam',
                         ],
                     ],
                     'schema'  => [
-                        '$ref' => '#/definitions/StoredFunctionResultSchema',
+                        '$ref' => '#/components/schemas/StoredFunctionResultSchema',
                     ],
                     'returns' => [
                         'type'        => 'string',
@@ -548,9 +564,36 @@ class StoredFunction extends BaseDbResource
             ],
         ];
 
-        $base['paths'] = array_merge($base['paths'], $apis);
-        $base['definitions'] = array_merge($base['definitions'], $models);
+        return array_merge(parent::getApiDocSchemas(), $add);
+    }
 
-        return $base;
+    protected function getApiDocResponses()
+    {
+        $add = [
+            'StoredFunctionResponse' => [
+                'description' => 'Stored Function Response',
+                'content'     => [
+                    'application/json' => [
+                        'schema' => ['$ref' => '#/components/schemas/StoredFunctionResponse']
+                    ],
+                    'application/xml'  => [
+                        'schema' => ['$ref' => '#/components/schemas/StoredFunctionResponse']
+                    ],
+                ],
+            ],
+            'StoredFunctionSchemas'  => [
+                'description' => 'Stored Function Schemas',
+                'content'     => [
+                    'application/json' => [
+                        'schema' => ['$ref' => '#/components/schemas/StoredRoutineSchemas']
+                    ],
+                    'application/xml'  => [
+                        'schema' => ['$ref' => '#/components/schemas/StoredRoutineSchemas']
+                    ],
+                ],
+            ],
+        ];
+
+        return array_merge(parent::getApiDocResponses(), $add);
     }
 }
