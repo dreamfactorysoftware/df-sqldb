@@ -56,7 +56,7 @@ class Table extends BaseDbTableResource
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
-            if (!$tableSchema = $this->getTableSchema(null, $table)) {
+            if (!$tableSchema = $this->parent->getTableSchema($table)) {
                 throw new NotFoundException("Table '$table' does not exist in the database.");
             }
 
@@ -111,7 +111,7 @@ class Table extends BaseDbTableResource
     {
         // truncate the table, return success
         try {
-            if (!$tableSchema = $this->getTableSchema(null, $table)) {
+            if (!$tableSchema = $this->parent->getTableSchema($table)) {
                 throw new NotFoundException("Table '$table' does not exist in the database.");
             }
             // build filter string if necessary, add server-side filters if necessary
@@ -150,7 +150,7 @@ class Table extends BaseDbTableResource
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
-            if (!$tableSchema = $this->getTableSchema(null, $table)) {
+            if (!$tableSchema = $this->parent->getTableSchema($table)) {
                 throw new NotFoundException("Table '$table' does not exist in the database.");
             }
             $fieldsInfo = $tableSchema->getColumns(true);
@@ -181,7 +181,7 @@ class Table extends BaseDbTableResource
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
-            $tableSchema = $this->getTableSchema(null, $table);
+            $tableSchema = $this->parent->getTableSchema($table);
             if (!$tableSchema) {
                 throw new NotFoundException("Table '$table' does not exist in the database.");
             }
@@ -219,7 +219,7 @@ class Table extends BaseDbTableResource
      */
     protected function runQuery($table, Builder $builder, $extras)
     {
-        $schema = $this->getTableSchema(null, $table);
+        $schema = $this->parent->getTableSchema($table);
         if (!$schema) {
             throw new NotFoundException("Table '$table' does not exist in the database.");
         }
