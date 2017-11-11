@@ -77,8 +77,8 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
 
     public function testResourceNotFound()
     {
-        $this->setExpectedException('\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.');
-        $this->makeRequest(Verbs::GET, static::RESOURCE . '/foo');
+        $rs = $this->makeRequest(Verbs::GET, static::RESOURCE . '/foo');
+        $this->assertEquals(404, $rs->getStatusCode());
     }
 
     /************************************************
@@ -90,13 +90,13 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $payload =
             '[{"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db", "config":{"dsn":"foo","username":"user","password":"pass"}}]';
         if (static::$wrapper) {
-            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+            $payload = '{"' . static::$wrapper . '":' . $payload . '}';
         }
 
         $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [], $payload);
         $data = $rs->getContent();
         $this->deleteDbService(9);
-        $this->assertTrue($data['id'] > 0);
+        $this->assertTrue($data[static::$wrapper][0]['id'] > 0);
     }
 
     public function testPOSTServiceWithFields()
@@ -104,13 +104,13 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
         $payload =
             '[{"name":"db9","label":"Database","description":"Local Database", "is_active":1, "type":"sql_db", "config":{"dsn":"foo","username":"user","password":"pass"}}]';
         if (static::$wrapper) {
-            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+            $payload = '{"' . static::$wrapper . '":' . $payload . '}';
         }
 
         $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [ApiOptions::FIELDS => 'name,label,is_active'], $payload);
         $this->deleteDbService(9);
         $this->assertTrue(json_encode($rs->getContent(), JSON_UNESCAPED_SLASHES) ==
-            '{"name":"db9","label":"Database","is_active":1}');
+            '{"'.static::$wrapper.'":[{"name":"db9","label":"Database","is_active":true}]}');
     }
 
     public function testPOSTServiceMultiple()
@@ -120,7 +120,7 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                 {"name":"db10","label":"MyDB","description":"Remote Database", "is_active":1, "type":"sql_db"}
             ]';
         if (static::$wrapper) {
-            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+            $payload = '{"' . static::$wrapper . '":' . $payload . '}';
         }
 
         $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [], $payload);
@@ -143,14 +143,13 @@ class SystemServiceTest extends \DreamFactory\Core\Testing\TestCase
                 {"name":"db1","label":"MyDB","description":"Remote Database", "is_active":1, "type":"sql_db"}
             ]';
         if (static::$wrapper) {
-            $payload = '{' . static::$wrapper . ': ' . $payload . '}';
+            $payload = '{"' . static::$wrapper . '":' . $payload . '}';
         }
 
-        $this->setExpectedException('\DreamFactory\Core\Exceptions\NotFoundException', 'Record not found.');
-        $this->setExpectedException('\DreamFactory\Core\Exceptions\BadRequestException',
-            'Batch Error: Not all parts of the request were successful.');
-
+        //$this->expectException('\DreamFactory\Core\Exceptions\NotFoundException');
+        //$this->expectException('\DreamFactory\Core\Exceptions\BadRequestException');
         $rs = $this->makeRequest(Verbs::POST, static::RESOURCE, [ApiOptions::CONTINUES => true], $payload);
+        echo $rs->getStatusCode();
     }
 
     public function testPOSTServiceMultipleWithRollback()
