@@ -140,23 +140,7 @@ class BaseSqlDbConfig extends BaseServiceConfigModel
             }
 
             // Add allow upsert here
-            $out[] = [
-                'name'        => 'allow_upsert',
-                'label'       => 'Allow Upsert',
-                'type'        => 'boolean',
-                'allow_null'  => false,
-                'default'     => false,
-                'description' => 'Allow PUT to create records if they do not exist and the service is capable.',
-            ];
-            $out[] = [
-                'name'        => 'max_records',
-                'label'       => 'Maximum Records',
-                'type'        => 'integer',
-                'allow_null'  => false,
-                'default'     => 1000,
-                'description' => 'Maximum number of records returned by this service. Must be a number greater than 0. Default is 1000.',
-            ];
-            $out = array_merge($out, ServiceCacheConfig::getConfigSchema());
+            $out = array_merge($out, static::getExtraConfigSchema(), ServiceCacheConfig::getConfigSchema());
 
             return $out;
         }
