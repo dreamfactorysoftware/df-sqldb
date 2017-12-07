@@ -3,9 +3,6 @@
 namespace DreamFactory\Core\SqlDb\Services;
 
 use DreamFactory\Core\Database\Services\BaseDbService;
-use DreamFactory\Core\SqlDb\Resources\Schema;
-use DreamFactory\Core\SqlDb\Resources\StoredFunction;
-use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use Illuminate\Database\DatabaseManager;
@@ -18,40 +15,6 @@ use DbSchemaExtensions;
  */
 class SqlDb extends BaseDbService
 {
-    //*************************************************************************
-    //	Members
-    //*************************************************************************
-
-    /**
-     * @var array
-     */
-    protected static $resources = [
-        Schema::RESOURCE_NAME          => [
-            'name'       => Schema::RESOURCE_NAME,
-            'class_name' => Schema::class,
-            'label'      => 'Schema',
-        ],
-        Table::RESOURCE_NAME           => [
-            'name'       => Table::RESOURCE_NAME,
-            'class_name' => Table::class,
-            'label'      => 'Tables',
-        ],
-        StoredProcedure::RESOURCE_NAME => [
-            'name'       => StoredProcedure::RESOURCE_NAME,
-            'class_name' => StoredProcedure::class,
-            'label'      => 'Stored Procedures',
-        ],
-        StoredFunction::RESOURCE_NAME  => [
-            'name'       => StoredFunction::RESOURCE_NAME,
-            'class_name' => StoredFunction::class,
-            'label'      => 'Stored Functions',
-        ],
-    ];
-
-    //*************************************************************************
-    //	Methods
-    //*************************************************************************
-
     /**
      * Create a new SqlDbSvc
      *
@@ -73,6 +36,19 @@ class SqlDb extends BaseDbService
         }
 
         $this->setConfigBasedCachePrefix($prefix . ':');
+    }
+
+    public function getResourceHandlers()
+    {
+        $handlers = parent::getResourceHandlers();
+
+        $handlers[Table::RESOURCE_NAME] = [
+            'name'       => Table::RESOURCE_NAME,
+            'class_name' => Table::class,
+            'label'      => 'Table',
+        ];
+
+        return $handlers;
     }
 
     /**
@@ -140,7 +116,7 @@ class SqlDb extends BaseDbService
      */
     public function __destruct()
     {
-        if(env('APP_ENV') !== 'testing') {
+        if (env('APP_ENV') !== 'testing') {
             /** @type DatabaseManager $db */
             $db = app('db');
             $db->disconnect('service.' . $this->name);
