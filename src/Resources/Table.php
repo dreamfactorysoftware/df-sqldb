@@ -721,14 +721,18 @@ class Table extends BaseDbTableResource
     {
         $fields = array_get($extras, ApiOptions::FIELDS);
         if (empty($fields)) {
-            $idFields = array_get($extras, ApiOptions::ID_FIELD);
-            if (empty($idFields)) {
-                $idFields = $schema->primaryKey;
+            // minimally return the id fields
+            $fields = array_get($extras, ApiOptions::ID_FIELD);
+            if (empty($fields)) {
+                $fields = $schema->getPrimaryKey();
+                // if still nothing, return everything
+                if (empty($fields)) {
+                    $fields = ApiOptions::FIELDS_ALL;
+                }
             }
-            $fields = $idFields;
         }
         $outArray = [];
-        if (empty($fields) || (ApiOptions::FIELDS_ALL === $fields)) {
+        if (ApiOptions::FIELDS_ALL === $fields) {
             foreach ($schema->getColumns() as $fieldInfo) {
                 if ($fieldInfo->isAggregate) {
                     continue;
