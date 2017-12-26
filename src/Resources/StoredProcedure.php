@@ -3,7 +3,6 @@
 namespace DreamFactory\Core\SqlDb\Resources;
 
 use DreamFactory\Core\Components\DataValidator;
-use DreamFactory\Core\Database\Schema\ParameterSchema;
 use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Enums\ApiOptions;
 use DreamFactory\Core\Enums\DbResourceTypes;
@@ -13,16 +12,10 @@ use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Exceptions\NotFoundException;
 use DreamFactory\Core\Exceptions\RestException;
 use DreamFactory\Core\Database\Resources\BaseDbResource;
-use DreamFactory\Core\GraphQL\Query\BaseListQuery;
-use DreamFactory\Core\GraphQL\Query\BaseQuery;
-use DreamFactory\Core\GraphQL\Type\BaseType;
 use DreamFactory\Core\Utility\DataFormatter;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use DreamFactory\Core\Utility\Session;
 use DreamFactory\Core\Enums\Verbs;
-use GraphQL\Type\Definition\Type;
-use GraphQL\Type\Definition\ResolveInfo;
-use GraphQL;
 
 class StoredProcedure extends BaseDbResource
 {
@@ -110,6 +103,7 @@ class StoredProcedure extends BaseDbResource
      * @param string $schema
      * @param bool   $refresh
      * @return ProcedureSchema[]
+     * @throws \Exception
      */
     protected function getProcedures($schema = '', $refresh = false)
     {
@@ -148,7 +142,7 @@ class StoredProcedure extends BaseDbResource
      * @param string $procedure
      * @param string $action
      *
-     * @throws BadRequestException
+     * @throws \DreamFactory\Core\Exceptions\ForbiddenException
      */
     protected function validateStoredProcedureAccess(&$procedure, $action = null)
     {
@@ -230,6 +224,7 @@ class StoredProcedure extends BaseDbResource
     /**
      * @return array|bool
      * @throws BadRequestException
+     * @throws \Exception
      */
     protected function handleGET()
     {
@@ -255,7 +250,7 @@ class StoredProcedure extends BaseDbResource
 
     /**
      * @return array|bool
-     * @throws BadRequestException
+     * @throws \Exception
      */
     protected function handlePOST()
     {
@@ -328,6 +323,7 @@ class StoredProcedure extends BaseDbResource
      * @param bool   $refresh Force a refresh of the schema from the database
      * @return ProcedureSchema
      * @throws NotFoundException
+     * @throws \Exception
      */
     protected function getProcedure($name, $refresh = false)
     {
@@ -438,74 +434,6 @@ class StoredProcedure extends BaseDbResource
         }
 
         return $result;
-    }
-
-    public function getGraphQLSchema()
-    {
-        $tName = 'db_schema_procedure';
-        $types = [
-            'db_schema_procedure_parameter' => new BaseType(ParameterSchema::getSchema()),
-            'db_schema_procedure'           => new BaseType(ProcedureSchema::getSchema()),
-        ];
-        GraphQL::addTypes($types);
-
-        $queries = [];
-        $qName = $this->formOperationName(Verbs::GET);
-        $queries[$qName] = new BaseQuery([
-            'name'    => $qName,
-            'type'    => $tName,
-            'args'    => [
-                'name'    => ['name' => 'name', 'type' => Type::nonNull(Type::string())],
-                'refresh' => ['name' => 'refresh', 'type' => Type::boolean()],
-            ],
-            'resolve' => function ($root, $args, $context, ResolveInfo $info) {
-                if (isset($args['name'])) {
-                    return $this->describeProcedure($args['name'], array_get_bool($args, 'refresh'));
-                }
-
-                return null;
-            },
-        ]);
-        $qName = $this->formOperationName(Verbs::GET, null, true);
-        $queries[$qName] = new BaseListQuery([
-            'name'    => $qName,
-            'type'    => $tName,
-            'args'    => [
-                'ids'     => ['name' => 'ids', 'type' => Type::string()],
-                'schema'  => ['name' => 'refresh', 'type' => Type::string()],
-                'refresh' => ['name' => 'refresh', 'type' => Type::boolean()],
-            ],
-            'resolve' => function ($root, $args, $context, ResolveInfo $info) {
-                if (isset($args['ids'])) {
-                    return $this->describeProcedures($args['ids'], array_get_bool($args, 'refresh'));
-                } else {
-                    $types = [];
-                    $result = $this->getProcedures(array_get($args, 'schema'),
-                        array_get_bool($args, 'refresh'));
-                    foreach ($result as $type) {
-                        $types[] = (object)$type->toArray();
-                    }
-
-                    return $types;
-                }
-            },
-        ]);
-        $qName = $qName . 'Names';
-        $queries[$qName] = new BaseListQuery([
-            'name'    => $qName,
-            'type'    => Type::string(),
-            'args'    => [
-                'schema'  => ['name' => 'refresh', 'type' => Type::string()],
-                'refresh' => ['name' => 'refresh', 'type' => Type::boolean()],
-            ],
-            'resolve' => function ($root, $args, $context, ResolveInfo $info) {
-                return array_keys($this->getProcedures(array_get($args, 'schema'),
-                    array_get_bool($args, 'refresh')));
-            },
-        ]);
-        $mutations = [];
-
-        return ['query' => $queries, 'mutation' => $mutations];
     }
 
     protected function getApiDocPaths()
