@@ -3,8 +3,16 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+## [0.15.0] - 2017-12-26
 ### Added
 - DF-1224 Added ability to set different default limits (max_records_returned) per service
+- Added package discovery
+- DF-1186 Added exceptions for missing data when generating relationships
+- Add GraphQL support
+### Changed
+- DF-1150 Update copyright and support email
+- Separate resources from resource handlers
+- Used new getPrimaryKey method for better multi-key handling
 
 ## [0.14.0] - 2017-11-03
 ### Changed
@@ -187,7 +195,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.14.0...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.15.0...HEAD
+[0.15.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.14.0...0.15.0
 [0.14.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.13.1...0.14.0
 [0.13.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.13.0...0.13.1
 [0.13.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.12.0...0.13.0
