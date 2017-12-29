@@ -79,12 +79,8 @@ class StoredFunction extends BaseDbResource
     /**
      * {@inheritdoc}
      */
-    public function getResources($only_handlers = false)
+    public function getResources()
     {
-        if ($only_handlers) {
-            return [];
-        }
-
         $refresh = $this->request->getParameterAsBool('refresh');
         $schema = $this->request->getParameter('schema', '');
         $result = $this->getFunctions($schema, $refresh);

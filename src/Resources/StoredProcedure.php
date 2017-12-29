@@ -79,12 +79,8 @@ class StoredProcedure extends BaseDbResource
     /**
      * {@inheritdoc}
      */
-    public function getResources($only_handlers = false)
+    public function getResources()
     {
-        if ($only_handlers) {
-            return [];
-        }
-
         $refresh = $this->request->getParameterAsBool('refresh');
         $schema = $this->request->getParameter('schema', '');
 
@@ -107,6 +103,7 @@ class StoredProcedure extends BaseDbResource
      * @param string $schema
      * @param bool   $refresh
      * @return ProcedureSchema[]
+     * @throws \Exception
      */
     protected function getProcedures($schema = '', $refresh = false)
     {
@@ -145,7 +142,7 @@ class StoredProcedure extends BaseDbResource
      * @param string $procedure
      * @param string $action
      *
-     * @throws BadRequestException
+     * @throws \DreamFactory\Core\Exceptions\ForbiddenException
      */
     protected function validateStoredProcedureAccess(&$procedure, $action = null)
     {
@@ -227,6 +224,7 @@ class StoredProcedure extends BaseDbResource
     /**
      * @return array|bool
      * @throws BadRequestException
+     * @throws \Exception
      */
     protected function handleGET()
     {
@@ -252,7 +250,7 @@ class StoredProcedure extends BaseDbResource
 
     /**
      * @return array|bool
-     * @throws BadRequestException
+     * @throws \Exception
      */
     protected function handlePOST()
     {
@@ -325,6 +323,7 @@ class StoredProcedure extends BaseDbResource
      * @param bool   $refresh Force a refresh of the schema from the database
      * @return ProcedureSchema
      * @throws NotFoundException
+     * @throws \Exception
      */
     protected function getProcedure($name, $refresh = false)
     {

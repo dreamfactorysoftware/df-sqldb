@@ -56,7 +56,7 @@ class Table extends BaseDbTableResource
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
-            if (!$tableSchema = $this->getTableSchema(null, $table)) {
+            if (!$tableSchema = $this->parent->getTableSchema($table)) {
                 throw new NotFoundException("Table '$table' does not exist in the database.");
             }
 
@@ -111,7 +111,7 @@ class Table extends BaseDbTableResource
     {
         // truncate the table, return success
         try {
-            if (!$tableSchema = $this->getTableSchema(null, $table)) {
+            if (!$tableSchema = $this->parent->getTableSchema($table)) {
                 throw new NotFoundException("Table '$table' does not exist in the database.");
             }
             // build filter string if necessary, add server-side filters if necessary
@@ -150,7 +150,7 @@ class Table extends BaseDbTableResource
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
-            if (!$tableSchema = $this->getTableSchema(null, $table)) {
+            if (!$tableSchema = $this->parent->getTableSchema($table)) {
                 throw new NotFoundException("Table '$table' does not exist in the database.");
             }
             $fieldsInfo = $tableSchema->getColumns(true);
@@ -181,7 +181,7 @@ class Table extends BaseDbTableResource
         $ssFilters = array_get($extras, 'ss_filters');
 
         try {
-            $tableSchema = $this->getTableSchema(null, $table);
+            $tableSchema = $this->parent->getTableSchema($table);
             if (!$tableSchema) {
                 throw new NotFoundException("Table '$table' does not exist in the database.");
             }
@@ -219,7 +219,7 @@ class Table extends BaseDbTableResource
      */
     protected function runQuery($table, Builder $builder, $extras)
     {
-        $schema = $this->getTableSchema(null, $table);
+        $schema = $this->parent->getTableSchema($table);
         if (!$schema) {
             throw new NotFoundException("Table '$table' does not exist in the database.");
         }
@@ -229,7 +229,7 @@ class Table extends BaseDbTableResource
         $countOnly = array_get_bool($extras, ApiOptions::COUNT_ONLY);
         $includeCount = array_get_bool($extras, ApiOptions::INCLUDE_COUNT);
 
-        $maxAllowed = static::getMaxRecordsReturnedLimit();
+        $maxAllowed = $this->getMaxRecordsReturnedLimit();
         $needLimit = false;
         if (($limit < 1) || ($limit > $maxAllowed)) {
             // impose a limit to protect server
@@ -721,14 +721,18 @@ class Table extends BaseDbTableResource
     {
         $fields = array_get($extras, ApiOptions::FIELDS);
         if (empty($fields)) {
-            $idFields = array_get($extras, ApiOptions::ID_FIELD);
-            if (empty($idFields)) {
-                $idFields = $schema->primaryKey;
+            // minimally return the id fields
+            $fields = array_get($extras, ApiOptions::ID_FIELD);
+            if (empty($fields)) {
+                $fields = $schema->getPrimaryKey();
+                // if still nothing, return everything
+                if (empty($fields)) {
+                    $fields = ApiOptions::FIELDS_ALL;
+                }
             }
-            $fields = $idFields;
         }
         $outArray = [];
-        if (empty($fields) || (ApiOptions::FIELDS_ALL === $fields)) {
+        if (ApiOptions::FIELDS_ALL === $fields) {
             foreach ($schema->getColumns() as $fieldInfo) {
                 if ($fieldInfo->isAggregate) {
                     continue;

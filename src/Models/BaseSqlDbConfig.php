@@ -1,8 +1,9 @@
 <?php
+
 namespace DreamFactory\Core\SqlDb\Models;
 
 use DreamFactory\Core\Components\RequireExtensions;
-use DreamFactory\Core\Database\Components\SupportsUpsertAndCache;
+use DreamFactory\Core\Database\Components\SupportsExtraDbConfigs;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Models\BaseServiceConfigModel;
 use DreamFactory\Core\Models\ServiceCacheConfig;
@@ -18,7 +19,7 @@ use DreamFactory\Core\Models\ServiceCacheConfig;
  */
 class BaseSqlDbConfig extends BaseServiceConfigModel
 {
-    use RequireExtensions, SupportsUpsertAndCache;
+    use RequireExtensions, SupportsExtraDbConfigs;
 
     protected $table = 'sql_db_config';
 
@@ -44,7 +45,6 @@ class BaseSqlDbConfig extends BaseServiceConfigModel
     {
         return [];
     }
-
 
     public static function getDefaultConnectionInfo()
     {
@@ -140,15 +140,7 @@ class BaseSqlDbConfig extends BaseServiceConfigModel
             }
 
             // Add allow upsert here
-            $out[] = [
-                'name'        => 'allow_upsert',
-                'label'       => 'Allow Upsert',
-                'type'        => 'boolean',
-                'allow_null'  => false,
-                'default'     => false,
-                'description' => 'Allow PUT to create records if they do not exist and the service is capable.',
-            ];
-            $out = array_merge($out, ServiceCacheConfig::getConfigSchema());
+            $out = array_merge($out, static::getExtraConfigSchema(), ServiceCacheConfig::getConfigSchema());
 
             return $out;
         }

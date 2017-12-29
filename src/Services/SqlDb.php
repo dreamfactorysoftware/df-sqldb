@@ -3,9 +3,6 @@
 namespace DreamFactory\Core\SqlDb\Services;
 
 use DreamFactory\Core\Database\Services\BaseDbService;
-use DreamFactory\Core\SqlDb\Resources\Schema;
-use DreamFactory\Core\SqlDb\Resources\StoredFunction;
-use DreamFactory\Core\SqlDb\Resources\StoredProcedure;
 use DreamFactory\Core\SqlDb\Resources\Table;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use Illuminate\Database\DatabaseManager;
@@ -18,40 +15,6 @@ use DbSchemaExtensions;
  */
 class SqlDb extends BaseDbService
 {
-    //*************************************************************************
-    //	Members
-    //*************************************************************************
-
-    /**
-     * @var array
-     */
-    protected static $resources = [
-        Schema::RESOURCE_NAME          => [
-            'name'       => Schema::RESOURCE_NAME,
-            'class_name' => Schema::class,
-            'label'      => 'Schema',
-        ],
-        Table::RESOURCE_NAME           => [
-            'name'       => Table::RESOURCE_NAME,
-            'class_name' => Table::class,
-            'label'      => 'Tables',
-        ],
-        StoredProcedure::RESOURCE_NAME => [
-            'name'       => StoredProcedure::RESOURCE_NAME,
-            'class_name' => StoredProcedure::class,
-            'label'      => 'Stored Procedures',
-        ],
-        StoredFunction::RESOURCE_NAME  => [
-            'name'       => StoredFunction::RESOURCE_NAME,
-            'class_name' => StoredFunction::class,
-            'label'      => 'Stored Functions',
-        ],
-    ];
-
-    //*************************************************************************
-    //	Methods
-    //*************************************************************************
-
     /**
      * Create a new SqlDbSvc
      *
@@ -73,6 +36,19 @@ class SqlDb extends BaseDbService
         }
 
         $this->setConfigBasedCachePrefix($prefix . ':');
+    }
+
+    public function getResourceHandlers()
+    {
+        $handlers = parent::getResourceHandlers();
+
+        $handlers[Table::RESOURCE_NAME] = [
+            'name'       => Table::RESOURCE_NAME,
+            'class_name' => Table::class,
+            'label'      => 'Table',
+        ];
+
+        return $handlers;
     }
 
     /**
@@ -125,7 +101,7 @@ class SqlDb extends BaseDbService
 
         /** @type DatabaseManager $db */
         $db = app('db');
-        $this->dbConn = $db->connection('service.'.$this->name);
+        $this->dbConn = $db->connection('service.' . $this->name);
 
         $this->initStatements(array_get($this->config, 'statements', []));
 
@@ -140,10 +116,11 @@ class SqlDb extends BaseDbService
      */
     public function __destruct()
     {
-        /** @type DatabaseManager $db */
-        $db = app('db');
-        $db->disconnect('service.' . $this->name);
-
+        if (env('APP_ENV') !== 'testing') {
+            /** @type DatabaseManager $db */
+            $db = app('db');
+            $db->disconnect('service.' . $this->name);
+        }
         parent::__destruct();
     }
 
@@ -165,7 +142,7 @@ class SqlDb extends BaseDbService
         $wrapper = ResourcesWrapper::getWrapper();
 
         $add = [
-            'StoredRoutineSchemas'  => [
+            'StoredRoutineSchemas'         => [
                 'type'       => 'object',
                 'properties' => [
                     $wrapper => [
@@ -177,22 +154,22 @@ class SqlDb extends BaseDbService
                     ],
                 ],
             ],
-            'StoredRoutineSchema' => [
+            'StoredRoutineSchema'          => [
                 'type'       => 'object',
                 'properties' => [
-                    'name'        => [
+                    'name'          => [
                         'type'        => 'string',
                         'description' => 'Identifier/Name for the routine.',
                     ],
-                    'label'       => [
+                    'label'         => [
                         'type'        => 'string',
                         'description' => 'Displayable name for the routine.',
                     ],
-                    'description'      => [
+                    'description'   => [
                         'type'        => 'string',
                         'description' => 'Description for the routine.',
                     ],
-                    'return_type'      => [
+                    'return_type'   => [
                         'type'        => 'string',
                         'description' => 'Displayable plural name for the routine.',
                     ],
@@ -212,42 +189,42 @@ class SqlDb extends BaseDbService
             'StoredRoutineParameterSchema' => [
                 'type'       => 'object',
                 'properties' => [
-                    'name'        => [
+                    'name'       => [
                         'type'        => 'string',
                         'description' => 'Identifier/Name for the parameter.',
                     ],
-                    'position'       => [
+                    'position'   => [
                         'type'        => 'string',
                         'description' => 'Displayable singular name for the parameter.',
                     ],
-                    'param_type'      => [
+                    'param_type' => [
                         'type'        => 'string',
                         'description' => 'Displayable plural name for the parameter.',
                     ],
-                    'type'               => [
+                    'type'       => [
                         'type'        => 'string',
                         'description' => 'The DreamFactory abstract data type for this parameter.',
                     ],
-                    'db_type'            => [
+                    'db_type'    => [
                         'type'        => 'string',
                         'description' => 'The native database type used for this parameter.',
                     ],
-                    'length'             => [
+                    'length'     => [
                         'type'        => 'integer',
                         'format'      => 'int32',
                         'description' => 'The maximum length allowed (in characters for string, displayed for numbers).',
                     ],
-                    'precision'          => [
+                    'precision'  => [
                         'type'        => 'integer',
                         'format'      => 'int32',
                         'description' => 'Total number of places for numbers.',
                     ],
-                    'scale'              => [
+                    'scale'      => [
                         'type'        => 'integer',
                         'format'      => 'int32',
                         'description' => 'Number of decimal places allowed for numbers.',
                     ],
-                    'default'      => [
+                    'default'    => [
                         'type'        => 'string',
                         'description' => 'Default value for this parameter.',
                     ],
