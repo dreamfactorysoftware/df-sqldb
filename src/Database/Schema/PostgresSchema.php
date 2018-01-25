@@ -18,11 +18,9 @@ class PostgresSchema extends SqlSchema
     const DEFAULT_SCHEMA = 'public';
 
     /**
-     * @param boolean $refresh if we need to refresh schema cache.
-     *
-     * @return string default schema.
+     * @inheritdoc
      */
-    public function getDefaultSchema($refresh = false)
+    public function getDefaultSchema()
     {
         return static::DEFAULT_SCHEMA;
     }
@@ -284,10 +282,10 @@ class PostgresSchema extends SqlSchema
     /**
      * @inheritdoc
      */
-    protected function findColumns(TableSchema $table)
+    protected function loadTableColumns(TableSchema $table)
     {
         $params = [':table' => $table->resourceName, ':schema' => $table->schemaName];
-        $sql = <<<EOD
+        $sql = <<<SQL
 SELECT a.attname, LOWER(format_type(a.atttypid, a.atttypmod)) AS type, d.adsrc, a.attnotnull, a.atthasdef,
 	pg_catalog.col_description(a.attrelid, a.attnum) AS comment
 FROM pg_attribute a LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
@@ -295,10 +293,10 @@ WHERE a.attnum > 0 AND NOT a.attisdropped
 	AND a.attrelid = (SELECT oid FROM pg_catalog.pg_class WHERE relname=:table
 		AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = :schema))
 ORDER BY a.attnum
-EOD;
-        if (!empty($columns = $this->connection->select($sql, $params))) {
-            foreach ($columns as &$column) {
-                $column = (array)$column;
+SQL;
+        $result = $this->connection->select($sql, $params);
+            foreach ($result as $column) {
+                $column = array_change_key_case((array)$column, CASE_LOWER);
 
                 if (stripos($column['adsrc'], 'nextval') === 0 &&
                     preg_match('/nextval\([^\']*\'([^\']+)\'[^\)]*\)/i', $column['adsrc'], $matches)
@@ -310,117 +308,79 @@ EOD;
                     }
                     $column['auto_increment'] = true;
                 }
-            }
 
-            $kcu = 'information_schema.key_column_usage';
-            $tc = 'information_schema.table_constraints';
-            if (isset($table->catalogName)) {
-                $kcu = $table->catalogName . '.' . $kcu;
-                $tc = $table->catalogName . '.' . $tc;
-            }
+                $c = new ColumnSchema(['name' => $column['attname']]);
+                $c->quotedName = $this->quoteColumnName($c->name);
+                $c->autoIncrement = array_get($column, 'auto_increment', false);
+                $c->isPrimaryKey = array_get($column, 'is_primary_key', false);
+                $c->allowNull = !$column['attnotnull'];
+                $c->comment = $column['comment'] === null ? '' : $column['comment'];
+                $c->dbType = $column['type'];
+                $this->extractLimit($c, $column['type']);
+                $c->fixedLength = $this->extractFixedLength($column['type']);
+                $c->supportsMultibyte = $this->extractMultiByteSupport($column['type']);
+                $this->extractType($c, $column['type']);
+                $this->extractDefault($c, $column['atthasdef'] ? $column['adsrc'] : null);
 
-            $sql = <<<EOD
-		SELECT k.column_name field_name
-			FROM {$this->quoteTableName($kcu)} k
-		    LEFT JOIN {$this->quoteTableName($tc)} c
-		      ON k.table_name = c.table_name
-		     AND k.constraint_name = c.constraint_name
-		   WHERE c.constraint_type ='PRIMARY KEY'
-		   	    AND k.table_name = :table
-				AND k.table_schema = :schema
-EOD;
-            $rows = $this->connection->select($sql, $params);
-
-            foreach ($rows as $row) {
-                $row = (array)$row;
-                $name = $row['field_name'];
-                foreach ($columns as &$column) {
-                    if ($name === array_get($column, 'attname')) {
-                        $column['is_primary_key'] = true;
+                if ($c->isPrimaryKey) {
+                    if ($c->autoIncrement) {
+                        $table->sequenceName = array_get($column, 'sequence', $c->name);
+                        if ((DbSimpleTypes::TYPE_INTEGER === $c->type)) {
+                            $c->type = DbSimpleTypes::TYPE_ID;
+                        }
                     }
+                    $table->addPrimaryKey($c->name);
                 }
+                $table->addColumn($c);
             }
         }
-
-        return $columns;
-    }
-
-    /**
-     * Creates a table column.
-     *
-     * @param array $column column metadata
-     *
-     * @return ColumnSchema normalized column metadata
-     */
-    protected function createColumn($column)
-    {
-        $c = new ColumnSchema(['name' => $column['attname']]);
-        $c->autoIncrement = array_get($column, 'auto_increment', false);
-        $c->isPrimaryKey = array_get($column, 'is_primary_key', false);
-        $c->quotedName = $this->quoteColumnName($c->name);
-        $c->allowNull = !$column['attnotnull'];
-        $c->comment = $column['comment'] === null ? '' : $column['comment'];
-        $c->dbType = $column['type'];
-        $this->extractLimit($c, $column['type']);
-        $c->fixedLength = $this->extractFixedLength($column['type']);
-        $c->supportsMultibyte = $this->extractMultiByteSupport($column['type']);
-        $this->extractType($c, $column['type']);
-        $this->extractDefault($c, $column['atthasdef'] ? $column['adsrc'] : null);
-
-        return $c;
-    }
 
     /**
      * @inheritdoc
      */
-    protected function findTableReferences()
+    protected function getTableConstraints($schema = '')
     {
-        $rc = 'information_schema.referential_constraints';
-        $kcu = 'information_schema.key_column_usage';
-        $tc = 'information_schema.table_constraints';
+        if (is_array($schema)) {
+            $schema = implode("','", $schema);
+        }
 
-        $sql = <<<EOD
-		SELECT
-		     KCU1.TABLE_SCHEMA AS table_schema
-		   , KCU1.TABLE_NAME AS table_name
-		   , KCU1.COLUMN_NAME AS column_name
-		   , KCU3.COLUMN_NAME AS constraint_column_name
-		   , TC.CONSTRAINT_TYPE AS constraint_type
-		   , KCU2.TABLE_SCHEMA AS referenced_table_schema
-		   , KCU2.TABLE_NAME AS referenced_table_name
-		   , KCU2.COLUMN_NAME AS referenced_column_name
-		FROM {$this->quoteTableName($rc)} RC
-		JOIN {$this->quoteTableName($kcu)} KCU1
-		ON KCU1.CONSTRAINT_CATALOG = RC.CONSTRAINT_CATALOG
-		   AND KCU1.CONSTRAINT_SCHEMA = RC.CONSTRAINT_SCHEMA
-		   AND KCU1.CONSTRAINT_NAME = RC.CONSTRAINT_NAME
-		JOIN {$this->quoteTableName($kcu)} KCU2
-		ON KCU2.CONSTRAINT_CATALOG = RC.UNIQUE_CONSTRAINT_CATALOG
-		   AND KCU2.CONSTRAINT_SCHEMA =	RC.UNIQUE_CONSTRAINT_SCHEMA
-		   AND KCU2.CONSTRAINT_NAME = RC.UNIQUE_CONSTRAINT_NAME
-		   AND KCU2.ORDINAL_POSITION = KCU1.ORDINAL_POSITION
-		LEFT JOIN {$this->quoteTableName($tc)} TC
-		ON TC.TABLE_SCHEMA = KCU1.TABLE_SCHEMA
-		   AND TC.TABLE_NAME =	KCU1.TABLE_NAME
-		   AND TC.CONSTRAINT_TYPE IN ('PRIMARY KEY', 'UNIQUE')
-		LEFT JOIN {$this->quoteTableName($kcu)} KCU3 
-		ON KCU3.CONSTRAINT_CATALOG = TC.CONSTRAINT_CATALOG
-		   AND KCU3.CONSTRAINT_SCHEMA = TC.CONSTRAINT_SCHEMA
-		   AND KCU3.CONSTRAINT_NAME = TC.CONSTRAINT_NAME
-           AND KCU3.COLUMN_NAME = KCU1.COLUMN_NAME
-EOD;
+        $sql = <<<SQL
+SELECT tc.constraint_type, tc.constraint_schema, tc.constraint_name, tc.constraint_type, tc.table_schema, tc.table_name, kcu.column_name, 
+kcu2.table_schema as referenced_table_schema, kcu2.table_name as referenced_table_name, kcu2.column_name as referenced_column_name, 
+rc.update_rule, rc.delete_rule
+FROM information_schema.TABLE_CONSTRAINTS tc
+JOIN information_schema.KEY_COLUMN_USAGE kcu ON tc.constraint_schema = kcu.constraint_schema AND tc.constraint_name = kcu.constraint_name AND tc.table_name = kcu.table_name
+LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc ON tc.constraint_schema = rc.constraint_schema AND tc.constraint_name = rc.constraint_name
+LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu2 ON rc.unique_constraint_schema = kcu2.constraint_schema AND rc.unique_constraint_name = kcu2.constraint_name
+WHERE tc.constraint_schema IN ('{$schema}');
+SQL;
 
-        $refs = $this->connection->select($sql);
-        foreach ($refs as &$ref) {
-            if (is_null($ref->constraint_column_name)) {
-                $ref->constraint_type = null;
+        $results = $this->connection->select($sql);
+        $constraints = [];
+        foreach ($results as $row) {
+            $row = array_change_key_case((array)$row, CASE_LOWER);
+            $ts = strtolower($row['table_schema']);
+            $tn = strtolower($row['table_name']);
+            $cn = strtolower($row['constraint_name']);
+            $colName = array_get($row, 'column_name');
+            $refColName = array_get($row, 'referenced_column_name');
+            if (isset($constraints[$ts][$tn][$cn])) {
+                $constraints[$ts][$tn][$cn]['column_name'] =
+                    array_merge((array)$constraints[$ts][$tn][$cn]['column_name'], (array)$colName);
+
+                if (isset($refColName)) {
+                    $constraints[$ts][$tn][$cn]['referenced_column_name'] =
+                        array_merge((array)$constraints[$ts][$tn][$cn]['referenced_column_name'], (array)$refColName);
+                }
+            } else {
+                $constraints[$ts][$tn][$cn] = $row;
             }
         }
 
-        return $refs;
+        return $constraints;
     }
 
-    protected function findSchemaNames()
+    public function getSchemas()
     {
         $sql = <<<MYSQL
 SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('information_schema','pg_catalog')
@@ -433,7 +393,7 @@ MYSQL;
     /**
      * @inheritdoc
      */
-    protected function findTableNames($schema = '')
+    protected function getTableNames($schema = '')
     {
         $sql = <<<EOD
 SELECT table_name, table_schema FROM information_schema.tables WHERE table_type = 'BASE TABLE'
@@ -466,7 +426,7 @@ EOD;
     /**
      * @inheritdoc
      */
-    protected function findViewNames($schema = '')
+    protected function getViewNames($schema = '')
     {
         $sql = <<<EOD
 SELECT table_name, table_schema FROM information_schema.tables WHERE table_type = 'VIEW'
@@ -746,7 +706,7 @@ EOD;
     /**
      * @inheritdoc
      */
-    protected function findRoutineNames($type, $schema = '')
+    protected function getRoutineNames($type, $schema = '')
     {
         $bindings = [];
         $where = '';
@@ -801,6 +761,44 @@ MYSQL;
         }
 
         return $names;
+    }
+
+    protected function loadParameters(RoutineSchema $holder)
+    {
+        $sql = <<<MYSQL
+SELECT p.ORDINAL_POSITION, p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE, p.CHARACTER_MAXIMUM_LENGTH, 
+p.NUMERIC_PRECISION, p.NUMERIC_SCALE
+FROM INFORMATION_SCHEMA.PARAMETERS AS p 
+JOIN INFORMATION_SCHEMA.ROUTINES AS r ON r.SPECIFIC_NAME = p.SPECIFIC_NAME
+WHERE r.ROUTINE_NAME = '{$holder->resourceName}' AND r.ROUTINE_SCHEMA = '{$holder->schemaName}'
+MYSQL;
+
+        $params = $this->connection->select($sql);
+        foreach ($params as $row) {
+            $row = array_change_key_case((array)$row, CASE_UPPER);
+            $name = ltrim(array_get($row, 'PARAMETER_NAME'), '@'); // added on by some drivers, i.e. @name
+            $pos = intval(array_get($row, 'ORDINAL_POSITION'));
+            $simpleType = static::extractSimpleType(array_get($row, 'DATA_TYPE'));
+            if (0 === $pos) {
+                $holder->returnType = $simpleType;
+            } else {
+                $holder->addParameter(new ParameterSchema(
+                    [
+                        'name'       => $name,
+                        'position'   => $pos,
+                        'param_type' => array_get($row, 'PARAMETER_MODE'),
+                        'type'       => $simpleType,
+                        'db_type'    => array_get($row, 'DATA_TYPE'),
+                        'length'     => (isset($row['CHARACTER_MAXIMUM_LENGTH']) ? intval(array_get($row,
+                            'CHARACTER_MAXIMUM_LENGTH')) : null),
+                        'precision'  => (isset($row['NUMERIC_PRECISION']) ? intval(array_get($row, 'NUMERIC_PRECISION'))
+                            : null),
+                        'scale'      => (isset($row['NUMERIC_SCALE']) ? intval(array_get($row, 'NUMERIC_SCALE'))
+                            : null),
+                    ]
+                ));
+            }
+        }
     }
 
     protected function doRoutineBinding($statement, array $paramSchemas, array &$values)

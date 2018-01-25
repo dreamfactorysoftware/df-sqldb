@@ -36,6 +36,7 @@ class SqlSchema extends Schema
             DbResourceTypes::TYPE_SCHEMA,
             DbResourceTypes::TYPE_TABLE,
             DbResourceTypes::TYPE_TABLE_FIELD,
+            DbResourceTypes::TYPE_TABLE_CONSTRAINT,
             DbResourceTypes::TYPE_TABLE_RELATIONSHIP,
             DbResourceTypes::TYPE_VIEW,
             DbResourceTypes::TYPE_FUNCTION,

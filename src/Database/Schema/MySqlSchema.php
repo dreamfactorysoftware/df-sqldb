@@ -1,8 +1,11 @@
 <?php
+
 namespace DreamFactory\Core\SqlDb\Database\Schema;
 
 use DreamFactory\Core\Database\Schema\ColumnSchema;
+use DreamFactory\Core\Database\Schema\FunctionSchema;
 use DreamFactory\Core\Database\Schema\ParameterSchema;
+use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
 use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Enums\DbSimpleTypes;
@@ -318,61 +321,6 @@ MYSQL;
     }
 
     /**
-     * @inheritdoc
-     */
-    protected function findColumns(TableSchema $table)
-    {
-        $sql = 'SHOW FULL COLUMNS FROM ' . $table->quotedName;
-
-        return $this->connection->select($sql);
-    }
-
-    /**
-     * Creates a table column.
-     *
-     * @param array $column column metadata
-     *
-     * @return ColumnSchema normalized column metadata
-     */
-    protected function createColumn($column)
-    {
-        $c = new ColumnSchema(['name' => $column['field']]);
-        $c->quotedName = $this->quoteColumnName($c->name);
-        $c->allowNull = $column['null'] === 'YES';
-        $c->isPrimaryKey = strpos($column['key'], 'PRI') !== false;
-        $c->isUnique = strpos($column['key'], 'UNI') !== false;
-        $c->isIndex = strpos($column['key'], 'MUL') !== false;
-        $c->autoIncrement = strpos(strtolower($column['extra']), 'auto_increment') !== false;
-        $c->dbType = $column['type'];
-        if (isset($column['collation']) && !empty($column['collation'])) {
-            $collation = $column['collation'];
-            if (0 === stripos($collation, 'utf') || 0 === stripos($collation, 'ucs')) {
-                $c->supportsMultibyte = true;
-            }
-        }
-        if (isset($column['comment'])) {
-            $c->comment = $column['comment'];
-        }
-        $this->extractLimit($c, $c->dbType);
-        $c->fixedLength = $this->extractFixedLength($c->dbType);
-        $this->extractType($c, $c->dbType);
-
-        if ($c->dbType === 'timestamp' && (0 === strcasecmp(strval($column['default']), 'CURRENT_TIMESTAMP'))) {
-            if (0 === strcasecmp(strval($column['extra']), 'on update CURRENT_TIMESTAMP')) {
-                $c->defaultValue = ['expression' => 'CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP'];
-                $c->type = DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE;
-            } else {
-                $c->defaultValue = ['expression' => 'CURRENT_TIMESTAMP'];
-                $c->type = DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE;
-            }
-        } else {
-            $this->extractDefault($c, $column['default']);
-        }
-
-        return $c;
-    }
-
-    /**
      * @return float server version.
      */
     protected function getServerVersion()
@@ -386,30 +334,111 @@ MYSQL;
     }
 
     /**
-     * Collects the foreign key column details.
+     * @inheritdoc
      */
-    protected function findTableReferences()
+    protected function loadTableColumns(TableSchema $table)
     {
-        $schemas = implode("','", $this->getSchemas());
-        $sql = <<<MYSQL
-SELECT kcu.table_schema, kcu.table_name, kcu.column_name, kcu.referenced_table_schema, kcu.referenced_table_name, kcu.referenced_column_name,
-putc.constraint_type
-FROM information_schema.TABLE_CONSTRAINTS tc
-JOIN information_schema.KEY_COLUMN_USAGE kcu ON tc.constraint_schema = kcu.constraint_schema AND tc.constraint_name = kcu.constraint_name
-LEFT JOIN information_schema.KEY_COLUMN_USAGE puc ON kcu.table_schema = puc.table_schema AND kcu.table_name = puc.table_name AND 
-kcu.column_name = puc.column_name AND puc.POSITION_IN_UNIQUE_CONSTRAINT IS NULL
-LEFT JOIN information_schema.TABLE_CONSTRAINTS putc ON putc.table_schema = puc.table_schema AND putc.table_name = puc.table_name AND 
-putc.constraint_name = puc.constraint_name AND putc.constraint_type IN ('PRIMARY KEY','UNIQUE')
-WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.constraint_schema IN ('{$schemas}');
-MYSQL;
+        $sql = 'SHOW FULL COLUMNS FROM ' . $table->quotedName;
 
-        return $this->connection->select($sql);
+        $result = $this->connection->select($sql);
+        foreach ($result as $column) {
+            $column = array_change_key_case((array)$column, CASE_LOWER);
+            $c = new ColumnSchema(['name' => $column['field']]);
+            $c->quotedName = $this->quoteColumnName($c->name);
+            $c->allowNull = $column['null'] === 'YES';
+            $c->isPrimaryKey = strpos($column['key'], 'PRI') !== false;
+            $c->isUnique = strpos($column['key'], 'UNI') !== false;
+            $c->isIndex = strpos($column['key'], 'MUL') !== false;
+            $c->autoIncrement = strpos(strtolower($column['extra']), 'auto_increment') !== false;
+            $c->dbType = $column['type'];
+            if (isset($column['collation']) && !empty($column['collation'])) {
+                $collation = $column['collation'];
+                if (0 === stripos($collation, 'utf') || 0 === stripos($collation, 'ucs')) {
+                    $c->supportsMultibyte = true;
+                }
+            }
+            if (isset($column['comment'])) {
+                $c->comment = $column['comment'];
+            }
+            $this->extractLimit($c, $c->dbType);
+            $c->fixedLength = $this->extractFixedLength($c->dbType);
+            $this->extractType($c, $c->dbType);
+
+            if ($c->dbType === 'timestamp' && (0 === strcasecmp(strval($column['default']), 'CURRENT_TIMESTAMP'))) {
+                if (0 === strcasecmp(strval($column['extra']), 'on update CURRENT_TIMESTAMP')) {
+                    $c->defaultValue = ['expression' => 'CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP'];
+                    $c->type = DbSimpleTypes::TYPE_TIMESTAMP_ON_UPDATE;
+                } else {
+                    $c->defaultValue = ['expression' => 'CURRENT_TIMESTAMP'];
+                    $c->type = DbSimpleTypes::TYPE_TIMESTAMP_ON_CREATE;
+                }
+            } else {
+                $this->extractDefault($c, $column['default']);
+            }
+
+            if ($c->isPrimaryKey) {
+                if ($c->autoIncrement) {
+                    $table->sequenceName = array_get($column, 'sequence', $c->name);
+                    if ((DbSimpleTypes::TYPE_INTEGER === $c->type)) {
+                        $c->type = DbSimpleTypes::TYPE_ID;
+                    }
+                }
+                $table->addPrimaryKey($c->name);
+            }
+            $table->addColumn($c);
+        }
     }
 
     /**
      * @inheritdoc
      */
-    protected function findSchemaNames()
+    protected function getTableConstraints($schema = '')
+    {
+        if (is_array($schema)) {
+            $schema = implode("','", $schema);
+        }
+
+        $sql = <<<SQL
+SELECT tc.constraint_type, tc.constraint_schema, tc.constraint_name, tc.table_schema, tc.table_name, 
+kcu.column_name, kcu.referenced_table_schema, kcu.referenced_table_name, kcu.referenced_column_name,
+rc.update_rule, rc.delete_rule
+FROM information_schema.TABLE_CONSTRAINTS tc
+JOIN information_schema.KEY_COLUMN_USAGE kcu ON tc.constraint_schema = kcu.constraint_schema AND 
+tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema AND tc.table_name = kcu.table_name 
+LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc ON tc.constraint_schema = rc.constraint_schema AND 
+tc.constraint_name = rc.constraint_name AND tc.table_name = rc.table_name
+WHERE tc.constraint_schema IN ('{$schema}');
+SQL;
+
+        $results = $this->connection->select($sql);
+        $constraints = [];
+        foreach ($results as $row) {
+            $row = array_change_key_case((array)$row, CASE_LOWER);
+            $ts = strtolower($row['table_schema']);
+            $tn = strtolower($row['table_name']);
+            $cn = strtolower($row['constraint_name']);
+            $colName = array_get($row, 'column_name');
+            $refColName = array_get($row, 'referenced_column_name');
+            if (isset($constraints[$ts][$tn][$cn])) {
+                $constraints[$ts][$tn][$cn]['column_name'] =
+                    array_merge((array)$constraints[$ts][$tn][$cn]['column_name'], (array)$colName);
+
+                if (isset($refColName)) {
+                    $constraints[$ts][$tn][$cn]['referenced_column_name'] =
+                        array_merge((array)$constraints[$ts][$tn][$cn]['referenced_column_name'], (array)$refColName);
+                }
+            } else {
+                $constraints[$ts][$tn][$cn] = $row;
+            }
+        }
+
+        return $constraints;
+    }
+
+    /**
+     * @inheritdoc
+     */
+    public function getSchemas()
     {
         $sql = <<<MYSQL
 SHOW DATABASES WHERE `Database` NOT IN ('information_schema','mysql','performance_schema','phpmyadmin')
@@ -421,7 +450,7 @@ MYSQL;
     /**
      * @inheritdoc
      */
-    protected function findTableNames($schema = '')
+    protected function getTableNames($schema = '')
     {
         $sql = 'SHOW FULL TABLES';
 
@@ -435,8 +464,7 @@ MYSQL;
 
         $names = [];
         foreach ($rows as $row) {
-            $row = array_change_key_case((array)$row, CASE_UPPER);
-            $row = array_values($row);
+            $row = array_values((array)$row);
             $schemaName = $schema;
             $resourceName = $row[0];
             $internalName = $schemaName . '.' . $resourceName;
@@ -452,7 +480,7 @@ MYSQL;
     /**
      * @inheritdoc
      */
-    protected function findViewNames($schema = '')
+    protected function getViewNames($schema = '')
     {
         $sql = 'SHOW FULL TABLES';
 
@@ -466,8 +494,7 @@ MYSQL;
 
         $names = [];
         foreach ($rows as $row) {
-            $row = array_change_key_case((array)$row, CASE_UPPER);
-            $row = array_values($row);
+            $row = array_values((array)$row);
             $schemaName = $schema;
             $resourceName = $row[0];
             $internalName = $schemaName . '.' . $resourceName;
@@ -479,6 +506,79 @@ MYSQL;
         }
 
         return $names;
+    }
+
+    protected function getRoutineNames($type, $schema = '')
+    {
+        $bindings = [':type' => $type];
+        $where = 'ROUTINE_TYPE = :type';
+        if (!empty($schema)) {
+            $where .= ' AND ROUTINE_SCHEMA = :schema';
+            $bindings[':schema'] = $schema;
+        }
+
+        $sql = <<<MYSQL
+SELECT ROUTINE_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.ROUTINES WHERE {$where}
+MYSQL;
+
+        $rows = $this->connection->select($sql, $bindings);
+
+        $names = [];
+        foreach ($rows as $row) {
+            $row = array_change_key_case((array)$row, CASE_UPPER);
+            $resourceName = array_get($row, 'ROUTINE_NAME');
+            $schemaName = $schema;
+            $internalName = $schemaName . '.' . $resourceName;
+            $name = $resourceName;
+            $quotedName = $this->quoteTableName($schemaName) . '.' . $this->quoteTableName($resourceName);
+            $returnType = array_get($row, 'DATA_TYPE');
+            if (!empty($returnType) && (0 !== strcasecmp('void', $returnType))) {
+                $returnType = static::extractSimpleType($returnType);
+            }
+            $settings = compact('schemaName', 'resourceName', 'name', 'internalName', 'quotedName', 'returnType');
+            $names[strtolower($name)] =
+                ('PROCEDURE' === $type) ? new ProcedureSchema($settings) : new FunctionSchema($settings);
+        }
+
+        return $names;
+    }
+
+    protected function loadParameters(RoutineSchema $holder)
+    {
+        $sql = <<<MYSQL
+SELECT p.ORDINAL_POSITION, p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE, p.CHARACTER_MAXIMUM_LENGTH, 
+p.NUMERIC_PRECISION, p.NUMERIC_SCALE
+FROM INFORMATION_SCHEMA.PARAMETERS AS p 
+JOIN INFORMATION_SCHEMA.ROUTINES AS r ON r.SPECIFIC_NAME = p.SPECIFIC_NAME
+WHERE r.ROUTINE_NAME = '{$holder->resourceName}' AND r.ROUTINE_SCHEMA = '{$holder->schemaName}'
+MYSQL;
+
+        $params = $this->connection->select($sql);
+        foreach ($params as $row) {
+            $row = array_change_key_case((array)$row, CASE_UPPER);
+            $name = ltrim(array_get($row, 'PARAMETER_NAME'), '@'); // added on by some drivers, i.e. @name
+            $pos = intval(array_get($row, 'ORDINAL_POSITION'));
+            $simpleType = static::extractSimpleType(array_get($row, 'DATA_TYPE'));
+            if (0 === $pos) {
+                $holder->returnType = $simpleType;
+            } else {
+                $holder->addParameter(new ParameterSchema(
+                    [
+                        'name'       => $name,
+                        'position'   => $pos,
+                        'param_type' => array_get($row, 'PARAMETER_MODE'),
+                        'type'       => $simpleType,
+                        'db_type'    => array_get($row, 'DATA_TYPE'),
+                        'length'     => (isset($row['CHARACTER_MAXIMUM_LENGTH']) ? intval(array_get($row,
+                            'CHARACTER_MAXIMUM_LENGTH')) : null),
+                        'precision'  => (isset($row['NUMERIC_PRECISION']) ? intval(array_get($row, 'NUMERIC_PRECISION'))
+                            : null),
+                        'scale'      => (isset($row['NUMERIC_SCALE']) ? intval(array_get($row, 'NUMERIC_SCALE'))
+                            : null),
+                    ]
+                ));
+            }
+        }
     }
 
     /**
@@ -580,7 +680,7 @@ MYSQL;
     /**
      * @return string default schema.
      */
-    public function findDefaultSchema()
+    public function getDefaultSchema()
     {
         $sql = <<<MYSQL
 SELECT DATABASE() FROM DUAL

@@ -17,6 +17,7 @@ class SqliteSchema extends SqlSchema
         return [
             DbResourceTypes::TYPE_TABLE,
             DbResourceTypes::TYPE_TABLE_FIELD,
+            DbResourceTypes::TYPE_TABLE_CONSTRAINT,
             DbResourceTypes::TYPE_TABLE_RELATIONSHIP,
         ];
     }
@@ -288,7 +289,7 @@ class SqliteSchema extends SqlSchema
     /**
      * @inheritdoc
      */
-    protected function findTableNames($schema = '')
+    protected function getTableNames($schema = '')
     {
         $sql = "SELECT DISTINCT tbl_name FROM sqlite_master WHERE tbl_name<>'sqlite_sequence'";
 
@@ -308,76 +309,94 @@ class SqliteSchema extends SqlSchema
     /**
      * @inheritdoc
      */
-    protected function findColumns(TableSchema $table)
+    protected function loadTableColumns(TableSchema $table)
     {
         $sql = "PRAGMA table_info({$table->quotedName})";
 
-        return $this->connection->select($sql);
-    }
+        $result = $this->connection->select($sql);
+        foreach ($result as $column) {
+            $column = array_change_key_case((array)$column, CASE_LOWER);
+            $c = new ColumnSchema(['name' => $column['name']]);
+            $c->quotedName = $this->quoteColumnName($c->name);
+            $c->allowNull = (1 != $column['notnull']);
+            $c->isPrimaryKey = ($column['pk'] != 0);
+            $c->comment = null; // SQLite does not support column comments at all
 
-    /**
-     * Creates a table column.
-     *
-     * @param array $column column metadata
-     *
-     * @return ColumnSchema normalized column metadata
-     */
-    protected function createColumn($column)
-    {
-        $c = new ColumnSchema(['name' => $column['name']]);
-        $c->quotedName = $this->quoteColumnName($c->name);
-        $c->allowNull = (1 != $column['notnull']);
-        $c->isPrimaryKey = ($column['pk'] != 0);
-        $c->comment = null; // SQLite does not support column comments at all
+            $c->dbType = strtolower($column['type']);
+            $this->extractLimit($c, $c->dbType);
+            $c->fixedLength = $this->extractFixedLength($c->dbType);
+            $c->supportsMultibyte = $this->extractMultiByteSupport($c->dbType);
+            $this->extractType($c, $c->dbType);
+            $this->extractDefault($c, $column['dflt_value']);
 
-        $c->dbType = strtolower($column['type']);
-        $this->extractLimit($c, $c->dbType);
-        $c->fixedLength = $this->extractFixedLength($c->dbType);
-        $c->supportsMultibyte = $this->extractMultiByteSupport($c->dbType);
-        $this->extractType($c, $c->dbType);
-        if ($c->isPrimaryKey && (DbSimpleTypes::TYPE_INTEGER === $c->type)) {
-            $c->autoIncrement = true; //defaults to alias of ROWID internally
+            if ($c->isPrimaryKey) {
+                if (DbSimpleTypes::TYPE_INTEGER === $c->type) {
+                    $c->autoIncrement = true; //defaults to alias of ROWID internally
+                    $table->sequenceName = array_get($column, 'sequence', $c->name);
+                    if ((DbSimpleTypes::TYPE_INTEGER === $c->type)) {
+                        $c->type = DbSimpleTypes::TYPE_ID;
+                    }
+                }
+                $table->addPrimaryKey($c->name);
+            }
+            $table->addColumn($c);
         }
-        $this->extractDefault($c, $column['dflt_value']);
-
-        return $c;
     }
 
     /**
      * @inheritdoc
      */
-    protected function findTableReferences()
+    protected function getTableConstraints($schema = '')
     {
-        $references = [];
+        $constraints = [];
         /** @type TableSchema $each */
         foreach ($this->getTableNames() as $each) {
+            $tn = strtolower($each->name);
+            $sql = "PRAGMA index_list({$each->quotedName})";
+            $results = $this->connection->select($sql);
+            /* seq, name, unique, origin, partial */
+            foreach ($results as $index) {
+                $index = (array)$index;
+                $name = $index['name'];
+                $sql = "PRAGMA index_info({$name})";
+                $cols = $this->connection->select($sql);
+                /* seq, name, unique, origin, partial */
+                $columnNames = [];
+                foreach ($cols as $col) {
+                    $col = (array)$col;
+                    $columnNames[] = $col['name'];
+                }
+                $constraints[''][$tn][$name] = [
+                    'table_schema'    => '',
+                    'table_name'      => $each->name,
+                    'column_name'     => $columnNames,
+                    'constraint_name' => $name,
+                    'constraint_type' => $index['origin'],
+                ];
+            }
+
             $sql = "PRAGMA foreign_key_list({$each->quotedName})";
             $fks = $this->connection->select($sql);
-            $sql = "PRAGMA table_info({$each->quotedName})";
-            $info = $this->connection->select($sql);
+            /* id, seq, table, from, to, on_update, on_delete, match */
             foreach ($fks as $key) {
                 $key = (array)$key;
-                $field = [];
-                foreach ($info as $eachField) {
-                    $eachField = (array)$eachField;
-                    if (0 === strcasecmp($eachField['name'], $key['from'])) {
-                        $field = $eachField;
-                        continue 1;
-                    }
-                }
-                $references[] = [
+                $name = 'fk_' . $each->name . '_' . $key['from'];
+                $constraints[''][$tn][$name] = [
                     'table_schema'            => '',
                     'table_name'              => $each->name,
                     'column_name'             => $key['from'],
-                    'constraint_type'         => (array_get_bool($field, 'pk') ? 'primary key' : ''),
+                    'constraint_name'         => $name,
+                    'constraint_type'         => 'f',
                     'referenced_table_schema' => '',
                     'referenced_table_name'   => $key['table'],
                     'referenced_column_name'  => $key['to'],
+                    'update_rule'             => $key['on_update'],
+                    'delete_rule'             => $key['on_delete'],
                 ];
             }
         }
 
-        return $references;
+        return $constraints;
     }
 
     /**
