@@ -753,10 +753,12 @@ class Table extends BaseDbTableResource
                 // add any required relationship mapping fields
                 foreach ($schema->getRelations() as $relation) {
                     if ($relation->alwaysFetch || $allRelated || array_key_exists($relation->getName(true), $related)) {
-                        if ($fieldInfo = $schema->getColumn($relation->field)) {
-                            $relationField = $fieldInfo->getName(true); // account for aliasing
-                            if (false === array_search($relationField, $fields)) {
-                                $fields[] = $relationField;
+                        foreach ($relation->field as $relField) {
+                            if ($fieldInfo = $schema->getColumn($relField)) {
+                                $relationField = $fieldInfo->getName(true); // account for aliasing
+                                if (false === array_search($relationField, $fields)) {
+                                    $fields[] = $relationField;
+                                }
                             }
                         }
                     }
