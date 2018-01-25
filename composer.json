@@ -33,7 +33,7 @@
     "wiki":   "https://wiki.dreamfactory.com"
   },
   "require":     {
-    "dreamfactory/df-database": "~0.9.0"
+    "dreamfactory/df-database": "~0.9.1"
   },
   "autoload":    {
     "psr-4": {
