@@ -358,6 +358,7 @@ class SqliteSchema extends SqlSchema
             foreach ($results as $index) {
                 $index = (array)$index;
                 $name = $index['name'];
+                $type = (isset($index['origin']) ? $index['origin'] : ($index['unique'] ? 'unique' : 'c'));
                 $sql = "PRAGMA index_info({$name})";
                 $cols = $this->connection->select($sql);
                 /* seq, name, unique, origin, partial */
@@ -371,7 +372,7 @@ class SqliteSchema extends SqlSchema
                     'table_name'      => $each->name,
                     'column_name'     => $columnNames,
                     'constraint_name' => $name,
-                    'constraint_type' => $index['origin'],
+                    'constraint_type' => $type,
                 ];
             }
 
