@@ -994,6 +994,7 @@ class Table extends BaseDbTableResource
                             throw new InternalServerErrorException("Record upsert failed.");
                         }
                     } else {
+                        $parsed = array_except($parsed, array_keys($match));
                         $rows = $builder->update($parsed);
                         if (0 >= $rows) {
                             // could have just not updated anything, or could be bad id
