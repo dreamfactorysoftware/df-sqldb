@@ -51,11 +51,20 @@ class SqlDb extends BaseDbService
         return $handlers;
     }
 
+    public static function getDriverName()
+    {
+        return null;
+    }
+
     /**
      * {@inheritdoc}
      */
     public static function adaptConfig(array &$config)
     {
+        if (!isset($config['driver']) && ($driver = static::getDriverName())) {
+            $config['driver'] = $driver;
+        }
+
         if (!isset($config['charset'])) {
             $config['charset'] = 'utf8';
         }

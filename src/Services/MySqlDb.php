@@ -23,10 +23,9 @@ class MySqlDb extends SqlDb
         $this->setConfigBasedCachePrefix($prefix);
     }
 
-    public static function adaptConfig(array &$config)
+    public static function getDriverName()
     {
-        $config['driver'] = 'mysql';
-        parent::adaptConfig($config);
+        return 'mysql';
     }
 
     public function getResourceHandlers()
