@@ -3,6 +3,11 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+## [0.15.3] - 2018-02-25
+### Changed
+- Made it easier to extend existing SQL Database classes
+- No need to include the identifying fields in update request
+
 ## [0.15.2] - 2018-01-29
 ### Fixed
 - Allow for old SQLite pragma for index_list which does not include origin column
@@ -203,7 +208,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## 0.1.0 - 2015-10-24
 First official release working with the new [df-core](https://github.com/dreamfactorysoftware/df-core) library.
 
-[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.15.2...HEAD
+[Unreleased]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.15.3...HEAD
+[0.15.3]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.15.2...0.15.3
 [0.15.2]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.15.1...0.15.2
 [0.15.1]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.15.0...0.15.1
 [0.15.0]: https://github.com/dreamfactorysoftware/df-sqldb/compare/0.14.0...0.15.0
