@@ -3,6 +3,8 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+- Added view endpoint
+
 ## [0.15.3] - 2018-02-25
 ### Changed
 - Made it easier to extend existing SQL Database classes

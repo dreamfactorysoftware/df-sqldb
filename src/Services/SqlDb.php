@@ -4,6 +4,7 @@ namespace DreamFactory\Core\SqlDb\Services;
 
 use DreamFactory\Core\Database\Services\BaseDbService;
 use DreamFactory\Core\SqlDb\Resources\Table;
+use DreamFactory\Core\SqlDb\Resources\View;
 use DreamFactory\Core\Utility\ResourcesWrapper;
 use Illuminate\Database\DatabaseManager;
 use DbSchemaExtensions;
@@ -46,6 +47,11 @@ class SqlDb extends BaseDbService
             'name'       => Table::RESOURCE_NAME,
             'class_name' => Table::class,
             'label'      => 'Table',
+        ];
+        $handlers[View::RESOURCE_NAME] = [
+            'name'       => View::RESOURCE_NAME,
+            'class_name' => View::class,
+            'label'      => 'View',
         ];
 
         return $handlers;
