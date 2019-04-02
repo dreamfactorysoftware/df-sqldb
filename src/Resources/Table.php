@@ -269,6 +269,9 @@ class Table extends BaseDbTableResource
                     break;
                 default:
                     // todo need to validate format here first
+                    if(stripos($order, 'sleep(') !== false){
+                        throw new BadRequestException('Use of the sleep() function not supported.');
+                    }
                     $builder->orderByRaw($order);
                     break;
             }
@@ -340,7 +343,6 @@ class Table extends BaseDbTableResource
     protected function getQueryResults(TableSchema $schema, Builder $builder, $extras)
     {
         $result = $builder->get();
-
         $result->transform(function ($item) use ($schema) {
             $item = (array)$item;
             foreach ($item as $field => &$value) {
