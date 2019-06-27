@@ -5,7 +5,6 @@
     "dreamfactory",
     "api",
     "rest",
-    "mysql",
     "postgresql",
     "sqlserver",
     "ibm db2",
