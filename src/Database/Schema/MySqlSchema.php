@@ -1,8 +1,7 @@
 <?php
 
-namespace DreamFactory\Core\MySqlDb\Database\Schema;
+namespace DreamFactory\Core\SqlDb\Database\Schema;
 
-use DreamFactory\Core\SqlDb\Database\Schema\SqlSchema;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
 use DreamFactory\Core\Database\Schema\FunctionSchema;
 use DreamFactory\Core\Database\Schema\ParameterSchema;
