@@ -20,6 +20,9 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
     {
         // Add our database extensions.
         $this->app->resolving('db.schema', function (DbSchemaExtensions $db){
+            $db->extend('mysql', function ($connection){
+                return new MySqlSchema($connection);
+            });
             $db->extend('sqlite', function ($connection){
                 return new SqliteSchema($connection);
             });
