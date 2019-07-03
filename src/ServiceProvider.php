@@ -6,6 +6,7 @@ use DreamFactory\Core\Enums\ServiceTypeGroups;
 use DreamFactory\Core\Models\SystemTableModelMapper;
 use DreamFactory\Core\Services\ServiceManager;
 use DreamFactory\Core\Services\ServiceType;
+use DreamFactory\Core\SqlDb\Database\Schema\MySqlSchema;
 use DreamFactory\Core\SqlDb\Database\Schema\PostgresSchema;
 use DreamFactory\Core\SqlDb\Database\Schema\SqliteSchema;
 use DreamFactory\Core\SqlDb\Models\PgSqlDbConfig;
