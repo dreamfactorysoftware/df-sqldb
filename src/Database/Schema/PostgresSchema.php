@@ -285,8 +285,10 @@ class PostgresSchema extends SqlSchema
     protected function loadTableColumns(TableSchema $table)
     {
         $params = [':table' => $table->resourceName, ':schema' => $table->schemaName];
+        $version = $this->connection->select('select version();')[0]->version;
+        $adsrc = strpos($version, 'PostgreSQL 12') !== false ? 'pg_get_expr(d.adbin, d.adrelid) AS adsrc' : 'd.adsrc';
         $sql = <<<SQL
-SELECT a.attname, LOWER(format_type(a.atttypid, a.atttypmod)) AS type, d.adsrc, a.attnotnull, a.atthasdef,
+SELECT a.attname, LOWER(format_type(a.atttypid, a.atttypmod)) AS type, $adsrc, a.attnotnull, a.atthasdef,
 	pg_catalog.col_description(a.attrelid, a.attnum) AS comment
 FROM pg_attribute a LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
 WHERE a.attnum > 0 AND NOT a.attisdropped
