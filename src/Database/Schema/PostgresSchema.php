@@ -431,7 +431,19 @@ EOD;
     protected function getViewNames($schema = '')
     {
         $sql = <<<EOD
-SELECT table_name, table_schema FROM information_schema.tables WHERE table_type = 'VIEW'
+SELECT all_views.table_name, all_views.table_schema
+  FROM (
+       SELECT table_name AS table_name,
+              table_schema AS table_schema,
+              table_type AS table_type
+         FROM information_schema.tables
+       UNION ALL
+       SELECT matviewname AS table_name,
+              schemaname AS table_schema,
+              'VIEW' AS table_type
+         FROM pg_matviews
+           ) AS all_views
+ WHERE all_views.table_type = 'VIEW'
 EOD;
 
         if (!empty($schema)) {
