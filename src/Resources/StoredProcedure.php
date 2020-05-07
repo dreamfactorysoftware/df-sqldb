@@ -425,6 +425,7 @@ class StoredProcedure extends BaseDbResource
                         $this->request->getParameter('wrapper', config('resources_wrapper', 'resource')));
                 $result = [$wrapper => $result];
             }
+            $result = empty($result) ? [] : $result;
             $result = array_merge($result, $outParams);
         } elseif (!empty($result)) {
             // want it wrapped?
