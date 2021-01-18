@@ -286,7 +286,9 @@ class PostgresSchema extends SqlSchema
     {
         $params = [':table' => $table->resourceName, ':schema' => $table->schemaName];
         $version = $this->connection->select('select version();')[0]->version;
-        $adsrc = strpos($version, 'PostgreSQL 12') !== false ? 'pg_get_expr(d.adbin, d.adrelid) AS adsrc' : 'd.adsrc';
+        preg_match("/PostgreSQL (\d.*?)\s/i", $version, $matches);
+        $version = (float)$matches[1];
+        $adsrc = $version >= 12 ? 'pg_get_expr(d.adbin, d.adrelid) AS adsrc' : 'd.adsrc';
         $sql = <<<SQL
 SELECT a.attname, LOWER(format_type(a.atttypid, a.atttypmod)) AS type, $adsrc, a.attnotnull, a.atthasdef,
 	pg_catalog.col_description(a.attrelid, a.attnum) AS comment
