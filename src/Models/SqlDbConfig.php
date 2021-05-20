@@ -32,32 +32,37 @@ class SqlDbConfig extends BaseSqlDbConfig
                 'name'        => 'host',
                 'label'       => 'Host',
                 'type'        => 'string',
-                'description' => 'The name of the database host, i.e. localhost, 192.168.1.1, etc.'
+                'description' => 'The name of the database host, i.e. localhost, 192.168.1.1, etc.',
+                'display'     => true
             ],
             [
                 'name'        => 'port',
                 'label'       => 'Port Number',
                 'type'        => 'integer',
-                'description' => 'The number of the database host port, i.e. ' . static::getDefaultPort()
+                'description' => 'The number of the database host port, i.e. ' . static::getDefaultPort(),
+                'display'     => true
             ],
             [
                 'name'        => 'database',
                 'label'       => 'Database',
                 'type'        => 'string',
                 'description' =>
-                    'The name of the database to connect to on the given server. This can be a lookup key.'
+                'The name of the database to connect to on the given server. This can be a lookup key.',
+                'display'     => true
             ],
             [
                 'name'        => 'username',
                 'label'       => 'Username',
                 'type'        => 'string',
-                'description' => 'The name of the database user. This can be a lookup key.'
+                'description' => 'The name of the database user. This can be a lookup key.',
+                'display'     => true
             ],
             [
                 'name'        => 'password',
                 'label'       => 'Password',
                 'type'        => 'password',
-                'description' => 'The password for the database user. This can be a lookup key.'
+                'description' => 'The password for the database user. This can be a lookup key.',
+                'display'     => true
             ],
             [
                 'name'        => 'schema',
@@ -65,7 +70,8 @@ class SqlDbConfig extends BaseSqlDbConfig
                 'type'        => 'string',
                 'description' => 'Leave blank to work with all available schemas, ' .
                     'type "default" to only work with the default schema for the given credentials, ' .
-                    'or type in a specific schema to use for this service.'
+                    'or type in a specific schema to use for this service.',
+            'display'     => true
             ],
 //            [
 //                'name'        => 'prefix',
