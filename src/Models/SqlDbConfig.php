@@ -71,7 +71,7 @@ class SqlDbConfig extends BaseSqlDbConfig
                 'description' => 'Leave blank to work with all available schemas, ' .
                     'type "default" to only work with the default schema for the given credentials, ' .
                     'or type in a specific schema to use for this service.',
-            'display'     => true
+                'display'     => true
             ],
 //            [
 //                'name'        => 'prefix',
