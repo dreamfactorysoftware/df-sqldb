@@ -9,11 +9,14 @@ use DreamFactory\Core\Services\ServiceType;
 use DreamFactory\Core\SqlDb\Database\Schema\MySqlSchema;
 use DreamFactory\Core\SqlDb\Database\Schema\PostgresSchema;
 use DreamFactory\Core\SqlDb\Database\Schema\SqliteSchema;
+use DreamFactory\Core\SqlDb\Database\Schema\AlloyDbSchema;
 use DreamFactory\Core\SqlDb\Models\PgSqlDbConfig;
 use DreamFactory\Core\SqlDb\Models\SqlDbConfig;
 use DreamFactory\Core\SqlDb\Models\SqliteDbConfig;
+use DreamFactory\Core\SqlDb\Models\AlloyDbConfig;
 use DreamFactory\Core\SqlDb\Services\PostgreSqlDb;
 use DreamFactory\Core\SqlDb\Services\SqliteDb;
+use DreamFactory\Core\SqlDb\Services\AlloyDb;
 
 class ServiceProvider extends \Illuminate\Support\ServiceProvider
 {
@@ -29,6 +32,9 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
             });
             $db->extend('pgsql', function ($connection){
                 return new PostgresSchema($connection);
+            });
+            $db->extend('alloydb', function ($connection){
+                return new AlloyDBSchema($connection);
             });
         });
 
@@ -55,6 +61,18 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
                     'config_handler'  => SqliteDbConfig::class,
                     'factory'         => function ($config) {
                         return new SqliteDb($config);
+                    },
+                ])
+            );
+            $df->addType(
+                new ServiceType([
+                    'name'            => 'alloydb',
+                    'label'           => 'AlloyDB',
+                    'description'     => 'Database service supporting AlloyDB connections.',
+                    'group'           => ServiceTypeGroups::DATABASE,
+                    'config_handler'  => AlloyDbConfig::class,
+                    'factory'         => function ($config) {
+                        return new AlloyDb($config);
                     },
                 ])
             );
