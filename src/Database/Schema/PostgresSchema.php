@@ -9,6 +9,8 @@ use DreamFactory\Core\Database\Schema\ProcedureSchema;
 use DreamFactory\Core\Database\Schema\RoutineSchema;
 use DreamFactory\Core\Database\Schema\TableSchema;
 use DreamFactory\Core\Enums\DbSimpleTypes;
+use DreamFactory\Core\Exceptions\InternalServerErrorException;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Schema is the class for retrieving metadata information from a PostgreSQL database.
@@ -284,12 +286,16 @@ class PostgresSchema extends SqlSchema
      */
     protected function loadTableColumns(TableSchema $table)
     {
-        $params = [':table' => $table->resourceName, ':schema' => $table->schemaName];
-        $version = $this->connection->select('select version();')[0]->version;
-        preg_match("/PostgreSQL (\d.*?)\s/i", $version, $matches);
-        $version = (float)$matches[1];
-        $adsrc = $version >= 12 ? 'pg_get_expr(d.adbin, d.adrelid) AS adsrc' : 'd.adsrc';
-        $sql = <<<SQL
+        try {
+            $params = [':table' => $table->resourceName, ':schema' => $table->schemaName];
+            $version = $this->connection->select('select version();')[0]->version;
+            // Regex pattern to extract the version number of the DB
+            // The idea here is that $version variable is assumed to have the DB name followed by the version number
+            // Example: PostgresSQL 12.x.x or EntrepriseDB 9.x.x etc...
+            preg_match("/^\w*\s(\d.*?)\s/i", $version, $matches);
+            $version = (float)$matches[1];
+            $adsrc = $version >= 12 ? 'pg_get_expr(d.adbin, d.adrelid) AS adsrc' : 'd.adsrc';
+            $sql = <<<SQL
 SELECT a.attname, LOWER(format_type(a.atttypid, a.atttypmod)) AS type, $adsrc, a.attnotnull, a.atthasdef,
 	pg_catalog.col_description(a.attrelid, a.attnum) AS comment
 FROM pg_attribute a LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
@@ -298,7 +304,7 @@ WHERE a.attnum > 0 AND NOT a.attisdropped
 		AND relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = :schema))
 ORDER BY a.attnum
 SQL;
-        $result = $this->connection->select($sql, $params);
+            $result = $this->connection->select($sql, $params);
             foreach ($result as $column) {
                 $column = array_change_key_case((array)$column, CASE_LOWER);
 
@@ -337,7 +343,12 @@ SQL;
                 }
                 $table->addColumn($c);
             }
+        } catch (\Exception $exception) {
+            Log::error($exception->getMessage());
+            Log::error($exception->getTraceAsString());
+            throw new InternalServerErrorException($exception->getMessage());
         }
+    }
 
     /**
      * @inheritdoc
