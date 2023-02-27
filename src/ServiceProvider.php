@@ -23,7 +23,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
     public function register()
     {
         // Add our database extensions.
-        $this->app->resolving('db.schema', function (DbSchemaExtensions $db){
+        $this->app->resolving('df.db.schema', function (DbSchemaExtensions $db){
             $db->extend('mysql', function ($connection){
                 return new MySqlSchema($connection);
             });
