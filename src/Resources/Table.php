@@ -326,12 +326,41 @@ class Table extends BaseDbTableResource
             }
         }
 
+        // Filter the columns list based on the field type we need
+        // loop through the result and convert the fields with the same specified type to object
+        $data = $this->decodeJsonField($schema, $result);
+
+        return $data;
+    }
+
+    /**
+     * @param TableSchema $schema
+     * @param Collection $result
+     * @return array
+     */
+    private function decodeJsonField(TableSchema $schema, Collection $result): array {
+        $columns = $schema->getColumns();
+        $nvcharColumns = [];
+        foreach ($columns as $column) {
+            if ($column->dbType !== "nvarchar") continue;
+            $nvcharColumns[] = $column->name;
+        }
+        if (!empty($nvcharColumns)) {
+            $temp = $result->map(function ($item) use ($nvcharColumns) {
+                foreach ($nvcharColumns as $column) {
+                    // json_decode wil return object if the decode is success or null
+                    // in case of null => meaning the value is not valid json then we return the original value
+                    $item[$column] = json_decode($item[$column]) ?? $item[$column];
+                }
+                return $item;
+            });
+            $result = collect($temp);
+        }
+
         $data = $result->toArray();
         if (!empty($meta)) {
             $data['meta'] = $meta;
         }
-
-        return $data;
     }
 
     /**
