@@ -257,24 +257,37 @@ class Table extends BaseDbTableResource
             if (false !== strpos($order, ';')) {
                 throw new BadRequestException('Invalid order by clause in request.');
             }
-            $commas = explode(',', $order);
-            switch (count($commas)) {
-                case 0:
-                    break;
-                case 1:
-                    $spaces = explode(' ', $commas[0]);
-                    $orderField = $spaces[0];
-                    $direction = (isset($spaces[1]) ? $spaces[1] : 'asc');
-                    $builder->orderBy($orderField, $direction);
-                    break;
-                default:
-                    // todo need to validate format here first
-                    if(stripos($order, 'sleep(') !== false){
-                        throw new BadRequestException('Use of the sleep() function not supported.');
-                    }
-                    $builder->orderByRaw($order);
-                    break;
+
+            if(stripos($order, 'sleep(') !== false){
+                throw new BadRequestException('Use of the sleep() function not supported.');
             }
+
+            $orderComponents = explode(',', $order);
+            $processedOrderComponents = [];
+            foreach ($orderComponents as $component) {
+                $component = trim($component);
+                $parts = explode(' ', $component);
+
+                if (count($parts) < 1) {
+                    continue;
+                }
+
+                $field = $parts[0];
+                $direction = 'asc';
+                if (isset($parts[1]) && in_array(strtolower($parts[1]), ['asc', 'desc'])) {
+                    $direction = $parts[1];
+                }
+
+                $nullsOrdering = '';
+                if (isset($parts[2]) && strtolower($parts[2]) == 'nulls' && isset($parts[3]) && in_array(strtolower($parts[3]), ['first', 'last'])) {
+                    $nullsOrdering = ' NULLS ' . $parts[3];
+                }
+
+                $processedOrderComponents[] = $field . ' ' . $direction . $nullsOrdering;
+            }
+
+            $processedOrder = implode(', ', $processedOrderComponents);
+            $builder->orderByRaw($processedOrder);
         }
         $group = trim(array_get($extras, ApiOptions::GROUP));
         if (!empty($group)) {
