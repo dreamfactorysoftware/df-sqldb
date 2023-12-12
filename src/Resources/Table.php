@@ -338,7 +338,7 @@ class Table extends BaseDbTableResource
      * @param Collection $result
      * @return array
      */
-    private function decodeJsonField(TableSchema $schema, Collection $result): array {
+    public function decodeJsonField(TableSchema $schema, Collection $result): array {
         $columns = $schema->getColumns();
         $nvcharColumns = [];
         foreach ($columns as $column) {
@@ -361,6 +361,7 @@ class Table extends BaseDbTableResource
         if (!empty($meta)) {
             $data['meta'] = $meta;
         }
+        return $data;
     }
 
     /**
