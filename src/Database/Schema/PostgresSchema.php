@@ -743,33 +743,24 @@ EOD;
         }
 
         $sql = <<<MYSQL
-SELECT ROUTINE_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.ROUTINES {$where}
+SELECT ROUTINE_NAME, ROUTINE_TYPE, DATA_TYPE FROM INFORMATION_SCHEMA.ROUTINES {$where}
 MYSQL;
 
         $rows = $this->connection->select($sql, $bindings);
-
-        $sql = <<<MYSQL
-SELECT r.ROUTINE_NAME
-FROM INFORMATION_SCHEMA.PARAMETERS AS p JOIN INFORMATION_SCHEMA.ROUTINES AS r ON r.SPECIFIC_NAME = p.SPECIFIC_NAME 
-WHERE p.SPECIFIC_SCHEMA = :schema AND (p.PARAMETER_MODE = 'INOUT' OR p.PARAMETER_MODE = 'OUT')
-MYSQL;
-
-        $procedures = $this->selectColumn($sql, $bindings);
 
         $names = [];
         foreach ($rows as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $resourceName = array_get($row, 'ROUTINE_NAME');
+            $routineType = array_get($row, 'ROUTINE_TYPE');
             switch (strtoupper($type)) {
                 case 'PROCEDURE':
-                    if (false === array_search($resourceName, $procedures)) {
-                        // only way to determine proc from func is by params??
+                    if ($routineType !== 'PROCEDURE') {
                         continue 2;
                     }
                     break;
                 case 'FUNCTION':
-                    if (false !== array_search($resourceName, $procedures)) {
-                        // only way to determine proc from func is by params??
+                    if ($routineType !== 'FUNCTION') {
                         continue 2;
                     }
                     break;
@@ -872,7 +863,7 @@ MYSQL;
     {
         $paramStr = $this->getRoutineParamString($param_schemas, $values);
 
-        return "SELECT * FROM {$routine->quotedName}($paramStr);";
+        return "CALL {$routine->quotedName}($paramStr);";
     }
 
     /**
