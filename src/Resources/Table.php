@@ -4,6 +4,7 @@ namespace DreamFactory\Core\SqlDb\Resources;
 
 use DB;
 use DreamFactory\Core\Database\Components\Expression;
+use DreamFactory\Core\Database\Components\RelationTransactionContext;
 use DreamFactory\Core\Database\Enums\DbFunctionUses;
 use DreamFactory\Core\Database\Resources\BaseDbTableResource;
 use DreamFactory\Core\Database\Schema\ColumnSchema;
@@ -923,6 +924,9 @@ class Table extends BaseDbTableResource
         $allowRelatedDelete = array_get_bool($extras, 'allow_related_delete');
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
+        // Create transaction context for related record operations
+        $context = ($rollback || $continue) ? new RelationTransactionContext($rollback, $continue) : null;
+
         $builder = $dbConn->table($this->transactionTableSchema->internalName);
         $match = [];
         if (!is_null($id)) {
@@ -955,7 +959,7 @@ class Table extends BaseDbTableResource
                 }
 
                 if (!empty($relatedInfo)) {
-                    $this->updatePreRelations($record, $relatedInfo);
+                    $this->updatePreRelations($record, $relatedInfo, $context);
                 }
 
                 $parsed = $this->parseRecord($record, $this->tableFieldsInfo, $ssFilters);
@@ -978,8 +982,18 @@ class Table extends BaseDbTableResource
                         $this->transactionTable,
                         $record,
                         $relatedInfo,
-                        $allowRelatedDelete
+                        $allowRelatedDelete,
+                        $context
                     );
+
+                    // Handle relation errors with rollback
+                    if ($context && $context->hasErrors() && $context->shouldRollback()) {
+                        $context->executeCompensations([$this, 'handleVirtualRecords']);
+                        throw new BadRequestException(
+                            "Related record operations failed. All changes rolled back. Errors: " .
+                            json_encode($context->getErrorMessages())
+                        );
+                    }
                 }
 
                 $idName =
@@ -1000,7 +1014,7 @@ class Table extends BaseDbTableResource
                 }
 
                 if (!empty($relatedInfo)) {
-                    $this->updatePreRelations($record, $relatedInfo);
+                    $this->updatePreRelations($record, $relatedInfo, $context);
                 }
 
                 $parsed = $this->parseRecord($record, $this->tableFieldsInfo, $ssFilters, true);
@@ -1032,8 +1046,18 @@ class Table extends BaseDbTableResource
                         $this->transactionTable,
                         $record,
                         $relatedInfo,
-                        $allowRelatedDelete
+                        $allowRelatedDelete,
+                        $context
                     );
+
+                    // Handle relation errors with rollback
+                    if ($context && $context->hasErrors() && $context->shouldRollback()) {
+                        $context->executeCompensations([$this, 'handleVirtualRecords']);
+                        throw new BadRequestException(
+                            "Related record operations failed. All changes rolled back. Errors: " .
+                            json_encode($context->getErrorMessages())
+                        );
+                    }
                 }
 
                 $idName =
@@ -1118,6 +1142,11 @@ class Table extends BaseDbTableResource
         $allowRelatedDelete = array_get_bool($extras, 'allow_related_delete');
         $relatedInfo = $this->describeTableRelated($this->transactionTable);
 
+        // Create context for batch commit post-relations
+        $rollback = array_get_bool($extras, ApiOptions::ROLLBACK, false);
+        $continue = array_get_bool($extras, ApiOptions::CONTINUES, false);
+        $context = ($rollback || $continue) ? new RelationTransactionContext($rollback, $continue) : null;
+
         $builder = $dbConn->table($this->transactionTableSchema->internalName);
 
         /** @type ColumnSchema $idName */
@@ -1185,7 +1214,8 @@ class Table extends BaseDbTableResource
                                     $this->transactionTable,
                                     array_merge($updates, [$idName->getName(true) => $id]),
                                     $relatedInfo,
-                                    $allowRelatedDelete
+                                    $allowRelatedDelete,
+                                    $context
                                 );
                             }
                         }
