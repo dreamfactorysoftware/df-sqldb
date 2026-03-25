@@ -781,6 +781,7 @@ class Table extends BaseDbTableResource
                     }
                 }
             }
+            $hasGroup = !empty(array_get($extras, ApiOptions::GROUP));
             foreach ($fields as $field) {
                 if ($fieldInfo = $schema->getColumn($field, true)) {
                     $out = $this->parseFieldForSelect($fieldInfo);
@@ -789,6 +790,8 @@ class Table extends BaseDbTableResource
                     } else {
                         $outArray[] = $out;
                     }
+                } elseif ($hasGroup && ($aggExpr = $this->parseAggregateExpression($schema, $field))) {
+                    $outArray[] = $aggExpr;
                 } else {
                     throw new BadRequestException('Invalid field requested: ' . $field);
                 }
@@ -823,6 +826,50 @@ class Table extends BaseDbTableResource
         }
 
         return $outArray;
+    }
+
+    /**
+     * Parse an ad-hoc aggregate expression like SUM(column_name) or COUNT(*).
+     * Only allowed when GROUP BY is present. Validates that the inner column
+     * exists in the table schema to prevent SQL injection.
+     *
+     * @param  TableSchema $schema
+     * @param  string      $field
+     *
+     * @return \Illuminate\Database\Query\Expression|null
+     */
+    protected function parseAggregateExpression($schema, $field)
+    {
+        $allowed = ['SUM', 'COUNT', 'AVG', 'MIN', 'MAX'];
+        $pattern = '/^(' . implode('|', $allowed) . ')\s*\(\s*(.+?)\s*\)$/i';
+
+        if (!preg_match($pattern, trim($field), $matches)) {
+            return null;
+        }
+
+        $func = strtoupper($matches[1]);
+        $inner = $matches[2];
+
+        // COUNT(*) is always valid
+        if ($func === 'COUNT' && $inner === '*') {
+            return DB::raw('COUNT(*) AS COUNT_ALL');
+        }
+
+        // Reject anything that looks like sub-expressions or injection
+        if (preg_match('/[;\'"\(\)\\\\]/', $inner)) {
+            return null;
+        }
+
+        // Validate the inner column exists in the schema
+        $columnInfo = $schema->getColumn($inner, true);
+        if (!$columnInfo) {
+            return null;
+        }
+
+        $columnName = $columnInfo->name;
+        $alias = $func . '_' . preg_replace('/[^a-zA-Z0-9_]/', '_', $columnInfo->getName(true));
+
+        return DB::raw($func . '(' . $this->parent->getConnection()->getQueryGrammar()->wrap($columnName) . ') AS ' . $alias);
     }
 
     /**
