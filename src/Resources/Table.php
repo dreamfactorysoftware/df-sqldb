@@ -267,13 +267,25 @@ class Table extends BaseDbTableResource
             $processedOrderComponents = [];
             foreach ($orderComponents as $component) {
                 $component = trim($component);
-                $parts = explode(' ', $component);
+                
+                // Split on all whitespace, not just spaces
+                $parts = preg_split('/\s+/', $component, -1, PREG_SPLIT_NO_EMPTY);
 
                 if (count($parts) < 1) {
                     continue;
                 }
 
                 $field = $parts[0];
+                
+                // Field must be a valid column in the schema
+                if (preg_match('/[()]/', $field) || stripos($field, 'select') === 0) {
+                    throw new BadRequestException('Invalid order by clause in request.');
+                }
+
+                if (!$schema->getColumn($field, true)) {
+                    throw new BadRequestException('Invalid order by clause in request.');
+                }
+
                 $direction = 'asc';
                 if (isset($parts[1]) && in_array(strtolower($parts[1]), ['asc', 'desc'])) {
                     $direction = $parts[1];
@@ -817,10 +829,26 @@ class Table extends BaseDbTableResource
                 if ($fieldInfo = $schema->getColumn($field, true)) {
                     $outArray[] = $fieldInfo->name;
                 } else {
-                    if (false !== strpos($field, ';')) {
+                    // Normalize whitespace before validation
+                    $normalized = preg_replace('/\s+/', ' ', $field);
+
+                    if (false !== strpos($normalized, ';')) {
                         throw new BadRequestException('Invalid group by clause in request.');
                     }
-                    $outArray[] = DB::raw($field); // todo better checks on group by clause
+
+                    if (preg_match('/[()]/', $normalized) || strpos($field, '`') !== false) {
+                        throw new BadRequestException('Invalid group by clause in request.');
+                    }
+
+                    // Allow valid aggregate expressions (SUM, COUNT, etc.)
+                    $aggregate = $this->parseAggregateExpression($schema, $field);
+                    if ($aggregate !== null) {
+                        $outArray[] = $aggregate;
+                        continue;
+                    }
+
+                    // Field not in schema and not a valid aggregate
+                    throw new BadRequestException('Invalid group by clause in request.');
                 }
             }
         }
