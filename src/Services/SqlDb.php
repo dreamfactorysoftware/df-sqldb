@@ -142,7 +142,9 @@ class SqlDb extends BaseDbService
         }
 
         foreach ($statements as $statement) {
-            $this->dbConn->statement($statement);
+            if (!empty($statement) && is_string($statement) && trim($statement) !== '') {
+                $this->dbConn->statement($statement);
+            }
         }
     }
 
