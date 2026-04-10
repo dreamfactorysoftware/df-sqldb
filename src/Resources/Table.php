@@ -632,9 +632,8 @@ class Table extends BaseDbTableResource
             ) {
                 $value = substr($value, 1, -1);
             } elseif ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
-                // Only allow known safe SQL functions, not arbitrary parenthesized expressions
-                $allowedFunctions = '/^\(?(NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME)\(\)\)?$/i';
-                if (preg_match($allowedFunctions, $value)) {
+                // Allow known safe SQL functions but block subqueries and dangerous expressions
+                if (static::isSafeFilterExpression($value)) {
                     return $value;
                 }
                 // Fall through to parameterized binding for anything else
@@ -664,19 +663,51 @@ class Table extends BaseDbTableResource
     protected function parseValueForSet($value, $field_info, $for_update = false)
     {
         if ($value instanceof Expression) {
-            // Only allow known safe SQL expressions to prevent injection via {"expression": "..."}
-            $allowed = '/^(NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME|NULL)\(\)?$/i';
             $expr = trim($value->expression);
             if (strtoupper($expr) === 'NULL') {
                 return DB::raw('NULL');
             }
-            if (!preg_match($allowed, $expr)) {
-                throw new BadRequestException("Custom SQL expression '$expr' is not permitted. Use a known function like NOW() or NULL.");
+            if (!static::isSafeExpression($expr)) {
+                throw new BadRequestException("SQL expression '$expr' is not permitted.");
             }
             return DB::raw($expr);
         } else {
             return parent::parseValueForSet($value, $field_info, $for_update);
         }
+    }
+
+    /**
+     * Check if a parenthesized filter expression is safe (not a subquery).
+     * Blocks SELECT, INSERT, UPDATE, DELETE, DROP, ALTER, EXEC subqueries.
+     * Allows standard SQL functions like NOW(), COALESCE(), UPPER(), etc.
+     */
+    protected static function isSafeFilterExpression(string $value): bool
+    {
+        $upper = strtoupper($value);
+        // Block subqueries and DDL/DML keywords inside parentheses
+        $blocked = '/\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|EXECUTE|TRUNCATE|GRANT|REVOKE|UNION|INTO|SLEEP|BENCHMARK|LOAD_FILE|OUTFILE|DUMPFILE)\b/i';
+        if (preg_match($blocked, $value)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Check if an expression value (from {"expression": "..."}) is safe to execute.
+     * Allows common SQL functions but blocks subqueries and dangerous statements.
+     */
+    protected static function isSafeExpression(string $expr): bool
+    {
+        // Block subqueries and DDL/DML
+        $blocked = '/\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|EXECUTE|TRUNCATE|GRANT|REVOKE|UNION|INTO|SLEEP|BENCHMARK|LOAD_FILE|OUTFILE|DUMPFILE)\b/i';
+        if (preg_match($blocked, $expr)) {
+            return false;
+        }
+        // Block semicolons (statement stacking)
+        if (strpos($expr, ';') !== false) {
+            return false;
+        }
+        return true;
     }
 
     /**
