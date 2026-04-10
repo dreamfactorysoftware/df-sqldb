@@ -259,12 +259,7 @@ class Table extends BaseDbTableResource
                 throw new BadRequestException('Invalid order by clause in request.');
             }
 
-            if(stripos($order, 'sleep(') !== false){
-                throw new BadRequestException('Use of the sleep() function not supported.');
-            }
-
             $orderComponents = explode(',', $order);
-            $processedOrderComponents = [];
             foreach ($orderComponents as $component) {
                 $component = trim($component);
                 $parts = explode(' ', $component);
@@ -274,21 +269,32 @@ class Table extends BaseDbTableResource
                 }
 
                 $field = $parts[0];
+
+                // Validate field against schema columns to prevent SQL injection
+                if (!$schema->getColumn($field, true)) {
+                    throw new BadRequestException("Invalid field '$field' in order by clause.");
+                }
+
                 $direction = 'asc';
                 if (isset($parts[1]) && in_array(strtolower($parts[1]), ['asc', 'desc'])) {
-                    $direction = $parts[1];
+                    $direction = strtolower($parts[1]);
                 }
+
+                $col = $schema->getColumn($field, true);
 
                 $nullsOrdering = '';
-                if (isset($parts[2]) && strtolower($parts[2]) == 'nulls' && isset($parts[3]) && in_array(strtolower($parts[3]), ['first', 'last'])) {
-                    $nullsOrdering = ' NULLS ' . $parts[3];
+                if (isset($parts[2]) && strtolower($parts[2]) === 'nulls' && isset($parts[3]) && in_array(strtolower($parts[3]), ['first', 'last'])) {
+                    $nullsOrdering = ' NULLS ' . strtoupper($parts[3]);
                 }
 
-                $processedOrderComponents[] = $field . ' ' . $direction . $nullsOrdering;
+                if (!empty($nullsOrdering)) {
+                    // orderByRaw needs pre-quoted names since it's raw SQL
+                    $builder->orderByRaw($col->quotedName . ' ' . $direction . $nullsOrdering);
+                } else {
+                    // orderBy() quotes internally, so use the plain name
+                    $builder->orderBy($col->name, $direction);
+                }
             }
-
-            $processedOrder = implode(', ', $processedOrderComponents);
-            $builder->orderByRaw($processedOrder);
         }
         $group = trim(array_get($extras, ApiOptions::GROUP));
         if (!empty($group)) {
@@ -626,8 +632,12 @@ class Table extends BaseDbTableResource
             ) {
                 $value = substr($value, 1, -1);
             } elseif ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
-                // function call
-                return $value;
+                // Only allow known safe SQL functions, not arbitrary parenthesized expressions
+                $allowedFunctions = '/^\(?(NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME)\(\)\)?$/i';
+                if (preg_match($allowedFunctions, $value)) {
+                    return $value;
+                }
+                // Fall through to parameterized binding for anything else
             }
         }
 
@@ -654,8 +664,16 @@ class Table extends BaseDbTableResource
     protected function parseValueForSet($value, $field_info, $for_update = false)
     {
         if ($value instanceof Expression) {
-            // todo need to wrangle in expression parameters somehow
-            return DB::raw($value->expression);
+            // Only allow known safe SQL expressions to prevent injection via {"expression": "..."}
+            $allowed = '/^(NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME|NULL)\(\)?$/i';
+            $expr = trim($value->expression);
+            if (strtoupper($expr) === 'NULL') {
+                return DB::raw('NULL');
+            }
+            if (!preg_match($allowed, $expr)) {
+                throw new BadRequestException("Custom SQL expression '$expr' is not permitted. Use a known function like NOW() or NULL.");
+            }
+            return DB::raw($expr);
         } else {
             return parent::parseValueForSet($value, $field_info, $for_update);
         }
@@ -817,10 +835,7 @@ class Table extends BaseDbTableResource
                 if ($fieldInfo = $schema->getColumn($field, true)) {
                     $outArray[] = $fieldInfo->name;
                 } else {
-                    if (false !== strpos($field, ';')) {
-                        throw new BadRequestException('Invalid group by clause in request.');
-                    }
-                    $outArray[] = DB::raw($field); // todo better checks on group by clause
+                    throw new BadRequestException("Invalid or unknown field '$field' in group by clause.");
                 }
             }
         }

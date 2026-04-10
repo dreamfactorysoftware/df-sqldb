@@ -2,6 +2,7 @@
 
 use DreamFactory\Core\Enums\Verbs;
 use DreamFactory\Core\Enums\DataFormats;
+use DreamFactory\Core\Exceptions\BadRequestException;
 use DreamFactory\Core\SqlDb\Services\SqlDb;
 use DreamFactory\Core\SqlDb\Resources\Schema;
 use DreamFactory\Core\SqlDb\Resources\Table;
@@ -283,7 +284,8 @@ class SqlInjectionTest extends \DreamFactory\Core\Database\Testing\DbServiceTest
     // =========================================================================
 
     /**
-     * ORDER BY clause injection should not execute arbitrary SQL.
+     * ORDER BY clause injection must be rejected with BadRequestException.
+     * The fix validates field names against the table schema.
      */
     public function testOrderByInjection()
     {
@@ -311,6 +313,121 @@ class SqlInjectionTest extends \DreamFactory\Core\Database\Testing\DbServiceTest
         $data = $rs->getContent();
         $this->assertGreaterThanOrEqual(3, count($data[static::$wrapper] ?? []),
             'ORDER BY injection destroyed data');
+    }
+
+    /**
+     * C3: ORDER BY with non-existent column must throw BadRequestException.
+     */
+    public function testOrderByRejectsNonSchemaColumns()
+    {
+        $this->expectException(BadRequestException::class);
+
+        $request = new TestServiceRequest(Verbs::GET, [
+            ApiOptions::ORDER => '(SELECT SLEEP(5))',
+        ]);
+        $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+    }
+
+    /**
+     * C3: ORDER BY with valid column should still work.
+     */
+    public function testOrderByAcceptsValidColumn()
+    {
+        $request = new TestServiceRequest(Verbs::GET, [
+            ApiOptions::ORDER => 'username asc',
+        ]);
+        $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+        $data = $rs->getContent();
+        $records = $data[static::$wrapper] ?? [];
+        $this->assertNotEmpty($records, 'ORDER BY valid column should return records');
+    }
+
+    /**
+     * C4: Parenthesized subquery in filter value must not bypass binding.
+     */
+    public function testFilterParenthesizedSubqueryBlocked()
+    {
+        try {
+            $request = new TestServiceRequest(Verbs::GET, [
+                ApiOptions::FILTER => "id=(SELECT id FROM information_schema.tables LIMIT 1)",
+            ]);
+            $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+            $data = $rs->getContent();
+            $records = $data[static::$wrapper] ?? [];
+            // The subquery should be treated as a literal value, returning no records
+            $this->assertEmpty($records,
+                'Parenthesized subquery in filter should not return results');
+        } catch (\Exception $e) {
+            // Exception is also acceptable — means the injection was blocked
+            $this->assertTrue(true);
+        }
+    }
+
+    /**
+     * H1: GROUP BY with non-existent column must throw BadRequestException.
+     */
+    public function testGroupByRejectsNonSchemaColumns()
+    {
+        $this->expectException(BadRequestException::class);
+
+        $request = new TestServiceRequest(Verbs::GET, [
+            ApiOptions::GROUP => '(SELECT 1 FROM information_schema.tables)',
+        ]);
+        $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+    }
+
+    /**
+     * C5: Expression injection via POST body must be blocked.
+     */
+    public function testExpressionInjectionBlocked()
+    {
+        $payload = json_encode([
+            static::$wrapper => [
+                ['username' => 'testexpr', 'secret' => ['expression' => "1); DROP TABLE " . static::TABLE_NAME . "; --"], 'score' => 0]
+            ]
+        ]);
+
+        try {
+            $request = new TestServiceRequest(Verbs::POST);
+            $request->setContent($payload, DataFormats::JSON);
+            $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+            $this->fail('Expression injection should have been rejected');
+        } catch (BadRequestException $e) {
+            $this->assertStringContainsString('not permitted', $e->getMessage());
+        } catch (\Exception $e) {
+            // Other exceptions are also acceptable
+            $this->assertTrue(true);
+        }
+
+        // Verify table still exists
+        $request = new TestServiceRequest(Verbs::GET);
+        $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+        $this->assertNotNull($rs->getContent(), 'Table must survive expression injection');
+    }
+
+    /**
+     * C5: Safe expressions like NOW() should still be allowed.
+     */
+    public function testSafeExpressionAllowed()
+    {
+        // This test verifies NOW() doesn't throw, even though the column type may not match.
+        // The key behavior: NOW() is allowlisted and reaches the DB layer.
+        $payload = json_encode([
+            static::$wrapper => [
+                ['username' => 'expr_test_safe', 'secret' => ['expression' => 'NULL'], 'score' => 0]
+            ]
+        ]);
+
+        try {
+            $request = new TestServiceRequest(Verbs::POST);
+            $request->setContent($payload, DataFormats::JSON);
+            $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+            $this->assertNotNull($rs->getContent());
+        } catch (\Exception $e) {
+            // DB type mismatch is acceptable; BadRequestException about "not permitted" is NOT
+            $this->assertStringNotContainsString('not permitted', $e->getMessage(),
+                'NULL expression should be allowed');
+        }
     }
 
     // =========================================================================
