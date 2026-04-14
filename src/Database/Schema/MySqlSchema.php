@@ -747,9 +747,13 @@ MYSQL;
                     // not using binding for out or inout params here due to earlier (<5.5.3) mysql library bug
                     // since binding isn't working, set the values via statements, get the values via select
                     if (is_null($value = array_get($values, $key))) {
-                        $value = 'NULL';
+                        $quotedValue = 'NULL';
+                    } else {
+                        // quoteValue() uses PDO::quote() to properly escape the user-supplied value,
+                        // preventing SQL injection through INOUT parameter interpolation.
+                        $quotedValue = $this->quoteValue($value);
                     }
-                    $pre .= "SET $pName = $value;";
+                    $pre .= "SET $pName = $quotedValue;";
                     break;
                 case 'OUT':
                     $pName = '@' . $paramSchema->name;
