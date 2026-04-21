@@ -26,11 +26,9 @@ class SqlInjectionTest extends \DreamFactory\Core\Database\Testing\DbServiceTest
 
     protected $service = null;
 
-    public function setUp(): void
+    protected static function serviceConfig(): array
     {
-        parent::setUp();
-
-        $this->service = new SqlDb([
+        return [
             'id'          => 1,
             'name'        => static::SERVICE_NAME,
             'label'       => 'SQL Database',
@@ -38,52 +36,59 @@ class SqlInjectionTest extends \DreamFactory\Core\Database\Testing\DbServiceTest
             'is_active'   => true,
             'type'        => 'sql_db',
             'config'      => [
-                'dsn'      => env('SQLDB_DSN'),
+                'driver'   => env('SQLDB_DRIVER', 'mysql'),
+                'host'     => env('SQLDB_HOST', 'localhost'),
+                'port'     => env('SQLDB_PORT', 3306),
+                'database' => env('SQLDB_DATABASE', 'df_unit_test'),
                 'username' => env('SQLDB_USER'),
                 'password' => env('SQLDB_PASSWORD'),
             ],
-        ]);
+        ];
+    }
 
+    public function setUp(): void
+    {
+        parent::setUp();
+        $this->service = new SqlDb(static::serviceConfig());
         $this->ensureTestTable();
     }
 
     public function tearDown(): void
     {
-        // Drop the test table
-        try {
-            $request = new TestServiceRequest(Verbs::DELETE);
-            $this->service->handleRequest($request, Schema::RESOURCE_NAME . '/' . static::TABLE_NAME);
-        } catch (\Exception $e) {
-            // Table may not exist, that's ok
-        }
+        // Drop the test table using a disposable service to avoid stale resource state
+        $cleanup = new SqlDb(static::serviceConfig());
+        $request = new TestServiceRequest(Verbs::DELETE);
+        $cleanup->handleRequest($request, Schema::RESOURCE_NAME . '/' . static::TABLE_NAME);
+        unset($cleanup);
 
         parent::tearDown();
     }
 
     /**
      * Create the test table and seed with data.
+     * Uses disposable service instances to avoid the setResourceMembers bug.
      */
     private function ensureTestTable(): void
     {
-        // Create table
-        $schema = '{
+        // Create table — POST to _schema (not _schema/tablename) with table name in payload
+        $schema = '[{
+            "name": "' . static::TABLE_NAME . '",
             "field": [
                 {"name": "id", "type": "id"},
                 {"name": "username", "type": "string", "allow_null": false},
                 {"name": "secret", "type": "string", "allow_null": true},
                 {"name": "score", "type": "integer", "allow_null": true}
             ]
-        }';
+        }]';
 
-        try {
-            $request = new TestServiceRequest(Verbs::POST);
-            $request->setContent($schema, DataFormats::JSON);
-            $this->service->handleRequest($request, Schema::RESOURCE_NAME . '/' . static::TABLE_NAME);
-        } catch (\Exception $e) {
-            // Table may already exist
-        }
+        $createService = new SqlDb(static::serviceConfig());
+        $request = new TestServiceRequest(Verbs::POST);
+        $request->setContent($schema, DataFormats::JSON);
+        $createService->handleRequest($request, Schema::RESOURCE_NAME);
+        unset($createService);
 
-        // Seed with test data
+        // Seed with test data using fresh service
+        $seedService = new SqlDb(static::serviceConfig());
         $records = json_encode([
             static::$wrapper => [
                 ['username' => 'alice', 'secret' => 'alice_secret_123', 'score' => 100],
@@ -92,13 +97,10 @@ class SqlInjectionTest extends \DreamFactory\Core\Database\Testing\DbServiceTest
             ]
         ]);
 
-        try {
-            $request = new TestServiceRequest(Verbs::POST);
-            $request->setContent($records, DataFormats::JSON);
-            $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
-        } catch (\Exception $e) {
-            // Records may already exist
-        }
+        $request = new TestServiceRequest(Verbs::POST);
+        $request->setContent($records, DataFormats::JSON);
+        $seedService->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+        unset($seedService);
     }
 
     // =========================================================================
@@ -163,10 +165,18 @@ class SqlInjectionTest extends \DreamFactory\Core\Database\Testing\DbServiceTest
 
                 $records = $data[static::$wrapper] ?? [];
 
-                // UNION injection should not work - verify no extra columns or data
-                foreach ($records as $record) {
-                    $this->assertArrayHasKey('username', $record,
-                        "UNION injection may have altered column structure: $injection");
+                if (isset($data['error'])) {
+                    // Error response means injection was rejected
+                    $this->assertTrue(true, "UNION injection properly rejected: $injection");
+                } else {
+                    // UNION injection should not work - verify no extra columns or data
+                    foreach ($records as $record) {
+                        $this->assertArrayHasKey('username', $record,
+                            "UNION injection may have altered column structure: $injection");
+                    }
+                    if (empty($records)) {
+                        $this->assertTrue(true, "UNION injection returned no results: $injection");
+                    }
                 }
             } catch (\Exception $e) {
                 // Exception is acceptable
@@ -316,16 +326,17 @@ class SqlInjectionTest extends \DreamFactory\Core\Database\Testing\DbServiceTest
     }
 
     /**
-     * C3: ORDER BY with non-existent column must throw BadRequestException.
+     * C3: ORDER BY with non-existent column must be rejected.
      */
     public function testOrderByRejectsNonSchemaColumns()
     {
-        $this->expectException(BadRequestException::class);
-
         $request = new TestServiceRequest(Verbs::GET, [
             ApiOptions::ORDER => '(SELECT SLEEP(5))',
         ]);
-        $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+        $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+        $data = $rs->getContent();
+        $this->assertArrayHasKey('error', $data,
+            'ORDER BY with injection expression should return error');
     }
 
     /**
@@ -364,16 +375,17 @@ class SqlInjectionTest extends \DreamFactory\Core\Database\Testing\DbServiceTest
     }
 
     /**
-     * H1: GROUP BY with non-existent column must throw BadRequestException.
+     * H1: GROUP BY with non-existent column must be rejected.
      */
     public function testGroupByRejectsNonSchemaColumns()
     {
-        $this->expectException(BadRequestException::class);
-
         $request = new TestServiceRequest(Verbs::GET, [
             ApiOptions::GROUP => '(SELECT 1 FROM information_schema.tables)',
         ]);
-        $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+        $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
+        $data = $rs->getContent();
+        $this->assertArrayHasKey('error', $data,
+            'GROUP BY with injection expression should return error');
     }
 
     /**
