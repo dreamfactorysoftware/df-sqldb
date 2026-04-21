@@ -37,7 +37,9 @@ class SqliteDb extends SqlDb
 
         array_unshift($statements, 'PRAGMA foreign_keys=1');
         foreach ($statements as $statement) {
-            $this->dbConn->statement($statement);
+            if (!empty($statement) && is_string($statement) && trim($statement) !== '') {
+                $this->dbConn->statement($statement);
+            }
         }
     }
 }
