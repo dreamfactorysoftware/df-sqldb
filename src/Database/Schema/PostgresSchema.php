@@ -355,22 +355,25 @@ SQL;
      */
     protected function getTableConstraints($schema = '')
     {
-        if (is_array($schema)) {
-            $schema = implode("','", $schema);
+        $schemas = is_array($schema) ? array_values($schema) : [$schema];
+        $schemas = array_values(array_filter($schemas, fn ($s) => $s !== '' && $s !== null));
+        if (empty($schemas)) {
+            return [];
         }
+        $placeholders = implode(',', array_fill(0, count($schemas), '?'));
 
         $sql = <<<SQL
-SELECT tc.constraint_type, tc.constraint_schema, tc.constraint_name, tc.constraint_type, tc.table_schema, tc.table_name, kcu.column_name, 
-kcu2.table_schema as referenced_table_schema, kcu2.table_name as referenced_table_name, kcu2.column_name as referenced_column_name, 
+SELECT tc.constraint_type, tc.constraint_schema, tc.constraint_name, tc.constraint_type, tc.table_schema, tc.table_name, kcu.column_name,
+kcu2.table_schema as referenced_table_schema, kcu2.table_name as referenced_table_name, kcu2.column_name as referenced_column_name,
 rc.update_rule, rc.delete_rule
 FROM information_schema.TABLE_CONSTRAINTS tc
 JOIN information_schema.KEY_COLUMN_USAGE kcu ON tc.constraint_schema = kcu.constraint_schema AND tc.constraint_name = kcu.constraint_name AND tc.table_name = kcu.table_name
 LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc ON tc.constraint_schema = rc.constraint_schema AND tc.constraint_name = rc.constraint_name
 LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu2 ON rc.unique_constraint_schema = kcu2.constraint_schema AND rc.unique_constraint_name = kcu2.constraint_name
-WHERE tc.constraint_schema IN ('{$schema}');
+WHERE tc.constraint_schema IN ({$placeholders});
 SQL;
 
-        $results = $this->connection->select($sql);
+        $results = $this->connection->select($sql, $schemas);
         $constraints = [];
         foreach ($results as $row) {
             $row = array_change_key_case((array)$row, CASE_LOWER);
