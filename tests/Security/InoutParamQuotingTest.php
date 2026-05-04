@@ -92,8 +92,8 @@ class InoutParamQuotingTest extends TestCase
             public function raw($value) { return null; }
             public function selectOne($query, $bindings = [], $useReadPdo = true) { return null; }
             public function scalar($query, $bindings = [], $useReadPdo = true) { return null; }
-            public function select($query, $bindings = [], $useReadPdo = true) { return []; }
-            public function cursor($query, $bindings = [], $useReadPdo = true) { return new \EmptyIterator(); }
+            public function select($query, $bindings = [], $useReadPdo = true, array $fetchUsing = []) { return []; }
+            public function cursor($query, $bindings = [], $useReadPdo = true, array $fetchUsing = []) { return new \EmptyIterator(); }
             public function insert($query, $bindings = []) { return false; }
             public function update($query, $bindings = []) { return 0; }
             public function delete($query, $bindings = []) { return 0; }
