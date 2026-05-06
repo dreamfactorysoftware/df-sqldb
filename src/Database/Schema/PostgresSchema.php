@@ -418,13 +418,15 @@ SELECT table_name, table_schema FROM information_schema.tables WHERE table_type 
 EOD;
 
         if (!empty($schema)) {
-            $sql .= " AND table_schema = '$schema'";
+            $sql .= " AND table_schema = ?";
         }
 
         $defaultSchema = self::DEFAULT_SCHEMA;
         $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
 
-        $rows = $this->connection->select($sql);
+        $rows = !empty($schema)
+            ? $this->connection->select($sql, [$schema])
+            : $this->connection->select($sql);
 
         $names = [];
         foreach ($rows as $row) {
@@ -463,13 +465,15 @@ SELECT all_views.table_name, all_views.table_schema
 EOD;
 
         if (!empty($schema)) {
-            $sql .= " AND table_schema = '$schema'";
+            $sql .= " AND table_schema = ?";
         }
 
         $defaultSchema = self::DEFAULT_SCHEMA;
         $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
 
-        $rows = $this->connection->select($sql);
+        $rows = !empty($schema)
+            ? $this->connection->select($sql, [$schema])
+            : $this->connection->select($sql);
 
         $names = [];
         foreach ($rows as $row) {
@@ -835,10 +839,13 @@ SELECT p.ORDINAL_POSITION, p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE, p.CH
 p.NUMERIC_PRECISION, p.NUMERIC_SCALE
 FROM INFORMATION_SCHEMA.PARAMETERS AS p 
 JOIN INFORMATION_SCHEMA.ROUTINES AS r ON r.SPECIFIC_NAME = p.SPECIFIC_NAME
-WHERE r.ROUTINE_NAME = '{$holder->resourceName}' AND r.ROUTINE_SCHEMA = '{$holder->schemaName}'
+WHERE r.ROUTINE_NAME = :routineName AND r.ROUTINE_SCHEMA = :schemaName
 MYSQL;
 
-        $params = $this->connection->select($sql);
+        $params = $this->connection->select($sql, [
+            ':routineName' => $holder->resourceName,
+            ':schemaName'  => $holder->schemaName,
+        ]);
         foreach ($params as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $name = ltrim(array_get($row, 'PARAMETER_NAME'), '@'); // added on by some drivers, i.e. @name

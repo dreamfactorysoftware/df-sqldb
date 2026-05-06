@@ -5,57 +5,73 @@ namespace DreamFactory\Core\SqlDb\Tests\Security;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Security: Mysql + Postgres getTableConstraints() must use parameterized
- * bindings, not implode("','", $schema) interpolation.
+ * Security: schema/routine metadata lookups in Mysql + Postgres drivers must
+ * use parameterized bindings instead of interpolating caller-influenced values.
  *
- * Phase 2 audit found the same `IN ('{$schema}')` pattern that was fixed
- * for SQL Server in df-sqlsrv replicated in MySQL and Postgres drivers.
- * The schema parameter flows from the API caller through the schema
- * resource layer; even if the typical caller is admin, the interpolation
- * pattern is a future-bug magnet — any change that widens the input path
- * becomes SQLi.
- *
- * After the fix, both drivers use ? placeholders + a bindings array
- * passed to connection->select(), matching the fix already applied in
- * df-sqlsrv.
+ * Phase 2 audit fixed getTableConstraints(). Follow-up review found the same
+ * interpolation pattern still present in:
+ *  - routine parameter introspection (loadParameters)
+ *  - Postgres schema-scoped table/view discovery
  */
 class SchemaInterpolationTest extends TestCase
 {
+    public function testPostgresSchemaScopedDiscoveryUsesBindings(): void
+    {
+        $absPath = __DIR__ . '/../../src/Database/Schema/PostgresSchema.php';
+        $this->assertFileExists($absPath);
+        $contents = file_get_contents($absPath);
+
+        foreach (['function getTableNames', 'function getViewNames'] as $needle) {
+            $start = strpos($contents, $needle);
+            $this->assertNotFalse($start, $needle . ' must exist');
+            $end = strpos($contents, "\n    /**", $start + 10);
+            $body = substr($contents, $start, $end === false ? null : ($end - $start));
+
+            $this->assertStringNotContainsString("table_schema = '$schema'", $body);
+            $this->assertTrue(
+                str_contains($body, 'table_schema = ?') || str_contains($body, 'table_schema = :schema'),
+                $needle . ' must use a bound schema placeholder'
+            );
+        }
+    }
+
     /**
-     * @dataProvider driverProvider
+     * @dataProvider loadParametersProvider
      */
-    public function testDriverUsesParameterizedSchema(string $relativePath): void
+    public function testRoutineParameterLookupUsesBindings(string $relativePath): void
     {
         $absPath = __DIR__ . '/../../' . $relativePath;
         $this->assertFileExists($absPath);
         $contents = file_get_contents($absPath);
 
-        // Slice getTableConstraints body
-        $start = strpos($contents, 'function getTableConstraints');
+        $start = strpos($contents, 'function loadParameters');
         $this->assertNotFalse($start);
-        $end = strpos($contents, "\n    /**", $start + 10);
+        $end = strpos($contents, "\n    protected function", $start + 10);
         $body = substr($contents, $start, $end === false ? null : ($end - $start));
 
-        // Forbid the implode("','", $schema) interpolation pattern.
         $this->assertDoesNotMatchRegularExpression(
-            "/implode\s*\(\s*[\"']'\\\\?,\\\\?'[\"']\s*,\s*\\\$schema\s*\)/",
+            "/ROUTINE_NAME = '\{\\\$holder->resourceName\}'/",
             $body,
-            'getTableConstraints() must not interpolate schema names via implode'
+            'loadParameters() must not interpolate routine names directly into SQL'
         );
         $this->assertDoesNotMatchRegularExpression(
-            "/IN\s*\(\s*'\{\\\$schema\}'\s*\)/",
+            "/ROUTINE_SCHEMA = '\{\\\$holder->schemaName\}'/",
             $body,
-            "getTableConstraints() must not interpolate \$schema into IN clause"
+            'loadParameters() must not interpolate schema names directly into SQL'
         );
-        // Require parameterized form.
         $this->assertMatchesRegularExpression(
-            '/\$placeholders\s*=\s*implode\s*\(\s*[\'\"],[\'\"]\s*,\s*array_fill/',
+            '/ROUTINE_NAME = :routineName|ROUTINE_NAME = \?/',
             $body,
-            'getTableConstraints() must build a placeholder list and pass bindings'
+            'loadParameters() must use a parameter placeholder for routine name'
+        );
+        $this->assertMatchesRegularExpression(
+            '/ROUTINE_SCHEMA = :schemaName|ROUTINE_SCHEMA = \?/',
+            $body,
+            'loadParameters() must use a parameter placeholder for schema name'
         );
     }
 
-    public static function driverProvider(): array
+    public static function loadParametersProvider(): array
     {
         return [
             'MySqlSchema'    => ['src/Database/Schema/MySqlSchema.php'],
