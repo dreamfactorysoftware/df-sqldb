@@ -297,6 +297,13 @@ class PostgresSchema extends SqlSchema
             $adsrc = $version >= 12 ? 'pg_get_expr(d.adbin, d.adrelid) AS adsrc' : 'd.adsrc';
             $sql = <<<SQL
 SELECT a.attname, LOWER(format_type(a.atttypid, a.atttypmod)) AS type, $adsrc, a.attnotnull, a.atthasdef,
+	EXISTS (
+		SELECT 1
+		FROM pg_index i
+		WHERE i.indrelid = a.attrelid
+			AND i.indisprimary
+			AND a.attnum = ANY(i.indkey)
+	) AS is_primary_key,
 	pg_catalog.col_description(a.attrelid, a.attnum) AS comment
 FROM pg_attribute a LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
 WHERE a.attnum > 0 AND NOT a.attisdropped
