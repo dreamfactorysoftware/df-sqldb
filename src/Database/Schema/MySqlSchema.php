@@ -394,23 +394,28 @@ MYSQL;
      */
     protected function getTableConstraints($schema = '')
     {
-        if (is_array($schema)) {
-            $schema = implode("','", $schema);
+        // Normalize to an array of schemas, then build a parameterized
+        // placeholder list so no schema name reaches the SQL via interpolation.
+        $schemas = is_array($schema) ? array_values($schema) : [$schema];
+        $schemas = array_values(array_filter($schemas, fn ($s) => $s !== '' && $s !== null));
+        if (empty($schemas)) {
+            return [];
         }
+        $placeholders = implode(',', array_fill(0, count($schemas), '?'));
 
         $sql = <<<SQL
-SELECT tc.constraint_type, tc.constraint_schema, tc.constraint_name, tc.table_schema, tc.table_name, 
+SELECT tc.constraint_type, tc.constraint_schema, tc.constraint_name, tc.table_schema, tc.table_name,
 kcu.column_name, kcu.referenced_table_schema, kcu.referenced_table_name, kcu.referenced_column_name,
 rc.update_rule, rc.delete_rule
 FROM information_schema.TABLE_CONSTRAINTS tc
-JOIN information_schema.KEY_COLUMN_USAGE kcu ON tc.constraint_schema = kcu.constraint_schema AND 
-tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema AND tc.table_name = kcu.table_name 
-LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc ON tc.constraint_schema = rc.constraint_schema AND 
+JOIN information_schema.KEY_COLUMN_USAGE kcu ON tc.constraint_schema = kcu.constraint_schema AND
+tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema AND tc.table_name = kcu.table_name
+LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc ON tc.constraint_schema = rc.constraint_schema AND
 tc.constraint_name = rc.constraint_name AND tc.table_name = rc.table_name
-WHERE tc.constraint_schema IN ('{$schema}');
+WHERE tc.constraint_schema IN ({$placeholders});
 SQL;
 
-        $results = $this->connection->select($sql);
+        $results = $this->connection->select($sql, $schemas);
         $constraints = [];
         foreach ($results as $row) {
             $row = array_change_key_case((array)$row, CASE_LOWER);
@@ -550,10 +555,13 @@ SELECT p.ORDINAL_POSITION, p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE, p.CH
 p.NUMERIC_PRECISION, p.NUMERIC_SCALE
 FROM INFORMATION_SCHEMA.PARAMETERS AS p 
 JOIN INFORMATION_SCHEMA.ROUTINES AS r ON r.SPECIFIC_NAME = p.SPECIFIC_NAME
-WHERE r.ROUTINE_NAME = '{$holder->resourceName}' AND r.ROUTINE_SCHEMA = '{$holder->schemaName}'
+WHERE r.ROUTINE_NAME = :routineName AND r.ROUTINE_SCHEMA = :schemaName
 MYSQL;
 
-        $params = $this->connection->select($sql);
+        $params = $this->connection->select($sql, [
+            ':routineName' => $holder->resourceName,
+            ':schemaName'  => $holder->schemaName,
+        ]);
         foreach ($params as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $name = ltrim(array_get($row, 'PARAMETER_NAME'), '@'); // added on by some drivers, i.e. @name
