@@ -27,7 +27,7 @@ class SchemaInterpolationTest extends TestCase
             $end = strpos($contents, "\n    /**", $start + 10);
             $body = substr($contents, $start, $end === false ? null : ($end - $start));
 
-            $this->assertStringNotContainsString("table_schema = '$schema'", $body);
+            $this->assertStringNotContainsString("table_schema = '\$schema'", $body);
             $this->assertTrue(
                 str_contains($body, 'table_schema = ?') || str_contains($body, 'table_schema = :schema'),
                 $needle . ' must use a bound schema placeholder'
