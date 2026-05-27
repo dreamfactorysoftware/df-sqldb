@@ -297,6 +297,13 @@ class PostgresSchema extends SqlSchema
             $adsrc = $version >= 12 ? 'pg_get_expr(d.adbin, d.adrelid) AS adsrc' : 'd.adsrc';
             $sql = <<<SQL
 SELECT a.attname, LOWER(format_type(a.atttypid, a.atttypmod)) AS type, $adsrc, a.attnotnull, a.atthasdef,
+	EXISTS (
+		SELECT 1
+		FROM pg_index i
+		WHERE i.indrelid = a.attrelid
+			AND i.indisprimary
+			AND a.attnum = ANY(i.indkey)
+	) AS is_primary_key,
 	pg_catalog.col_description(a.attrelid, a.attnum) AS comment
 FROM pg_attribute a LEFT JOIN pg_attrdef d ON a.attrelid = d.adrelid AND a.attnum = d.adnum
 WHERE a.attnum > 0 AND NOT a.attisdropped
@@ -355,22 +362,25 @@ SQL;
      */
     protected function getTableConstraints($schema = '')
     {
-        if (is_array($schema)) {
-            $schema = implode("','", $schema);
+        $schemas = is_array($schema) ? array_values($schema) : [$schema];
+        $schemas = array_values(array_filter($schemas, fn ($s) => $s !== '' && $s !== null));
+        if (empty($schemas)) {
+            return [];
         }
+        $placeholders = implode(',', array_fill(0, count($schemas), '?'));
 
         $sql = <<<SQL
-SELECT tc.constraint_type, tc.constraint_schema, tc.constraint_name, tc.constraint_type, tc.table_schema, tc.table_name, kcu.column_name, 
-kcu2.table_schema as referenced_table_schema, kcu2.table_name as referenced_table_name, kcu2.column_name as referenced_column_name, 
+SELECT tc.constraint_type, tc.constraint_schema, tc.constraint_name, tc.constraint_type, tc.table_schema, tc.table_name, kcu.column_name,
+kcu2.table_schema as referenced_table_schema, kcu2.table_name as referenced_table_name, kcu2.column_name as referenced_column_name,
 rc.update_rule, rc.delete_rule
 FROM information_schema.TABLE_CONSTRAINTS tc
 JOIN information_schema.KEY_COLUMN_USAGE kcu ON tc.constraint_schema = kcu.constraint_schema AND tc.constraint_name = kcu.constraint_name AND tc.table_name = kcu.table_name
 LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc ON tc.constraint_schema = rc.constraint_schema AND tc.constraint_name = rc.constraint_name
 LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu2 ON rc.unique_constraint_schema = kcu2.constraint_schema AND rc.unique_constraint_name = kcu2.constraint_name
-WHERE tc.constraint_schema IN ('{$schema}');
+WHERE tc.constraint_schema IN ({$placeholders});
 SQL;
 
-        $results = $this->connection->select($sql);
+        $results = $this->connection->select($sql, $schemas);
         $constraints = [];
         foreach ($results as $row) {
             $row = array_change_key_case((array)$row, CASE_LOWER);
@@ -415,13 +425,15 @@ SELECT table_name, table_schema FROM information_schema.tables WHERE table_type 
 EOD;
 
         if (!empty($schema)) {
-            $sql .= " AND table_schema = '$schema'";
+            $sql .= " AND table_schema = ?";
         }
 
         $defaultSchema = self::DEFAULT_SCHEMA;
         $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
 
-        $rows = $this->connection->select($sql);
+        $rows = !empty($schema)
+            ? $this->connection->select($sql, [$schema])
+            : $this->connection->select($sql);
 
         $names = [];
         foreach ($rows as $row) {
@@ -460,13 +472,15 @@ SELECT all_views.table_name, all_views.table_schema
 EOD;
 
         if (!empty($schema)) {
-            $sql .= " AND table_schema = '$schema'";
+            $sql .= " AND table_schema = ?";
         }
 
         $defaultSchema = self::DEFAULT_SCHEMA;
         $addSchema = (!empty($schema) && ($defaultSchema !== $schema));
 
-        $rows = $this->connection->select($sql);
+        $rows = !empty($schema)
+            ? $this->connection->select($sql, [$schema])
+            : $this->connection->select($sql);
 
         $names = [];
         foreach ($rows as $row) {
@@ -832,10 +846,13 @@ SELECT p.ORDINAL_POSITION, p.PARAMETER_MODE, p.PARAMETER_NAME, p.DATA_TYPE, p.CH
 p.NUMERIC_PRECISION, p.NUMERIC_SCALE
 FROM INFORMATION_SCHEMA.PARAMETERS AS p 
 JOIN INFORMATION_SCHEMA.ROUTINES AS r ON r.SPECIFIC_NAME = p.SPECIFIC_NAME
-WHERE r.ROUTINE_NAME = '{$holder->resourceName}' AND r.ROUTINE_SCHEMA = '{$holder->schemaName}'
+WHERE r.ROUTINE_NAME = :routineName AND r.ROUTINE_SCHEMA = :schemaName
 MYSQL;
 
-        $params = $this->connection->select($sql);
+        $params = $this->connection->select($sql, [
+            ':routineName' => $holder->resourceName,
+            ':schemaName'  => $holder->schemaName,
+        ]);
         foreach ($params as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $name = ltrim(array_get($row, 'PARAMETER_NAME'), '@'); // added on by some drivers, i.e. @name
