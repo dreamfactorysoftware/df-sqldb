@@ -83,16 +83,24 @@ class SqlDbTest extends \DreamFactory\Core\Database\Testing\DbServiceTestCase
      * rather than letting them propagate, so we check the response status and content.
      * Note: error.code may differ from HTTP status (e.g. 1000 for batch errors).
      */
-    protected function assertErrorResponse($rs, $expectedStatus, $expectedMessage = null)
+    protected function assertErrorResponse($rs, $expectedStatus, $expectedMessage = null, $caseInsensitive = false)
     {
         $data = $rs->getContent();
         $this->assertArrayHasKey('error', $data, 'Expected error response but got: ' . json_encode($data));
         $this->assertEquals($expectedStatus, $rs->getStatusCode());
         if ($expectedMessage !== null) {
-            // Search entire error structure (including batch context) for the message
+            // Search entire error structure (including batch context) for the message.
+            // Some DB-level messages differ in casing across drivers (MySQL
+            // "Duplicate entry" vs PostgreSQL "duplicate key value"), so allow a
+            // case-insensitive match for those driver-worded fragments.
             $errorJson = html_entity_decode(json_encode($data['error']));
-            $this->assertStringContainsString($expectedMessage, $errorJson,
-                'Expected message "' . $expectedMessage . '" not found in error: ' . $errorJson);
+            if ($caseInsensitive) {
+                $this->assertStringContainsStringIgnoringCase($expectedMessage, $errorJson,
+                    'Expected message "' . $expectedMessage . '" not found in error: ' . $errorJson);
+            } else {
+                $this->assertStringContainsString($expectedMessage, $errorJson,
+                    'Expected message "' . $expectedMessage . '" not found in error: ' . $errorJson);
+            }
         }
     }
 
@@ -337,8 +345,9 @@ class SqlDbTest extends \DreamFactory\Core\Database\Testing\DbServiceTestCase
         $request = new TestServiceRequest(Verbs::POST);
         $request->setContent($payload, DataFormats::JSON);
         $rs = $this->service->handleRequest($request, Table::RESOURCE_NAME . '/' . static::TABLE_NAME);
-        // Duplicate name triggers batch error (HTTP 400) with DB-level duplicate message in context
-        $this->assertErrorResponse($rs, 400, 'Duplicate');
+        // Duplicate name triggers batch error (HTTP 400) with DB-level duplicate message in context.
+        // Match case-insensitively: MySQL says "Duplicate entry", PostgreSQL "duplicate key value".
+        $this->assertErrorResponse($rs, 400, 'duplicate', true);
     }
 
     public function testCreateRecordFailNotNullField()
