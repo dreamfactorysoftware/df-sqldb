@@ -586,7 +586,15 @@ class Table extends BaseDbTableResource
                 }
 
                 if ($function = $info->getDbFunction(DbFunctionUses::FILTER)) {
-                    $out = $this->parent->getConnection()->raw($function);
+                    // Plain string, not a Query\Expression: $out is
+                    // string-concatenated into the WHERE clause immediately
+                    // below, and Expression stopped being stringable in
+                    // Laravel 10 - wrapping it in raw() fatals with "Object of
+                    // class Illuminate\Database\Query\Expression could not be
+                    // converted to string". The SELECT path (buildQueryFields)
+                    // still uses raw(), correctly: there the value is handed to
+                    // the query builder as an Expression rather than concatenated.
+                    $out = $function;
                 } else {
                     $out = $info->quotedName;
                 }
