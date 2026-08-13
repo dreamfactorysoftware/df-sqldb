@@ -526,7 +526,17 @@ MYSQL;
 SELECT ROUTINE_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.ROUTINES WHERE {$where}
 MYSQL;
 
-        $rows = $this->connection->select($sql, $bindings);
+        try {
+            $rows = $this->connection->select($sql, $bindings);
+        } catch (\Exception $e) {
+            // Some MySQL-wire-protocol engines (e.g. StarRocks, Doris) ship a limited
+            // INFORMATION_SCHEMA.ROUTINES without a DATA_TYPE column and don't support
+            // stored procedures/functions at all. Degrade gracefully so schema/component
+            // discovery (and Role Based Access) keeps working instead of failing wholesale.
+            \Log::debug('Routine discovery unsupported on this connection: ' . $e->getMessage());
+
+            return [];
+        }
 
         $names = [];
         foreach ($rows as $row) {
@@ -558,10 +568,19 @@ JOIN INFORMATION_SCHEMA.ROUTINES AS r ON r.SPECIFIC_NAME = p.SPECIFIC_NAME
 WHERE r.ROUTINE_NAME = :routineName AND r.ROUTINE_SCHEMA = :schemaName
 MYSQL;
 
-        $params = $this->connection->select($sql, [
-            ':routineName' => $holder->resourceName,
-            ':schemaName'  => $holder->schemaName,
-        ]);
+        try {
+            $params = $this->connection->select($sql, [
+                ':routineName' => $holder->resourceName,
+                ':schemaName'  => $holder->schemaName,
+            ]);
+        } catch (\Exception $e) {
+            // See getRoutineNames(): engines without a full INFORMATION_SCHEMA.ROUTINES
+            // (e.g. StarRocks) can't describe routine parameters. Skip rather than fail.
+            \Log::debug('Routine parameter discovery unsupported on this connection: ' . $e->getMessage());
+
+            return;
+        }
+
         foreach ($params as $row) {
             $row = array_change_key_case((array)$row, CASE_UPPER);
             $name = ltrim(array_get($row, 'PARAMETER_NAME'), '@'); // added on by some drivers, i.e. @name
