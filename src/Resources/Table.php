@@ -685,37 +685,34 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * Check if a parenthesized filter expression is safe (not a subquery).
-     * Blocks SELECT, INSERT, UPDATE, DELETE, DROP, ALTER, EXEC subqueries.
-     * Allows standard SQL functions like NOW(), COALESCE(), UPPER(), etc.
+     * True when a parenthesized filter value is one of the recognized no-argument
+     * SQL functions that can be used directly (e.g. NOW()). Everything else is
+     * bound as a parameter.
      */
     protected static function isSafeFilterExpression(string $value): bool
     {
-        $upper = strtoupper($value);
-        // Block subqueries and DDL/DML keywords inside parentheses
-        $blocked = '/\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|EXECUTE|TRUNCATE|GRANT|REVOKE|UNION|INTO|SLEEP|BENCHMARK|LOAD_FILE|OUTFILE|DUMPFILE)\b/i';
-        if (preg_match($blocked, $value)) {
-            return false;
-        }
-        return true;
+        // Recognize a small set of well-known no-argument SQL functions that may be
+        // passed through as-is. Any other value is treated as a literal and bound as
+        // a parameter by parseFilterValue().
+        return (bool) preg_match(
+            '/^\(?(NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME)\(\)\)?$/i',
+            trim($value)
+        );
     }
 
     /**
-     * Check if an expression value (from {"expression": "..."}) is safe to execute.
-     * Allows common SQL functions but blocks subqueries and dangerous statements.
+     * True when an {"expression": "..."} value is one of the recognized no-argument
+     * SQL functions (or NULL) that can be used directly. Other values go through
+     * normal value binding.
      */
     protected static function isSafeExpression(string $expr): bool
     {
-        // Block subqueries and DDL/DML
-        $blocked = '/\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|EXECUTE|TRUNCATE|GRANT|REVOKE|UNION|INTO|SLEEP|BENCHMARK|LOAD_FILE|OUTFILE|DUMPFILE)\b/i';
-        if (preg_match($blocked, $expr)) {
-            return false;
-        }
-        // Block semicolons (statement stacking)
-        if (strpos($expr, ';') !== false) {
-            return false;
-        }
-        return true;
+        // Recognize the supported no-argument SQL functions (and NULL) for the
+        // expression form. Other values are handled through normal value binding.
+        return (bool) preg_match(
+            '/^(NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME|NULL)(\(\))?$/i',
+            trim($expr)
+        );
     }
 
     /**
