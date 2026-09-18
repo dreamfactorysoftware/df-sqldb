@@ -44,6 +44,8 @@ class BareLogicalFilterTest extends TestCase
             'lowercase' => ['a is null or b is null', '(a is null) OR (b is null)'],
             'three'     => ['a is null AND b is null OR c is null', '(a is null) AND (b is null) OR (c is null)'],
             'mixed'     => ['(a is null) AND b is null', '(a is null) AND (b is null)'],
+            'wrapped'   => ['(a is null AND b is null)', '((a is null) AND (b is null))'],
+            'wrapped+outer' => ['(a is null AND b is null) OR (c is null)', '((a is null) AND (b is null)) OR (c is null)'],
         ];
     }
 
