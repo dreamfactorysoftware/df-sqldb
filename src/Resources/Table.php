@@ -836,7 +836,6 @@ class Table extends BaseDbTableResource
                     }
                 }
             }
-            $hasGroup = !empty(array_get($extras, ApiOptions::GROUP));
             foreach ($fields as $field) {
                 if ($fieldInfo = $schema->getColumn($field, true)) {
                     $out = $this->parseFieldForSelect($fieldInfo);
@@ -845,7 +844,9 @@ class Table extends BaseDbTableResource
                     } else {
                         $outArray[] = $out;
                     }
-                } elseif ($hasGroup && ($aggExpr = $this->parseAggregateExpression($schema, $field))) {
+                } elseif ($aggExpr = $this->parseAggregateExpression($schema, $field)) {
+                    // Aggregates are valid with GROUP BY, or alone (whole-set MIN/MAX/COUNT/...).
+                    // Mixing plain columns with aggregates and no GROUP BY is left to the database to reject.
                     $outArray[] = $aggExpr;
                 } else {
                     throw new BadRequestException('Invalid field requested: ' . $field);
@@ -882,7 +883,7 @@ class Table extends BaseDbTableResource
 
     /**
      * Parse an ad-hoc aggregate expression like SUM(column_name) or COUNT(*).
-     * Only allowed when GROUP BY is present. Validates that the inner column
+     * Allowed with or without GROUP BY. Validates that the inner column
      * exists in the table schema to prevent SQL injection.
      *
      * @param  TableSchema $schema
