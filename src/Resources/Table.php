@@ -516,6 +516,13 @@ class Table extends BaseDbTableResource
             // remove unnecessary wrapping ()
             $filter = substr($filter, 1, -1);
             $wrap = true;
+            // (a=1 AND b=2): the wrapper hid a bare logical operator from
+            // wrapBareConditions() above (it only splits at depth 0), so the
+            // parser would bind "1 AND b=2" as the value. Re-run on the inner.
+            $inner = DbLogicalOperators::wrapBareConditions($filter);
+            if ($inner !== $filter) {
+                return '(' . $this->parseFilterString($inner, $out_params, $fields_info, $in_params) . ')';
+            }
         }
 
         // Some scenarios leave extra parens dangling
