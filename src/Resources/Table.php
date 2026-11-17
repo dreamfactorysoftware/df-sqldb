@@ -118,12 +118,9 @@ class Table extends BaseDbTableResource
             // build filter string if necessary, add server-side filters if necessary
             $builder = $this->parent->getConnection()->table($tableSchema->internalName);
             $ssFilters = array_get($extras, 'ss_filters');
-            $params = [];
             $serverFilter = $this->buildQueryStringFromData($ssFilters);
             if (!empty($serverFilter)) {
-                Session::replaceLookups($serverFilter);
-                $filterString = $this->parseFilterString($serverFilter, $params, $this->tableFieldsInfo);
-                $builder->whereRaw($filterString, $params);
+                $this->applyFilterGroup($builder, $serverFilter, [], $this->tableFieldsInfo);
                 $builder->delete();
             } else {
                 $builder->truncate();
@@ -455,6 +452,25 @@ class Table extends BaseDbTableResource
             $builder->where(function ($query) use ($filterString, $outParams) {
                 $query->whereRaw($filterString, $outParams);
             });
+        }
+    }
+
+    /**
+     * Apply the role (server-side) filter to a query that already selects records,
+     * for example by id, as its own nested WHERE group (see applyFilterGroup()),
+     * in the same way as for requests by filter.
+     *
+     * @param \Illuminate\Database\Query\Builder $builder
+     * @param array|null                         $ss_filters
+     *
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
+    protected function applyServerFilterGroup(Builder $builder, $ss_filters)
+    {
+        $serverFilter = $this->buildQueryStringFromData($ss_filters);
+        if (!empty($serverFilter)) {
+            $this->applyFilterGroup($builder, $serverFilter, [], $this->tableFieldsInfo);
         }
     }
 
@@ -1104,13 +1120,7 @@ class Table extends BaseDbTableResource
             }
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters);
-        if (!empty($serverFilter)) {
-            Session::replaceLookups($serverFilter);
-            $params = [];
-            $filterString = $this->parseFilterString($serverFilter, $params, $this->tableFieldsInfo);
-            $builder->whereRaw($filterString, $params);
-        }
+        $this->applyServerFilterGroup($builder, $ssFilters);
 
         $out = [];
         switch ($this->getAction()) {
@@ -1332,13 +1342,7 @@ class Table extends BaseDbTableResource
             $builder->whereIn($idName->name, $this->batchIds);
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters);
-        if (!empty($serverFilter)) {
-            Session::replaceLookups($serverFilter);
-            $params = [];
-            $filterString = $this->parseFilterString($serverFilter, $params, $this->tableFieldsInfo);
-            $builder->whereRaw($filterString, $params);
-        }
+        $this->applyServerFilterGroup($builder, $ssFilters);
 
         $out = [];
         $action = $this->getAction();
