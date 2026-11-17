@@ -406,26 +406,81 @@ class Table extends BaseDbTableResource
         $params = (is_array($params) ? static::interpretRecordValues($params) : []);
         $serverFilter = $this->buildQueryStringFromData($ss_filters);
 
+        // Apply the client filter and the role (server-side) filter as two
+        // separate builder groups, never as one concatenated string. The query
+        // builder parenthesizes each group on its own, so neither filter can
+        // alter the other's structure, and every value is bound as a parameter
+        // so string role filters keep their quoting. Each group's emitted SQL
+        // must also have balanced parentheses (see applyFilterGroup).
+        $clientFilter = is_string($filter) ? $filter : '';
+
+        if ('' !== trim($clientFilter)) {
+            $this->applyFilterGroup($builder, $clientFilter, $params, $avail_fields);
+        }
+
+        if (!empty($serverFilter)) {
+            $this->applyFilterGroup($builder, $serverFilter, $params, $avail_fields);
+        }
+    }
+
+    /**
+     * Parse one filter string and apply it to the builder as its own nested WHERE
+     * group. The closure makes the query builder wrap the group in parentheses, so
+     * the group's internal structure (its ANDs and ORs) cannot merge with any other
+     * group's. Values are bound as parameters by parseFilterString(), which keeps
+     * string values correctly quoted.
+     *
+     * @param \Illuminate\Database\Query\Builder $builder
+     * @param string                             $filter
+     * @param array                              $in_params
+     * @param array                              $avail_fields
+     *
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
+    protected function applyFilterGroup(Builder $builder, $filter, array $in_params, $avail_fields)
+    {
+        Session::replaceLookups($filter);
         $outParams = [];
-        if (empty($filter)) {
-            $filter = $serverFilter;
-        } elseif (is_string($filter)) {
-            if (!empty($serverFilter)) {
-                $filter = '(' . $filter . ') ' . DbLogicalOperators::AND_STR . ' (' . $serverFilter . ')';
+        $filterString = $this->parseFilterString($filter, $outParams, $avail_fields, $in_params);
+        if (!empty($filterString)) {
+            // The parser splits on logical operators without regard to quotes and
+            // passes stray parentheses through. So the check runs on what the
+            // parser emits, not on the input: a fragment whose parentheses do not
+            // balance would pair with the builder's wrapping parentheses and
+            // change the structure of the WHERE clause.
+            if (!static::parenthesesAreBalanced($filterString)) {
+                throw new BadRequestException('Unbalanced parentheses in filter request.');
             }
-        } elseif (is_array($filter)) {
-            // todo parse client filter?
-            $filter = '';
-            if (!empty($serverFilter)) {
-                $filter = '(' . $filter . ') ' . DbLogicalOperators::AND_STR . ' (' . $serverFilter . ')';
+            $builder->where(function ($query) use ($filterString, $outParams) {
+                $query->whereRaw($filterString, $outParams);
+            });
+        }
+    }
+
+    /**
+     * True when every parenthesis in an emitted SQL fragment is matched and no
+     * prefix closes a group it never opened. Quotes are deliberately ignored:
+     * values are bound as parameters, so the fragment carries no user string
+     * literals, and a quote-aware scan of the input can disagree with the parser.
+     *
+     * @param string $sql
+     *
+     * @return bool
+     */
+    protected static function parenthesesAreBalanced($sql)
+    {
+        $depth = 0;
+        $len = strlen($sql);
+        for ($i = 0; $i < $len; $i++) {
+            if ($sql[$i] === '(') {
+                $depth++;
+            } elseif ($sql[$i] === ')' && --$depth < 0) {
+                return false;
             }
         }
 
-        Session::replaceLookups($filter);
-        $filterString = $this->parseFilterString($filter, $outParams, $avail_fields, $params);
-        if (!empty($filterString)) {
-            $builder->whereRaw($filterString, $outParams);
-        }
+        return $depth === 0;
     }
 
     /**
