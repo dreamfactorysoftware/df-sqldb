@@ -620,8 +620,14 @@ class Table extends BaseDbTableResource
                     ($lpc > $rpc = substr_count($value, ')'))
                 ) {
                     // add back to value from right
-                    $value .= str_repeat(')', $lpc - $rpc);
-                    $rightParen = substr((string)$rightParen, $lpc - $rpc);
+                    $need = $lpc - $rpc;
+                    if (('(' === substr($value, -1)) && (strlen((string)$rightParen) < $need)) {
+                        // The value ends with a "(" that nothing in the condition closes,
+                        // e.g. "born < NOW(" or "name = abc(".
+                        throw new BadRequestException('Unbalanced parentheses in filter request.');
+                    }
+                    $value .= str_repeat(')', $need);
+                    $rightParen = substr((string)$rightParen, $need);
                 }
                 if (DbComparisonOperators::requiresValueList($sqlOp)) {
                     if ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
@@ -689,9 +695,11 @@ class Table extends BaseDbTableResource
     protected function parseFilterValue($value, ColumnSchema $info, array &$out_params, array $in_params = [])
     {
         // if a named replacement parameter, un-name it because Laravel can't handle named parameters
+        $fromParams = false;
         if (is_array($in_params) && (0 === strpos($value, ':'))) {
             if (array_key_exists($value, $in_params)) {
                 $value = $in_params[$value];
+                $fromParams = true;
             }
         }
 
@@ -701,10 +709,12 @@ class Table extends BaseDbTableResource
                 (0 === strcmp('"' . trim($value, '"') . '"', $value))
             ) {
                 $value = substr($value, 1, -1);
-            } elseif (static::isSafeFilterExpression($value)) {
+            } elseif (static::isSafeFilterExpression($value, !$fromParams)) {
                 // One of the recognized no-argument SQL functions, written as
-                // NOW() or (NOW()), is used as is. Any other value, including
-                // other parenthesized text, is bound as a parameter below.
+                // NOW() or (NOW()) in the filter, is used as is. A value supplied
+                // through params is used as is only in the (NOW()) form. Any other
+                // value, including other parenthesized text, is bound as a
+                // parameter below.
                 return $value;
             }
         }
@@ -747,17 +757,19 @@ class Table extends BaseDbTableResource
 
     /**
      * True when a filter value is one of the recognized no-argument SQL functions
-     * that can be used directly, either bare (NOW()) or in one pair of
-     * parentheses ((NOW())). Everything else is bound as a parameter.
+     * that can be used directly, in one pair of parentheses ((NOW())) or, when
+     * $allowBare is true, also bare (NOW()). Everything else is bound as a
+     * parameter.
      */
-    protected static function isSafeFilterExpression(string $value): bool
+    protected static function isSafeFilterExpression(string $value, bool $allowBare = true): bool
     {
         // Recognize a small set of well-known no-argument SQL functions that may be
         // passed through as-is. Any other value is treated as a literal and bound as
         // a parameter by parseFilterValue().
         $function = '(?:NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME)\(\)';
+        $forms = '\(' . $function . '\)' . ($allowBare ? '|' . $function : '');
 
-        return (bool) preg_match('/^(?:' . $function . '|\(' . $function . '\))$/i', trim($value));
+        return (bool) preg_match('/^(?:' . $forms . ')$/i', trim($value));
     }
 
     /**

@@ -74,11 +74,11 @@ class FilterFunctionValueTest extends TestCase
     }
 
     /** @return array{0: string, 1: array} emitted SQL fragment and bound values */
-    private function parse(string $filter): array
+    private function parse(string $filter, array $inParams = []): array
     {
         $method = new ReflectionMethod(Table::class, 'parseFilterString');
         $params = [];
-        $sql = $method->invokeArgs($this->table(), [$filter, &$params, $this->fields(), []]);
+        $sql = $method->invokeArgs($this->table(), [$filter, &$params, $this->fields(), $inParams]);
 
         return [$sql, array_map('strval', $params)];
     }
@@ -141,6 +141,8 @@ class FilterFunctionValueTest extends TestCase
             'unlisted function'     => ['born < LOCALTIMESTAMP()', 'LOCALTIMESTAMP()'],
             'double parentheses'    => ['born < ((NOW()))', '((NOW()))'],
             'plain parenthesized'   => ['name = (abc)', '(abc)'],
+            'unclosed, not at end'  => ['name = (abc', '(abc)'],
+            'empty call'            => ['name = abc()', 'abc()'],
         ];
     }
 
@@ -197,10 +199,23 @@ class FilterFunctionValueTest extends TestCase
         $this->assertSame(['0', '1'], array_map('strval', $builder->getBindings()));
     }
 
+    /** A value from params is used as is only in the (NOW()) form; NOW() is bound. */
+    public function testParamValues(): void
+    {
+        $this->assertSame(['"born" > ?', ['NOW()']], $this->parse('born > :p', [':p' => 'NOW()']));
+        $this->assertSame(['"born" > (NOW())', []], $this->parse('born > :p', [':p' => '(NOW())']));
+        $this->assertSame(['"name" = ?', ['abc']], $this->parse('name = :p', [':p' => 'abc']));
+    }
+
     /** Unbalanced input is still refused as a whole group. */
     public function testUnbalancedFunctionFilterIsRejected(): void
     {
-        foreach (['born < NOW())', '((born < NOW())', 'born < NOW()) OR (id > 0'] as $filter) {
+        $filters = [
+            'born < NOW())', '((born < NOW())', 'born < NOW()) OR (id > 0',
+            'born < NOW(', '(born < NOW()', 'born < (NOW(', 'name = abc(', 'name contains (',
+            '(id > 0) and (born < NOW(', 'id in (1,2(',
+        ];
+        foreach ($filters as $filter) {
             try {
                 $this->convert($this->builder(), $filter);
                 $this->fail("Accepted: $filter");
