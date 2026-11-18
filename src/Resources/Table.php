@@ -580,12 +580,12 @@ class Table extends BaseDbTableResource
             }
         }
 
-        // Some scenarios leave extra parens dangling
-        $pure = trim($filter, '()');
-        $pieces = explode($pure, $filter);
-        $leftParen = (!empty($pieces[0]) ? $pieces[0] : null);
-        $rightParen = (!empty($pieces[1]) ? $pieces[1] : null);
-        $filter = $pure;
+        // Splitting on logical operators can leave grouping parentheses at either
+        // end of a condition. Set aside only the leading run of "(" and the
+        // trailing run of ")". A function call in the value, such as NOW() in
+        // "born < NOW()", keeps its own "(" here; its ")" is handed back to the
+        // value below.
+        [$leftParen, $filter, $rightParen] = static::splitOuterParentheses($filter);
 
         // the rest should be comparison operators
         // Note: order matters here!
@@ -617,12 +617,17 @@ class Table extends BaseDbTableResource
                 $value = trim(substr($filter, $pos + strlen($paddedOp)));
                 if ((0 !== strpos($value, "'")) &&
                     (0 !== $lpc = substr_count($value, '(')) &&
-                    ($lpc !== $rpc = substr_count($value, ')'))
+                    ($lpc > $rpc = substr_count($value, ')'))
                 ) {
                     // add back to value from right
-                    $parenPad = str_repeat(')', $lpc - $rpc);
-                    $value .= $parenPad;
-                    $rightParen = preg_replace('/\)/', '', $rightParen, $lpc - $rpc);
+                    $need = $lpc - $rpc;
+                    if (('(' === substr($value, -1)) && (strlen((string)$rightParen) < $need)) {
+                        // The value ends with a "(" that nothing in the condition closes,
+                        // e.g. "born < NOW(" or "name = abc(".
+                        throw new BadRequestException('Unbalanced parentheses in filter request.');
+                    }
+                    $value .= str_repeat(')', $need);
+                    $rightParen = substr((string)$rightParen, $need);
                 }
                 if (DbComparisonOperators::requiresValueList($sqlOp)) {
                     if ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
@@ -690,9 +695,11 @@ class Table extends BaseDbTableResource
     protected function parseFilterValue($value, ColumnSchema $info, array &$out_params, array $in_params = [])
     {
         // if a named replacement parameter, un-name it because Laravel can't handle named parameters
+        $fromParams = false;
         if (is_array($in_params) && (0 === strpos($value, ':'))) {
             if (array_key_exists($value, $in_params)) {
                 $value = $in_params[$value];
+                $fromParams = true;
             }
         }
 
@@ -702,12 +709,13 @@ class Table extends BaseDbTableResource
                 (0 === strcmp('"' . trim($value, '"') . '"', $value))
             ) {
                 $value = substr($value, 1, -1);
-            } elseif ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
-                // Allow known safe SQL functions but block subqueries and dangerous expressions
-                if (static::isSafeFilterExpression($value)) {
-                    return $value;
-                }
-                // Fall through to parameterized binding for anything else
+            } elseif (static::isSafeFilterExpression($value, !$fromParams)) {
+                // One of the recognized no-argument SQL functions, written as
+                // NOW() or (NOW()) in the filter, is used as is. A value supplied
+                // through params is used as is only in the (NOW()) form. Any other
+                // value, including other parenthesized text, is bound as a
+                // parameter below.
+                return $value;
             }
         }
 
@@ -748,19 +756,46 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * True when a parenthesized filter value is one of the recognized no-argument
-     * SQL functions that can be used directly (e.g. NOW()). Everything else is
-     * bound as a parameter.
+     * True when a filter value is one of the recognized no-argument SQL functions
+     * that can be used directly, in one pair of parentheses ((NOW())) or, when
+     * $allowBare is true, also bare (NOW()). Everything else is bound as a
+     * parameter.
      */
-    protected static function isSafeFilterExpression(string $value): bool
+    protected static function isSafeFilterExpression(string $value, bool $allowBare = true): bool
     {
         // Recognize a small set of well-known no-argument SQL functions that may be
         // passed through as-is. Any other value is treated as a literal and bound as
         // a parameter by parseFilterValue().
-        return (bool) preg_match(
-            '/^\(?(NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME)\(\)\)?$/i',
-            trim($value)
-        );
+        $function = '(?:NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME)\(\)';
+        $forms = '\(' . $function . '\)' . ($allowBare ? '|' . $function : '');
+
+        return (bool) preg_match('/^(?:' . $forms . ')$/i', trim($value));
+    }
+
+    /**
+     * Split a single condition into the grouping parentheses around it and the
+     * condition itself: [leading "(" run or null, condition, trailing ")" run or
+     * null]. Only "(" are taken from the start and only ")" from the end, so
+     * "born < NOW())" gives [null, "born < NOW(", "))"]; parseFilterString()
+     * then returns the ")" the value needs.
+     *
+     * @param string $condition
+     *
+     * @return array
+     */
+    protected static function splitOuterParentheses($condition)
+    {
+        $condition = (string)$condition;
+        $leading = strspn($condition, '(');
+        $body = substr($condition, $leading);
+        $inner = rtrim($body, ')');
+        $trailing = strlen($body) - strlen($inner);
+
+        return [
+            $leading ? substr($condition, 0, $leading) : null,
+            $inner,
+            $trailing ? substr($body, -$trailing) : null,
+        ];
     }
 
     /**
