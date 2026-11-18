@@ -4,6 +4,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-11-18
+### Changed
+- Filter conditions can compare against database functions such as `NOW()`, with or without parentheses.
+- Stability and reliability improvements.
+
 ## [0.15.4] - 2018-04-03
 ### Changed
 - Updated order by behavior

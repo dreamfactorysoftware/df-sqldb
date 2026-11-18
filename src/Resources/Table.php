@@ -118,12 +118,9 @@ class Table extends BaseDbTableResource
             // build filter string if necessary, add server-side filters if necessary
             $builder = $this->parent->getConnection()->table($tableSchema->internalName);
             $ssFilters = array_get($extras, 'ss_filters');
-            $params = [];
             $serverFilter = $this->buildQueryStringFromData($ssFilters);
             if (!empty($serverFilter)) {
-                Session::replaceLookups($serverFilter);
-                $filterString = $this->parseFilterString($serverFilter, $params, $this->tableFieldsInfo);
-                $builder->whereRaw($filterString, $params);
+                $this->applyFilterGroup($builder, $serverFilter, [], $this->tableFieldsInfo);
                 $builder->delete();
             } else {
                 $builder->truncate();
@@ -406,26 +403,100 @@ class Table extends BaseDbTableResource
         $params = (is_array($params) ? static::interpretRecordValues($params) : []);
         $serverFilter = $this->buildQueryStringFromData($ss_filters);
 
+        // Apply the client filter and the role (server-side) filter as two
+        // separate builder groups, never as one concatenated string. The query
+        // builder parenthesizes each group on its own, so neither filter can
+        // alter the other's structure, and every value is bound as a parameter
+        // so string role filters keep their quoting. Each group's emitted SQL
+        // must also have balanced parentheses (see applyFilterGroup).
+        $clientFilter = is_string($filter) ? $filter : '';
+
+        if ('' !== trim($clientFilter)) {
+            $this->applyFilterGroup($builder, $clientFilter, $params, $avail_fields);
+        }
+
+        if (!empty($serverFilter)) {
+            $this->applyFilterGroup($builder, $serverFilter, $params, $avail_fields);
+        }
+    }
+
+    /**
+     * Parse one filter string and apply it to the builder as its own nested WHERE
+     * group. The closure makes the query builder wrap the group in parentheses, so
+     * the group's internal structure (its ANDs and ORs) cannot merge with any other
+     * group's. Values are bound as parameters by parseFilterString(), which keeps
+     * string values correctly quoted.
+     *
+     * @param \Illuminate\Database\Query\Builder $builder
+     * @param string                             $filter
+     * @param array                              $in_params
+     * @param array                              $avail_fields
+     *
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
+    protected function applyFilterGroup(Builder $builder, $filter, array $in_params, $avail_fields)
+    {
+        Session::replaceLookups($filter);
         $outParams = [];
-        if (empty($filter)) {
-            $filter = $serverFilter;
-        } elseif (is_string($filter)) {
-            if (!empty($serverFilter)) {
-                $filter = '(' . $filter . ') ' . DbLogicalOperators::AND_STR . ' (' . $serverFilter . ')';
+        $filterString = $this->parseFilterString($filter, $outParams, $avail_fields, $in_params);
+        if (!empty($filterString)) {
+            // The parser splits on logical operators without regard to quotes and
+            // passes stray parentheses through. So the check runs on what the
+            // parser emits, not on the input: a fragment whose parentheses do not
+            // balance would pair with the builder's wrapping parentheses and
+            // change the structure of the WHERE clause.
+            if (!static::parenthesesAreBalanced($filterString)) {
+                throw new BadRequestException('Unbalanced parentheses in filter request.');
             }
-        } elseif (is_array($filter)) {
-            // todo parse client filter?
-            $filter = '';
-            if (!empty($serverFilter)) {
-                $filter = '(' . $filter . ') ' . DbLogicalOperators::AND_STR . ' (' . $serverFilter . ')';
+            $builder->where(function ($query) use ($filterString, $outParams) {
+                $query->whereRaw($filterString, $outParams);
+            });
+        }
+    }
+
+    /**
+     * Apply the role (server-side) filter to a query that already selects records,
+     * for example by id, as its own nested WHERE group (see applyFilterGroup()),
+     * in the same way as for requests by filter.
+     *
+     * @param \Illuminate\Database\Query\Builder $builder
+     * @param array|null                         $ss_filters
+     *
+     * @throws \DreamFactory\Core\Exceptions\BadRequestException
+     * @throws \Exception
+     */
+    protected function applyServerFilterGroup(Builder $builder, $ss_filters)
+    {
+        $serverFilter = $this->buildQueryStringFromData($ss_filters);
+        if (!empty($serverFilter)) {
+            $this->applyFilterGroup($builder, $serverFilter, [], $this->tableFieldsInfo);
+        }
+    }
+
+    /**
+     * True when every parenthesis in an emitted SQL fragment is matched and no
+     * prefix closes a group it never opened. Quotes are deliberately ignored:
+     * values are bound as parameters, so the fragment carries no user string
+     * literals, and a quote-aware scan of the input can disagree with the parser.
+     *
+     * @param string $sql
+     *
+     * @return bool
+     */
+    protected static function parenthesesAreBalanced($sql)
+    {
+        $depth = 0;
+        $len = strlen($sql);
+        for ($i = 0; $i < $len; $i++) {
+            if ($sql[$i] === '(') {
+                $depth++;
+            } elseif ($sql[$i] === ')' && --$depth < 0) {
+                return false;
             }
         }
 
-        Session::replaceLookups($filter);
-        $filterString = $this->parseFilterString($filter, $outParams, $avail_fields, $params);
-        if (!empty($filterString)) {
-            $builder->whereRaw($filterString, $outParams);
-        }
+        return $depth === 0;
     }
 
     /**
@@ -525,12 +596,12 @@ class Table extends BaseDbTableResource
             }
         }
 
-        // Some scenarios leave extra parens dangling
-        $pure = trim($filter, '()');
-        $pieces = explode($pure, $filter);
-        $leftParen = (!empty($pieces[0]) ? $pieces[0] : null);
-        $rightParen = (!empty($pieces[1]) ? $pieces[1] : null);
-        $filter = $pure;
+        // Splitting on logical operators can leave grouping parentheses at either
+        // end of a condition. Set aside only the leading run of "(" and the
+        // trailing run of ")". A function call in the value, such as NOW() in
+        // "born < NOW()", keeps its own "(" here; its ")" is handed back to the
+        // value below.
+        [$leftParen, $filter, $rightParen] = static::splitOuterParentheses($filter);
 
         // the rest should be comparison operators
         // Note: order matters here!
@@ -562,12 +633,17 @@ class Table extends BaseDbTableResource
                 $value = trim(substr($filter, $pos + strlen($paddedOp)));
                 if ((0 !== strpos($value, "'")) &&
                     (0 !== $lpc = substr_count($value, '(')) &&
-                    ($lpc !== $rpc = substr_count($value, ')'))
+                    ($lpc > $rpc = substr_count($value, ')'))
                 ) {
                     // add back to value from right
-                    $parenPad = str_repeat(')', $lpc - $rpc);
-                    $value .= $parenPad;
-                    $rightParen = preg_replace('/\)/', '', $rightParen, $lpc - $rpc);
+                    $need = $lpc - $rpc;
+                    if (('(' === substr($value, -1)) && (strlen((string)$rightParen) < $need)) {
+                        // The value ends with a "(" that nothing in the condition closes,
+                        // e.g. "born < NOW(" or "name = abc(".
+                        throw new BadRequestException('Unbalanced parentheses in filter request.');
+                    }
+                    $value .= str_repeat(')', $need);
+                    $rightParen = substr((string)$rightParen, $need);
                 }
                 if (DbComparisonOperators::requiresValueList($sqlOp)) {
                     if ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
@@ -635,9 +711,11 @@ class Table extends BaseDbTableResource
     protected function parseFilterValue($value, ColumnSchema $info, array &$out_params, array $in_params = [])
     {
         // if a named replacement parameter, un-name it because Laravel can't handle named parameters
+        $fromParams = false;
         if (is_array($in_params) && (0 === strpos($value, ':'))) {
             if (array_key_exists($value, $in_params)) {
                 $value = $in_params[$value];
+                $fromParams = true;
             }
         }
 
@@ -647,12 +725,13 @@ class Table extends BaseDbTableResource
                 (0 === strcmp('"' . trim($value, '"') . '"', $value))
             ) {
                 $value = substr($value, 1, -1);
-            } elseif ((0 === strpos($value, '(')) && ((strlen($value) - 1) === strrpos($value, ')'))) {
-                // Allow known safe SQL functions but block subqueries and dangerous expressions
-                if (static::isSafeFilterExpression($value)) {
-                    return $value;
-                }
-                // Fall through to parameterized binding for anything else
+            } elseif (static::isSafeFilterExpression($value, !$fromParams)) {
+                // One of the recognized no-argument SQL functions, written as
+                // NOW() or (NOW()) in the filter, is used as is. A value supplied
+                // through params is used as is only in the (NOW()) form. Any other
+                // value, including other parenthesized text, is bound as a
+                // parameter below.
+                return $value;
             }
         }
 
@@ -693,19 +772,46 @@ class Table extends BaseDbTableResource
     }
 
     /**
-     * True when a parenthesized filter value is one of the recognized no-argument
-     * SQL functions that can be used directly (e.g. NOW()). Everything else is
-     * bound as a parameter.
+     * True when a filter value is one of the recognized no-argument SQL functions
+     * that can be used directly, in one pair of parentheses ((NOW())) or, when
+     * $allowBare is true, also bare (NOW()). Everything else is bound as a
+     * parameter.
      */
-    protected static function isSafeFilterExpression(string $value): bool
+    protected static function isSafeFilterExpression(string $value, bool $allowBare = true): bool
     {
         // Recognize a small set of well-known no-argument SQL functions that may be
         // passed through as-is. Any other value is treated as a literal and bound as
         // a parameter by parseFilterValue().
-        return (bool) preg_match(
-            '/^\(?(NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME)\(\)\)?$/i',
-            trim($value)
-        );
+        $function = '(?:NOW|CURDATE|CURTIME|UUID|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|GETDATE|GETUTCDATE|NEWID|SYSDATE|SYSDATETIME)\(\)';
+        $forms = '\(' . $function . '\)' . ($allowBare ? '|' . $function : '');
+
+        return (bool) preg_match('/^(?:' . $forms . ')$/i', trim($value));
+    }
+
+    /**
+     * Split a single condition into the grouping parentheses around it and the
+     * condition itself: [leading "(" run or null, condition, trailing ")" run or
+     * null]. Only "(" are taken from the start and only ")" from the end, so
+     * "born < NOW())" gives [null, "born < NOW(", "))"]; parseFilterString()
+     * then returns the ")" the value needs.
+     *
+     * @param string $condition
+     *
+     * @return array
+     */
+    protected static function splitOuterParentheses($condition)
+    {
+        $condition = (string)$condition;
+        $leading = strspn($condition, '(');
+        $body = substr($condition, $leading);
+        $inner = rtrim($body, ')');
+        $trailing = strlen($body) - strlen($inner);
+
+        return [
+            $leading ? substr($condition, 0, $leading) : null,
+            $inner,
+            $trailing ? substr($body, -$trailing) : null,
+        ];
     }
 
     /**
@@ -1049,13 +1155,7 @@ class Table extends BaseDbTableResource
             }
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters);
-        if (!empty($serverFilter)) {
-            Session::replaceLookups($serverFilter);
-            $params = [];
-            $filterString = $this->parseFilterString($serverFilter, $params, $this->tableFieldsInfo);
-            $builder->whereRaw($filterString, $params);
-        }
+        $this->applyServerFilterGroup($builder, $ssFilters);
 
         $out = [];
         switch ($this->getAction()) {
@@ -1277,13 +1377,7 @@ class Table extends BaseDbTableResource
             $builder->whereIn($idName->name, $this->batchIds);
         }
 
-        $serverFilter = $this->buildQueryStringFromData($ssFilters);
-        if (!empty($serverFilter)) {
-            Session::replaceLookups($serverFilter);
-            $params = [];
-            $filterString = $this->parseFilterString($serverFilter, $params, $this->tableFieldsInfo);
-            $builder->whereRaw($filterString, $params);
-        }
+        $this->applyServerFilterGroup($builder, $ssFilters);
 
         $out = [];
         $action = $this->getAction();
